@@ -6,7 +6,6 @@
     <application
         android:allowBackup="false"
         android:icon="@drawable/icon"
-        android:roundIcon="@drawable/icon"
         android:label="Quill"
         android:theme="@style/Quill">
         <activity
@@ -24,6 +23,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="claude.ai" android:pathPrefix="/code" />
+                <data android:scheme="https" android:host="claude.ai" android:pathPrefix="/magic-link" />
             </intent-filter>
         </activity>
     </application>

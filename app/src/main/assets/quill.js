@@ -31,12 +31,27 @@
     'display:flex;align-items:center;justify-content:center;background:rgba(31,31,29,.85);',
     'box-shadow:inset 0 0 0 100px rgba(217,119,87,.19);color:' + ACCENT + ';touch-action:manipulation}',
     '.quill-arrow svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}',
-    '.quill-arrow:active{box-shadow:inset 0 0 0 100px rgba(217,119,87,.4)}'
+    '.quill-arrow:active{box-shadow:inset 0 0 0 100px rgba(217,119,87,.4)}',
+    'pre{background:#141413!important;border-radius:8px!important;padding:10px 12px!important}',
+    '[data-testid=user-message]{background:#141413!important;border-radius:8px!important}',
+    'textarea,[contenteditable=true]{caret-color:' + ACCENT + '}',
+    '[data-quill-input]{background:#30302e!important;border-color:#444440!important;border-radius:8px!important}',
+    '[data-quill-panel] [aria-current=page],[data-quill-panel] [aria-current=true],nav [aria-current=page],aside [aria-current=page]{background:transparent!important;outline:1.5px solid #eceae3!important;outline-offset:-1.5px;border-radius:8px!important;font-weight:700!important}',
+    '*{scrollbar-width:thin;scrollbar-color:#444440 transparent}'
   ].join('\n');
-  var CENTER = [
-    'main p,main li,main h1,main h2,main h3,main h4,main blockquote,[data-testid=user-message],[data-testid=user-message] *{text-align:center!important}',
-    'main ul,main ol{list-style-position:inside!important;padding-left:0!important}'
+  var CENTER_CHAT = [
+    'main p,main li,main h1,main h2,main h3,main h4,main h5,main blockquote,main [data-testid=user-message],main [data-testid=user-message] *{text-align:center!important}',
+    'main ul,main ol{list-style-position:inside!important;padding-left:0!important}',
+    'main pre,main pre *,main table,main table *,main details *{text-align:left!important}',
+    'main pre{margin-left:auto!important;margin-right:auto!important}'
   ].join('\n');
+  var CENTER_INPUT = 'textarea,[contenteditable=true],[contenteditable=true] *{text-align:center!important}';
+  var CENTER_STATUS = '[role=status],[aria-live=polite],[aria-live=assertive]{text-align:center!important;justify-content:center!important}';
+
+  function pct(v) {
+    v = Number(v);
+    return v > 0 && v < 100 ? v : 100;
+  }
 
   function style() {
     var s = document.getElementById('quill-style');
@@ -47,8 +62,25 @@
     } else if (s.parentNode !== document.head && document.head) {
       document.head.appendChild(s);
     }
-    var css = BASE + (Q.prefs.center ? '\n' + CENTER : '');
+    var p = Q.prefs, c = p.center || {};
+    var parts = [BASE];
+    if (c.chat) parts.push(CENTER_CHAT);
+    if (c.input) parts.push(CENTER_INPUT);
+    if (c.status) parts.push(CENTER_STATUS);
+    var cw = pct(p.chatWidth), iw = pct(p.inputWidth);
+    if (cw < 100) parts.push('main{padding-left:calc((100% - ' + cw + '%) / 2)!important;padding-right:calc((100% - ' + cw + '%) / 2)!important}');
+    if (iw < 100) parts.push('[data-quill-input]{width:' + iw + '%!important;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}');
+    var css = parts.join('\n');
     if (s.textContent !== css) s.textContent = css;
+  }
+
+  function tagInput() {
+    document.querySelectorAll('textarea,[contenteditable=true]').forEach(function (el) {
+      var box = el.closest('fieldset') || el.closest('form');
+      if (box && !box.hasAttribute('data-quill-input') && box.getBoundingClientRect().width > window.innerWidth * 0.5) {
+        box.setAttribute('data-quill-input', '');
+      }
+    });
   }
 
   var SEL = 'aside,nav,[role=complementary],[role=navigation],[data-testid*=sidebar i],[data-testid*=panel i],[class*=sidebar i],[class*=side-panel i],[class*=drawer i]';
@@ -76,6 +108,8 @@
       if (r.width < 48 || r.height < vh * 0.5 || r.width > vw * 0.92) return;
       var cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      if (cs.position === 'fixed' || cs.position === 'absolute') return;
+      if (el.closest('[role=dialog],[aria-modal=true]')) return;
       var side = r.left + r.width / 2 > vw / 2 ? 'right' : 'left';
       if (side === 'right' && r.right < vw - 8) return;
       if (side === 'left' && r.left > 8) return;
@@ -87,6 +121,7 @@
       f.el.setAttribute('data-quill-panel', f.side);
       if (stored(f.side)) f.el.setAttribute('data-quill-off', '');
     });
+    tagInput();
     arrows();
   }
 

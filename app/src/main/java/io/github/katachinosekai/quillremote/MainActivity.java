@@ -1,6 +1,7 @@
 package io.github.katachinosekai.quillremote;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -21,7 +22,9 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.CheckBox;
 import android.widget.ImageView;
+import android.widget.SeekBar;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -127,15 +130,134 @@ public class MainActivity extends Activity {
         zoomLabel.setMinWidth(dp(38));
         bar.addView(zoomLabel);
         bar.addView(button("A+", "Larger text", v -> zoom(ZOOM_STEP)));
-        centerBtn = button("≡", "Center text", v -> {
-            prefs.edit().putBoolean("center", !prefs.getBoolean("center", false)).apply();
+        centerBtn = button("≡", "Center everything", v -> {
+            boolean all = centerCount() < CENTER_KEYS.length;
+            SharedPreferences.Editor e = prefs.edit();
+            for (String k : CENTER_KEYS) {
+                e.putBoolean(k, all);
+            }
+            e.apply();
             syncCenter();
             inject();
         });
         bar.addView(centerBtn);
+        bar.addView(button("⚙", "Settings", v -> settings()));
         bar.addView(button("⟳", "Reload", v -> web.reload()));
         syncCenter();
         return bar;
+    }
+
+    static final String[] CENTER_KEYS = {"centerText", "centerInput", "centerStatus"};
+    static final String[] CENTER_LABELS = {"Chat text", "Typing", "Status"};
+
+    boolean centerOn(String key) {
+        return prefs.getBoolean(key, key.equals("centerText"));
+    }
+
+    int centerCount() {
+        int n = 0;
+        for (String k : CENTER_KEYS) {
+            if (centerOn(k)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    void settings() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), dp(4));
+
+        CheckBox[] checks = new CheckBox[CENTER_KEYS.length];
+        CheckBox all = check("Center everything", centerCount() == CENTER_KEYS.length);
+        boolean[] syncing = {false};
+        Runnable syncAll = () -> {
+            syncing[0] = true;
+            all.setChecked(centerCount() == CENTER_KEYS.length);
+            all.setAlpha(centerCount() > 0 && centerCount() < CENTER_KEYS.length ? 0.6f : 1f);
+            syncing[0] = false;
+        };
+        box.addView(all);
+        LinearLayout row = new LinearLayout(this);
+        row.setPadding(dp(24), 0, 0, 0);
+        for (int i = 0; i < CENTER_KEYS.length; i++) {
+            String key = CENTER_KEYS[i];
+            checks[i] = check(CENTER_LABELS[i], centerOn(key));
+            checks[i].setOnCheckedChangeListener((b, on) -> {
+                prefs.edit().putBoolean(key, on).apply();
+                syncAll.run();
+                syncCenter();
+                inject();
+            });
+            row.addView(checks[i], new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        box.addView(row);
+        all.setOnCheckedChangeListener((b, on) -> {
+            if (syncing[0]) {
+                return;
+            }
+            for (CheckBox c : checks) {
+                c.setChecked(on);
+            }
+        });
+        syncAll.run();
+
+        box.addView(slider("Chat width", "chatWidth", 40));
+        box.addView(slider("Message box width", "inputWidth", 25));
+
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Quill")
+                .setView(box)
+                .setPositiveButton("Done", null)
+                .show();
+    }
+
+    CheckBox check(String label, boolean on) {
+        CheckBox c = new CheckBox(this);
+        c.setText(label);
+        c.setTextColor(TEXT);
+        c.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        c.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        c.setChecked(on);
+        c.setMinHeight(dp(44));
+        return c;
+    }
+
+    View slider(String label, String key, int lo) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(0, dp(12), 0, 0);
+        TextView t = new TextView(this);
+        t.setTextColor(TEXT);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        int cur = prefs.getInt(key, 100);
+        t.setText(label + ": " + cur + "%");
+        SeekBar s = new SeekBar(this);
+        s.setMin(lo);
+        s.setMax(100);
+        s.setProgress(cur);
+        s.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        s.setThumbTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int v, boolean user) {
+                t.setText(label + ": " + v + "%");
+                prefs.edit().putInt(key, v).apply();
+                inject();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
+        col.addView(t);
+        col.addView(s, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        return col;
     }
 
     TextView button(String label, String desc, View.OnClickListener onTap) {
@@ -160,9 +282,10 @@ public class MainActivity extends Activity {
     }
 
     void syncCenter() {
-        boolean on = prefs.getBoolean("center", false);
-        centerBtn.setTextColor(on ? TEXT : ACCENT);
-        ((GradientDrawable) centerBtn.getBackground()).setColor(on ? 0x80D97757 : 0x30D97757);
+        int n = centerCount();
+        centerBtn.setTextColor(n == CENTER_KEYS.length ? TEXT : ACCENT);
+        int fill = n == CENTER_KEYS.length ? 0x80D97757 : n > 0 ? 0x55D97757 : 0x30D97757;
+        ((GradientDrawable) centerBtn.getBackground()).setColor(fill);
     }
 
     void zoom(int delta) {
@@ -218,6 +341,17 @@ public class MainActivity extends Activity {
                 }
                 CookieManager.getInstance().flush();
             }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
+                if (view == web) {
+                    ((android.view.ViewGroup) web.getParent()).removeView(web);
+                    web.destroy();
+                    web = null;
+                    recreate();
+                }
+                return true;
+            }
         });
         web.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -258,10 +392,14 @@ public class MainActivity extends Activity {
     }
 
     void inject() {
-        if (skin == null) {
+        if (skin == null || web == null) {
             return;
         }
-        String p = "window.__quillPrefs={center:" + prefs.getBoolean("center", false) + "};";
+        String p = "window.__quillPrefs={center:{chat:" + centerOn("centerText")
+                + ",input:" + centerOn("centerInput")
+                + ",status:" + centerOn("centerStatus")
+                + "},chatWidth:" + prefs.getInt("chatWidth", 100)
+                + ",inputWidth:" + prefs.getInt("inputWidth", 100) + "};";
         web.evaluateJavascript(p + skin, null);
     }
 
@@ -282,14 +420,14 @@ public class MainActivity extends Activity {
             while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
             }
-            return out.toString(StandardCharsets.UTF_8);
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             return null;
         }
     }
 
     void back() {
-        if (web.canGoBack()) {
+        if (web != null && web.canGoBack()) {
             web.goBack();
         } else {
             moveTaskToBack(true);
@@ -298,6 +436,7 @@ public class MainActivity extends Activity {
 
     @Override
     @SuppressWarnings("deprecation")
+    @android.annotation.SuppressLint("GestureBackNavigation")
     public void onBackPressed() {
         back();
     }
@@ -325,13 +464,24 @@ public class MainActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
-        web.saveState(out);
+        if (web != null) {
+            web.saveState(out);
+        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (web != null) {
+            web.destroy();
+            web = null;
+        }
+        super.onDestroy();
     }
 
     int dp(int v) {
