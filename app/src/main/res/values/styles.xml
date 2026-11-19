@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Quill" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/side</item>
+        <item name="android:statusBarColor">@color/side</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+    <color name="bg">#FF262624</color>
+    <color name="side">#FF1F1F1D</color>
+    <color name="accent">#FFD97757</color>
+    <color name="text">#FFECEAE3</color>
+    <color name="muted">#FF9C9A92</color>
+</resources>
