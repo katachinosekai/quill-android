@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     static final int ZOOM_STEP = 10;
     static final int FILE_PICK = 7;
     static final int SYNC_PICK = 8;
+    static final String QUILL_SYNCED = "0.1.1";
 
     WebView web;
     ProgressBar progress;
@@ -57,6 +58,35 @@ public class MainActivity extends Activity {
     ValueCallback<Uri[]> pendingFiles;
     SessionBars bars;
     FolderSync sync;
+    Updater updater;
+    Updater.Release pendingUpdate;
+    TextView updateBanner;
+
+    boolean trustedPage() {
+        String u = web == null ? null : web.getUrl();
+        return u != null && inApp(Uri.parse(u));
+    }
+
+    void toast(String m) {
+        android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_LONG).show();
+    }
+
+    View updateBanner() {
+        updateBanner = new TextView(this);
+        updateBanner.setTextColor(0xFF1F1F1D);
+        updateBanner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        updateBanner.setTypeface(Typeface.DEFAULT_BOLD);
+        updateBanner.setBackgroundColor(ACCENT);
+        updateBanner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        updateBanner.setContentDescription("Update banner");
+        updateBanner.setVisibility(View.GONE);
+        updateBanner.setOnClickListener(v -> {
+            if (pendingUpdate != null) {
+                updater.install(pendingUpdate);
+            }
+        });
+        return updateBanner;
+    }
     java.util.Map<String, String> folderMap = new java.util.LinkedHashMap<>();
     java.util.List<String> folderOrder = new java.util.ArrayList<>();
 
@@ -138,6 +168,8 @@ public class MainActivity extends Activity {
         progress.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
         progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(SIDE));
         column.addView(progress, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
+        column.addView(updateBanner(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        column.addView(signInBanner(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         web = new WebView(this);
         web.setBackgroundColor(BG);
@@ -162,6 +194,30 @@ public class MainActivity extends Activity {
             web.restoreState(state);
         }
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
+        Updater.clean(this);
+        updater = new Updater(this, prefs, new Updater.Listener() {
+            @Override
+            public void onUpdate(Updater.Release r) {
+                android.util.Log.i("QuillUpdate", "available " + r.version);
+                pendingUpdate = r;
+                updateBanner.setText("Quill for Android " + r.version + " is available. Tap to update.");
+                updateBanner.setVisibility(View.VISIBLE);
+            }
+
+            @Override
+            public void onMessage(String msg) {
+                android.util.Log.i("QuillUpdate", msg);
+                toast(msg);
+            }
+        });
+        if (debuggable && getIntent() != null) {
+            String f = getIntent().getStringExtra("quill.updateFeed");
+            if (f != null && testHost(Uri.parse(f))) {
+                updater.feed = f;
+                updater.allowTestHost = true;
+                prefs.edit().putLong("update.checked", 0).apply();
+            }
+        }
         boolean pairing = handlePair(getIntent());
         String test = testUrl(getIntent());
         if (test != null) {
@@ -343,6 +399,17 @@ public class MainActivity extends Activity {
         box.addView(slider("Chat width", "chatWidth", 40));
         box.addView(slider("Message box width", "inputWidth", 25));
 
+        TextView ver = new TextView(this);
+        ver.setText("Quill for Android " + updater.current() + " · synced with Quill " + QUILL_SYNCED);
+        ver.setTextColor(MUTED);
+        ver.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        ver.setPadding(0, dp(14), 0, 0);
+        box.addView(ver);
+        box.addView(textButton("Check for updates", v -> {
+            toast("Checking for updates...");
+            updater.check(true);
+        }));
+
         TextView fl = new TextView(this);
         fl.setText("Folders from Quill");
         fl.setTextColor(MUTED);
@@ -373,17 +440,115 @@ public class MainActivity extends Activity {
             } catch (ActivityNotFoundException ignored) {
             }
         }));
+        TextView sl = new TextView(this);
+        sl.setText("Sign-in");
+        sl.setTextColor(MUTED);
+        sl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        sl.setPadding(0, dp(14), 0, dp(4));
+        pr.addView(sl);
+        pr.addView(textButton("Open claude.ai links in Quill", v -> openLinkSettings()));
+        pr.addView(textButton("Paste sign-in link", v -> pasteSignInLink()));
         pr.addView(textButton("Unpair", v -> {
             sync.unpair();
             st.setText(sync.describe());
         }));
         box.addView(pr);
 
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Quill")
-                .setView(box)
+                .setView(scroll(box))
                 .setPositiveButton("Done", null)
-                .show();
+                .show());
+    }
+
+    TextView banner;
+
+    View scroll(View v) {
+        android.widget.ScrollView s = new android.widget.ScrollView(this);
+        s.addView(v);
+        return s;
+    }
+
+    void accent(AlertDialog d) {
+        for (int b : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL}) {
+            if (d.getButton(b) != null) {
+                d.getButton(b).setTextColor(ACCENT);
+            }
+        }
+    }
+
+    static boolean thirdPartySignIn(Uri u) {
+        String h = u.getHost();
+        if (h == null) {
+            return false;
+        }
+        return h.equals("accounts.google.com") || h.endsWith(".accounts.google.com")
+                || h.equals("appleid.apple.com") || h.equals("idmsa.apple.com");
+    }
+
+    void signInHelp() {
+        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Sign in with email")
+                .setMessage("Google and Apple don't allow signing in inside apps, so that button can't work here.\n\n"
+                        + "Use \"Continue with email\" with the same address (your Gmail address works) and you get the same Claude account and sessions.\n\n"
+                        + "If the email has a code, type it here. If it has a link, either allow Quill to open claude.ai links (button below, once), "
+                        + "or copy the link and use ⚙ → Paste sign-in link.")
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Open claude.ai links in Quill", (d, w) -> openLinkSettings())
+                .show());
+    }
+
+    void openLinkSettings() {
+        Intent i;
+        if (Build.VERSION.SDK_INT >= 31) {
+            i = new Intent(android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, Uri.parse("package:" + getPackageName()));
+        } else {
+            i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+        }
+        try {
+            startActivity(i);
+            android.widget.Toast.makeText(this, "Add links → tick claude.ai", android.widget.Toast.LENGTH_LONG).show();
+        } catch (ActivityNotFoundException e) {
+            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+        }
+    }
+
+    void pasteSignInLink() {
+        android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        CharSequence t = cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0
+                ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
+        Uri u = t == null ? null : Uri.parse(t.toString().trim());
+        if (u == null || !inApp(u)) {
+            android.widget.Toast.makeText(this, "Copy the claude.ai sign-in link from the email first", android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        web.loadUrl(u.toString());
+    }
+
+    View signInBanner() {
+        banner = new TextView(this);
+        banner.setText("Sign in with \"Continue with email\" (your Gmail address works). Google and Apple sign-in don't work inside apps. Tap to hide.");
+        banner.setTextColor(TEXT);
+        banner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        banner.setBackgroundColor(0xFF3A2A22);
+        banner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        banner.setContentDescription("Sign-in tip");
+        banner.setVisibility(View.GONE);
+        banner.setOnClickListener(v -> {
+            prefs.edit().putBoolean("signInTipHidden", true).apply();
+            banner.setVisibility(View.GONE);
+        });
+        return banner;
+    }
+
+    void syncSignInBanner(String url) {
+        if (banner == null) {
+            return;
+        }
+        Uri u = url == null ? null : Uri.parse(url);
+        String path = u == null || u.getPath() == null ? "" : u.getPath();
+        boolean login = u != null && inApp(u) && (path.startsWith("/login") || path.startsWith("/signup"));
+        banner.setVisibility(login && !prefs.getBoolean("signInTipHidden", false) ? View.VISIBLE : View.GONE);
     }
 
     TextView textButton(String label, View.OnClickListener onTap) {
@@ -506,6 +671,13 @@ public class MainActivity extends Activity {
                 if (inApp(u)) {
                     return false;
                 }
+                if (!req.isForMainFrame()) {
+                    return false;
+                }
+                if (thirdPartySignIn(u)) {
+                    signInHelp();
+                    return true;
+                }
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, u));
                 } catch (ActivityNotFoundException e) {
@@ -522,6 +694,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 inject();
+                syncSignInBanner(url);
                 if (url != null && url.startsWith("https://claude.ai/")) {
                     prefs.edit().putString("last", url).apply();
                 }
@@ -713,6 +886,9 @@ public class MainActivity extends Activity {
         super.onResume();
         if (sync != null) {
             sync.start();
+        }
+        if (updater != null) {
+            updater.checkIfDue();
         }
     }
 

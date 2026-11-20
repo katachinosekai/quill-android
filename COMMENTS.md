@@ -49,6 +49,26 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## Self-update (0.7.0, Updater.java + InstallStatus.java)
+- Checks `api.github.com/repos/katachinosekai/quill-android/releases/latest` on resume (at most once a day, pref `update.checked`) and from ⚙ "Check for updates". It ignores drafts and prereleases and only offers a strictly higher `vX.Y.Z` than the installed versionName, with the asset named `quill-android-X.Y.Z.apk`.
+- Safety checks before install, each covered by emu-test:
+  - the asset URL must start with `https://github.com/katachinosekai/quill-android/releases/download/`; redirects are followed by hand and must stay on github.com / objects.githubusercontent.com / release-assets.githubusercontent.com (https);
+  - size at most 50 MB and exactly the announced size;
+  - the SHA-256 of the download must equal GitHub's asset `digest`;
+  - the archive's package name must be ours with a higher versionCode;
+  - its signing certificate (SHA-256) must equal the installed app's.
+  Then PackageInstaller (MODE_FULL_INSTALL); Android shows its own confirmation and enforces the signature again.
+- The PackageInstaller callback goes to the non-exported `InstallStatus` receiver (not the exported activity, which would allow intent redirection). It only starts the confirm intent if that resolves to a system app. `<queries>` CONFIRM_INSTALL makes the installer visible.
+- Needs REQUEST_INSTALL_PACKAGES; the first update sends the user to "Install unknown apps" for Quill.
+- The download sits in cacheDir/update and is deleted on start and on failure.
+- Debug builds only: the `quill.updateFeed` extra (http://127.0.0.1) replaces the feed and allows the test host. `-PqVersionCode/-PqVersionName` build a higher test version.
+
+## Security notes (0.7.0)
+- The page bridge `QuillNative.sessions` is ignored unless the WebView's current page is claude.ai (or the debug test host), and input is capped at 1 MB.
+- No backups or device transfer of app data (allowBackup=false, fullBackupContent=false, data_extraction_rules exclude everything). That covers the pairing key, cached folders and cookies.
+- WebView: no file access; JavaScript only for claude.ai pages (navigation elsewhere opens the browser). Subframe navigations never launch the browser. Google/Apple sign-in pages are intercepted with a help dialog (Google blocks embedded sign-in).
+- Release builds have no cleartext and no test hooks (checked with aapt2).
+
 ## Synced with Quill b5faa86 (earlier: e2724f8, styles compared at b2d351b) (styles last compared at b2d351b)
 Style and formatting are mirrored from Quill's desktop settings. To sync later, look at `git log b2d351b..` in Projects/quill for theme.go, chatview.go and desk.go changes and port what makes sense on a phone.
 - Centring: "Center everything" master plus Chat text / Typing / Status, the same prefs and defaults as Quill (`centerText` on, `centerInput` off, `centerStatus` off). Chat text keeps code, tables and tool details left-aligned and puts list bullets inline (Quill's centred lists). Status = `role=status` / `aria-live` regions.

@@ -23,7 +23,9 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 ## Install
 1. Download `quill-android-<version>.apk` from [Releases](https://github.com/katachinosekai/quill-android/releases).
 2. Open it on your phone and allow installs from that source. Android 11 or newer.
-3. Sign in to claude.ai with **email**. Google blocks its sign-in inside apps.
+3. Sign in to claude.ai with **email** (your Gmail address works). Google and Apple block their sign-in inside apps; the app explains this if you tap those buttons. If the email has a link, allow Quill to open claude.ai links (⚙ → Open claude.ai links in Quill) or use ⚙ → Paste sign-in link.
+
+From 0.7.0 on, the app updates itself from GitHub releases: it shows a banner when a new version is out, checks the download's checksum and that it's signed with the same key, then Android asks you to confirm.
 
 On your computer, run Quill (0.1.0 or newer) with "Remote Control for every session" on (the default).
 

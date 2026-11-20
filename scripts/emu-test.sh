@@ -101,6 +101,18 @@ tap_text() {
 	set -- $b
 	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
 }
+tap_scroll() {
+	local i size w h
+	for i in 1 2 3 4; do
+		tap_text "$1" && return 0
+		size=$(adb_ shell wm size | tail -1 | awk '{print $3}')
+		w=${size%x*}
+		h=${size#*x}
+		adb_ shell input swipe $((w / 2)) $((h * 3 / 4)) $((w / 2)) $((h / 4)) 300
+		sleep 1
+	done
+	return 1
+}
 crashed() { adb_ logcat -d -b crash 2>/dev/null | grep -q -E "$PKG|FATAL"; }
 width_dp() {
 	local size dens w h
@@ -163,9 +175,12 @@ page='<!doctype html><html><head><meta name="viewport" content="width=device-wid
 for s in A1:Fix-edits B2:Old-server-notes C3:Zomboid-launcher D4:Unsorted-idea; do
 	page="$page<a href=\"/code/session_${s%%:*}\" style=\"display:block;padding:8px\">$(echo "${s#*:}" | tr '-' ' ')</a>"
 done
+page="$page<a href=\"https://accounts.google.com/o/oauth2/v2/auth?client_id=test\" style=\"display:block;padding:8px\">Continue with Google test</a>"
 page="$page</nav><main><p>Mock session page for emulator tests.</p><form><textarea></textarea></form></main></body></html>"
 echo "$page" > "$WORK/www/code/index.html"
 for d in "$WORK"/www/code/session_*; do cp "$WORK/www/code/index.html" "$d/index.html"; done
+mkdir -p "$WORK/www/login"
+echo '<!doctype html><html><body><p>Mock login page</p></body></html>' > "$WORK/www/login/index.html"
 python3 -m http.server 8765 --bind 127.0.0.1 --directory "$WORK/www" > "$OUT/http.log" 2>&1 &
 WEB_PID=$!
 adb_ reverse tcp:8765 tcp:8765 >/dev/null
@@ -226,6 +241,20 @@ if [ "$(width_dp)" -lt 600 ]; then
 	adb_ shell input tap 10 10 >/dev/null
 fi
 
+tap_text "Continue with Google test" && sleep 2
+shot 04b-google-intercept
+has 'text="Sign in with email"' && ok "Google sign-in intercepted with help dialog" || bad "Google sign-in intercepted with help dialog"
+adb_ shell dumpsys activity top | grep -q "ACTIVITY $PKG" && ok "Google link stays in app" || bad "Google link stays in app"
+tap_text "OK" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+sleep 1
+launch --es quill.testUrl http://127.0.0.1:8765/login/
+sleep 3
+wait_for 'content-desc="Sign-in tip"' 8 && ok "sign-in tip on login page" || bad "sign-in tip on login page"
+tap_text "Sign-in tip" && sleep 1
+gone 'content-desc="Sign-in tip"' 5 && ok "sign-in tip dismissed" || bad "sign-in tip dismissed"
+launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
+sleep 3
+
 tap_text "A+" && sleep 1
 has 'text="125%"' && ok "text size A+" || bad "text size A+"
 tap_text "A−" && sleep 1
@@ -235,6 +264,16 @@ tap_text "Settings" && sleep 2
 shot 05-settings
 has 'text="Folders from Quill"' && ok "settings dialog" || bad "settings dialog"
 has 'text="Not paired. Scan the QR code in Quill → Settings → Pair phone."' && ok "settings: not paired" || bad "settings: not paired"
+tap_scroll "Open claude.ai links in Quill"
+for i in $(seq 1 10); do
+	adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q -i settings && break
+	sleep 1
+done
+adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q -i settings && ok "link settings open" || bad "link settings open" "$(adb_ shell dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity')"
+adb_ shell input keyevent KEYCODE_BACK
+sleep 2
+adb_ shell dumpsys activity top | grep -E "^ *ACTIVITY" | tail -1 | grep -q "$PKG" || launch
+sleep 1
 tap_text "Done" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 sleep 1
 
@@ -273,7 +312,7 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 		fi
 		tap_text "Settings" && sleep 2
 		has 'Paired with emu-test' && ok "settings: paired status" || bad "settings: paired status"
-		tap_text "Unpair" && sleep 1
+		tap_scroll "Unpair" && sleep 1
 		tap_text "Done" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 		sleep 3
 		if [ "$(width_dp)" -lt 600 ]; then
@@ -289,6 +328,57 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 	fi
 else
 	log "SKIP  pairing (no Quill source or Go)"
+fi
+
+update_case() {
+	local name=$1 apk=$2 digest=$3 ver=99.0.0 size
+	mkdir -p "$WORK/www/u/$name"
+	cp "$apk" "$WORK/www/u/$name/quill-android-$ver.apk"
+	size=$(stat -c %s "$apk")
+	[ -z "$digest" ] && digest=$(sha256sum "$apk" | cut -d' ' -f1)
+	printf '{"tag_name":"v%s","draft":false,"prerelease":false,"assets":[{"name":"quill-android-%s.apk","browser_download_url":"http://127.0.0.1:8765/u/%s/quill-android-%s.apk","digest":"sha256:%s","size":%s}]}' \
+		"$ver" "$ver" "$name" "$ver" "$digest" "$size" > "$WORK/www/u/$name/latest.json"
+	adb_ shell am force-stop "$PKG"
+	adb_ logcat -c
+	launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/ --es quill.updateFeed "http://127.0.0.1:8765/u/$name/latest.json"
+	wait_for 'content-desc="Update banner"' 20 || return 1
+	tap_text "Update banner"
+	sleep 8
+	return 0
+}
+upd_log() { adb_ logcat -d -s QuillUpdate:I 2>/dev/null; }
+
+adb_ shell appops set "$PKG" REQUEST_INSTALL_PACKAGES allow
+head -c 300000 /dev/urandom > "$WORK/junk.apk"
+if update_case junk "$WORK/junk.apk" ""; then
+	upd_log | grep -q "not a valid Quill APK" && ok "update: rejects invalid APK" || bad "update: rejects invalid APK" "$(upd_log | tail -1)"
+else
+	bad "update: banner for newer release"
+fi
+if update_case tamper "$WORK/junk.apk" "0000000000000000000000000000000000000000000000000000000000000000"; then
+	upd_log | grep -q "checksum does not match" && ok "update: rejects checksum mismatch" || bad "update: rejects checksum mismatch" "$(upd_log | tail -1)"
+fi
+(cd "$ROOT" && ./gradlew -q assembleRelease -PqVersionCode=999 -PqVersionName=99.0.0 >/dev/null 2>&1) && cp "$ROOT/app/build/outputs/apk/release/app-release.apk" "$WORK/otherkey.apk"
+if [ -f "$WORK/otherkey.apk" ] && update_case otherkey "$WORK/otherkey.apk" ""; then
+	upd_log | grep -q "not signed by the Quill for Android key" && ok "update: rejects APK signed with another key" || bad "update: rejects APK signed with another key" "$(upd_log | tail -1)"
+fi
+(cd "$ROOT" && ./gradlew -q assembleDebug -PqVersionCode=999 -PqVersionName=99.0.0 >/dev/null 2>&1) && cp "$ROOT/app/build/outputs/apk/debug/app-debug.apk" "$WORK/good.apk"
+(cd "$ROOT" && ./gradlew -q assembleDebug >/dev/null 2>&1)
+if [ -f "$WORK/good.apk" ] && update_case good "$WORK/good.apk" ""; then
+	shot 06b-install-confirm
+	tap_text "Update" >/dev/null 2>&1 || tap_text "UPDATE" >/dev/null 2>&1 || tap_text "Install" >/dev/null 2>&1
+	for i in $(seq 1 20); do
+		v=$(adb_ shell dumpsys package "$PKG" | grep -m1 versionName | tr -d ' \r')
+		[ "$v" = "versionName=99.0.0" ] && break
+		sleep 1
+	done
+	[ "$v" = "versionName=99.0.0" ] && ok "update: installs a genuine newer build" || bad "update: installs a genuine newer build" "$v; $(upd_log | tail -1)"
+	adb_ uninstall "$PKG" >/dev/null 2>&1
+	adb_ install "$ROOT/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
+	sleep 3
+	adb_ logcat -b crash -c
+	launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
+	sleep 3
 fi
 
 adb_ shell settings put system accelerometer_rotation 0

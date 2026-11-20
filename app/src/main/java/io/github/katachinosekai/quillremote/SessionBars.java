@@ -233,7 +233,14 @@ class SessionBars {
 
         @JavascriptInterface
         public void sessions(String json) {
-            bars.a.runOnUiThread(() -> bars.update(json));
+            if (json == null || json.length() > 1_000_000) {
+                return;
+            }
+            bars.a.runOnUiThread(() -> {
+                if (bars.a.trustedPage()) {
+                    bars.update(json);
+                }
+            });
         }
     }
 
