@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
     static final int ZOOM_MAX = 200;
     static final int ZOOM_STEP = 10;
     static final int FILE_PICK = 7;
+    static final int SYNC_PICK = 8;
 
     WebView web;
     ProgressBar progress;
@@ -55,6 +56,32 @@ public class MainActivity extends Activity {
     String skin;
     ValueCallback<Uri[]> pendingFiles;
     SessionBars bars;
+    FolderSync sync;
+    java.util.Map<String, String> folderMap = new java.util.LinkedHashMap<>();
+    java.util.List<String> folderOrder = new java.util.ArrayList<>();
+
+    void onFolders(java.util.Map<String, String> map, java.util.List<String> order) {
+        folderMap = map;
+        folderOrder = order;
+        inject();
+    }
+
+    boolean handlePair(Intent intent) {
+        Uri data = intent == null ? null : intent.getData();
+        if (data == null || !"quillpair".equals(data.getScheme())) {
+            return false;
+        }
+        acceptPair(data);
+        return true;
+    }
+
+    void acceptPair(Uri data) {
+        String name = FolderSync.pair(prefs, data);
+        android.widget.Toast.makeText(this, name == null ? "Not a valid Quill pairing link" : "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
+        if (name != null) {
+            sync.refresh();
+        }
+    }
     TextView sideArrow;
 
     @Override
@@ -133,8 +160,10 @@ public class MainActivity extends Activity {
         if (state != null) {
             web.restoreState(state);
         }
+        sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
+        boolean pairing = handlePair(getIntent());
         if (state == null || web.getUrl() == null) {
-            web.loadUrl(startUrl(getIntent()));
+            web.loadUrl(pairing ? startUrl(null) : startUrl(getIntent()));
         }
     }
 
@@ -310,11 +339,59 @@ public class MainActivity extends Activity {
         box.addView(slider("Chat width", "chatWidth", 40));
         box.addView(slider("Message box width", "inputWidth", 25));
 
+        TextView fl = new TextView(this);
+        fl.setText("Folders from Quill");
+        fl.setTextColor(MUTED);
+        fl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        fl.setPadding(0, dp(14), 0, dp(4));
+        box.addView(fl);
+        TextView st = new TextView(this);
+        st.setText(sync.describe());
+        st.setTextColor(TEXT);
+        st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        box.addView(st);
+        LinearLayout pr = new LinearLayout(this);
+        pr.setOrientation(LinearLayout.VERTICAL);
+        pr.addView(textButton("Paste pairing link", v -> {
+            android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            CharSequence t = cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0
+                    ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
+            acceptPair(t == null ? null : Uri.parse(t.toString().trim()));
+            st.setText(sync.describe());
+        }));
+        pr.addView(textButton("Choose synced file", v -> {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            try {
+                startActivityForResult(i, SYNC_PICK);
+            } catch (ActivityNotFoundException ignored) {
+            }
+        }));
+        pr.addView(textButton("Unpair", v -> {
+            sync.unpair();
+            st.setText(sync.describe());
+        }));
+        box.addView(pr);
+
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Quill")
                 .setView(box)
                 .setPositiveButton("Done", null)
                 .show();
+    }
+
+    TextView textButton(String label, View.OnClickListener onTap) {
+        TextView b = new TextView(this);
+        b.setText(label);
+        b.setTextColor(ACCENT);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setMinHeight(dp(44));
+        b.setGravity(Gravity.CENTER_VERTICAL);
+        b.setOnClickListener(onTap);
+        return b;
     }
 
     CheckBox check(String label, boolean on) {
@@ -505,7 +582,9 @@ public class MainActivity extends Activity {
                 + ",status:" + centerOn("centerStatus")
                 + "},chatWidth:" + prefs.getInt("chatWidth", 100)
                 + ",inputWidth:" + prefs.getInt("inputWidth", 100)
-                + ",drawer:" + (bars == null || !bars.vertical) + "};";
+                + ",drawer:" + (bars == null || !bars.vertical)
+                + ",folders:" + new org.json.JSONObject(folderMap)
+                + ",order:" + new org.json.JSONArray(folderOrder) + "};";
         web.evaluateJavascript(p + skin, null);
     }
 
@@ -550,6 +629,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (handlePair(intent)) {
+            return;
+        }
         Uri data = intent.getData();
         if (data != null && inApp(data)) {
             web.loadUrl(data.toString());
@@ -559,6 +641,18 @@ public class MainActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int req, int res, Intent data) {
+        if (req == SYNC_PICK) {
+            if (res == RESULT_OK && data != null && data.getData() != null) {
+                Uri u = data.getData();
+                try {
+                    getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (SecurityException ignored) {
+                }
+                sync.setFile(u);
+                android.widget.Toast.makeText(this, "Reading folders from the synced file", android.widget.Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
         if (req == FILE_PICK && pendingFiles != null) {
             pendingFiles.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
             pendingFiles = null;
@@ -579,6 +673,17 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         CookieManager.getInstance().flush();
+        if (sync != null) {
+            sync.stop();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (sync != null) {
+            sync.start();
+        }
     }
 
     @Override

@@ -25,6 +25,12 @@
                 <data android:scheme="https" android:host="claude.ai" android:pathPrefix="/code" />
                 <data android:scheme="https" android:host="claude.ai" android:pathPrefix="/magic-link" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="quillpair" android:host="pair" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

@@ -202,7 +202,6 @@
     arrows();
   }
 
-  var SEP = ' · ';
   var BUILTIN_TOP = ['Active'];
   var BUILTIN_END = ['Inactive', 'Archive', 'Created by Claude'];
   var OTHER = 'Other';
@@ -219,17 +218,23 @@
       var text = (a.innerText || a.textContent || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean)[0] || '';
       if (!text) return;
       seen[m[1]] = true;
-      var i = text.indexOf(SEP), folder = OTHER, title = text;
-      if (i > 0) {
-        folder = text.slice(0, i).trim();
-        title = text.slice(i + SEP.length).trim() || text;
-      }
-      out.push({ id: m[1], href: '/code/' + m[1], folder: folder, title: title, link: a });
+      var map = Q.prefs.folders || {};
+      var folder = Object.prototype.hasOwnProperty.call(map, m[1]) ? String(map[m[1]]) : OTHER;
+      out.push({ id: m[1], href: '/code/' + m[1], folder: folder, title: text, link: a });
     });
     return out;
   }
 
   function folderOrder(list) {
+    var given = Q.prefs.order;
+    if (given && given.length) {
+      var out = given.filter(function (f) { return f !== OTHER; });
+      list.forEach(function (s) {
+        if (s.folder !== OTHER && out.indexOf(s.folder) < 0) out.push(s.folder);
+      });
+      out.push(OTHER);
+      return out;
+    }
     var custom = [];
     list.forEach(function (s) {
       if (BUILTIN_TOP.indexOf(s.folder) < 0 && BUILTIN_END.indexOf(s.folder) < 0 && s.folder !== OTHER && custom.indexOf(s.folder) < 0) custom.push(s.folder);

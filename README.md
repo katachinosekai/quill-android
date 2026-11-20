@@ -6,7 +6,7 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 
 ## Features
 - Tab bar of open sessions and a folder bar with drop-down session lists, as in Quill. On tablets and unfolded foldables, a vertical folder sidebar instead (Tabs: Auto / Horizontal / Vertical in ⚙)
-- Session drawer grouped by Quill's folders: Active, your own folders, Inactive, Archive, Created by Claude. Quill names each Remote Control session `Folder · Title`, and the app groups them by that name.
+- Sessions grouped by Quill's folders: Active, your own folders, Inactive, Archive, Created by Claude. Quill publishes its folders and the app picks them up (see "Folders from Quill").
 - Quill's dark theme and accent, readable text: comfortable line spacing, wrapped code blocks, scrollable tables, no zoom jumps when typing.
 - Centering like Quill: Center everything, or Chat text / Typing / Status separately.
 - Text size (A− / A+), chat width and message box width.
@@ -19,6 +19,15 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 3. Sign in to claude.ai with **email**. Google blocks its sign-in inside apps.
 
 On your computer, run Quill (0.1.0 or newer) with "Remote Control for every session" on (the default).
+
+## Folders from Quill
+In Quill (0.1.1 or newer), open Settings → Phone:
+1. **Pair phone...** shows a QR code. Scan it with your phone's camera and open the link in Quill for Android (or copy the link and use ⚙ → "Paste pairing link"). Folders then update whenever your phone is on the same network as your computer. Away from home, the app keeps the last folders it got.
+2. Optional, to get updates anywhere:
+   - **Write folders file to...**: pick a folder you already sync to your phone (Syncthing, Nextcloud, Dropbox, ...), then in the app ⚙ → "Choose synced file" and pick `quill-folders.json`.
+   - **Publish to a secret gist** (needs the GitHub CLI `gh` logged in on the computer): pair again afterwards so the link includes the gist. The gist is unlisted but readable by anyone with its link. It contains only claude.ai session ids and folder names.
+
+The app uses whichever source has the newest folders.
 
 ## How it works
 The app is a WebView of `https://claude.ai/code` with a small script (`app/src/main/assets/quill.js`) injected on every page. The script restyles the page and builds the session drawer from the session links on the page. It never sends data anywhere; everything stays between your phone and claude.ai. Design notes are in [COMMENTS.md](COMMENTS.md).

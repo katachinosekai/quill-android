@@ -401,10 +401,62 @@ class SessionBars {
         close.setOnClickListener(v -> closeTab(id));
         chip.addView(close, new LinearLayout.LayoutParams(a.dp(34), ViewGroup.LayoutParams.MATCH_PARENT));
         chip.setOnClickListener(v -> a.openSession(id));
+        chip.setOnLongClickListener(v -> {
+            tabMenu(v, id);
+            return true;
+        });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, a.dp(34));
         lp.setMargins(a.dp(3), 0, a.dp(3), 0);
         chip.setLayoutParams(lp);
         return chip;
+    }
+
+    void tabMenu(View anchor, String id) {
+        android.widget.PopupMenu m = new android.widget.PopupMenu(a, anchor);
+        int i = tabIndex(id);
+        m.getMenu().add(0, 1, 0, "Close");
+        m.getMenu().add(0, 2, 1, "Close others");
+        m.getMenu().add(0, 3, 2, "Close tabs to the right");
+        if (i > 0) {
+            m.getMenu().add(0, 4, 3, "Move left");
+        }
+        if (i >= 0 && i < tabs.size() - 1) {
+            m.getMenu().add(0, 5, 4, "Move right");
+        }
+        m.setOnMenuItemClickListener(mi -> {
+            int at = tabIndex(id);
+            if (at < 0) {
+                return true;
+            }
+            switch (mi.getItemId()) {
+                case 1:
+                    closeTab(id);
+                    return true;
+                case 2:
+                    String[] keep = tabs.get(at);
+                    tabs.clear();
+                    tabs.add(keep);
+                    break;
+                case 3:
+                    while (tabs.size() > at + 1) {
+                        tabs.remove(tabs.size() - 1);
+                    }
+                    break;
+                case 4:
+                    tabs.add(at - 1, tabs.remove(at));
+                    break;
+                case 5:
+                    tabs.add(at + 1, tabs.remove(at));
+                    break;
+            }
+            saveTabs();
+            render();
+            if (current != null && tabIndex(current) < 0) {
+                a.openSession(id);
+            }
+            return true;
+        });
+        m.show();
     }
 
     View bookmark(String folder, List<Item> list) {
