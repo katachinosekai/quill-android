@@ -40,6 +40,10 @@ public class InstallStatus extends BroadcastReceiver {
             c.startActivity(confirm);
         } else if (status != PackageInstaller.STATUS_SUCCESS) {
             String m = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+            if (status != PackageInstaller.STATUS_FAILURE_ABORTED) {
+                c.getSharedPreferences("quill", Context.MODE_PRIVATE).edit()
+                        .putString("update.failed", status + "|" + (m == null ? "" : m)).apply();
+            }
             Toast.makeText(c, "Update not installed" + (m != null ? ": " + m : ""), Toast.LENGTH_LONG).show();
         }
     }

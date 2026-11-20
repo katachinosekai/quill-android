@@ -105,6 +105,35 @@ public class MainActivity extends Activity {
         android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_LONG).show();
     }
 
+    void showUpdateBlocked() {
+        String f = prefs.getString("update.failed", null);
+        if (f == null) {
+            return;
+        }
+        prefs.edit().remove("update.failed").apply();
+        String detail = f.contains("|") ? f.substring(f.indexOf('|') + 1).trim() : "";
+        if (pendingUpdate != null) {
+            updateBanner.setText("Update " + pendingUpdate.version + " was blocked. Tap to retry.");
+            updateBanner.setVisibility(View.VISIBLE);
+        }
+        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Update blocked by your phone's security")
+                .setMessage("Android stopped Quill from installing its update. This happens on every update for apps that don't come from a store:\n\n"
+                        + "• Samsung Auto Blocker: Settings → Security and privacy → Auto Blocker → turn it off, tap the Quill update banner to retry, then turn Auto Blocker back on.\n\n"
+                        + "• Google Play Protect: if it says the app is unsafe or unknown, tap \"More details\" → \"Install anyway\".\n\n"
+                        + "The retry reuses the download and checks it again (same checksum and signing key) before installing."
+                        + (detail.isEmpty() ? "" : "\n\nAndroid said: " + detail))
+                .setPositiveButton("Open security settings", (d, w) -> {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS));
+                    } catch (ActivityNotFoundException e) {
+                        startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
+                    }
+                })
+                .setNegativeButton("Later", null)
+                .show());
+    }
+
     View updateBanner() {
         updateBanner = new TextView(this);
         updateBanner.setTextColor(0xFF1F1F1D);
@@ -269,6 +298,9 @@ public class MainActivity extends Activity {
                 toast(msg);
             }
         });
+        if (debuggable && getIntent() != null && getIntent().hasExtra("quill.testUpdateBlocked")) {
+            prefs.edit().putString("update.failed", "2|" + getIntent().getStringExtra("quill.testUpdateBlocked")).apply();
+        }
         if (debuggable && getIntent() != null) {
             String f = getIntent().getStringExtra("quill.updateFeed");
             if (f != null && testHost(Uri.parse(f))) {
@@ -1096,6 +1128,7 @@ public class MainActivity extends Activity {
         if (updater != null) {
             updater.checkIfDue();
         }
+        showUpdateBlocked();
         Notifier.appVisible = true;
         if (fgNotifier != null) {
             syncNotifier();

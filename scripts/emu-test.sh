@@ -275,6 +275,13 @@ nap 4
 shot 01-start
 crashed && bad "launch" "crash in logcat" || ok "launch"
 has 'text="Quill"' && ok "top bar" || bad "top bar"
+adb_ shell am force-stop "$PKG"
+launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/ --es quill.testUpdateBlocked INSTALL_FAILED_BLOCKED
+wait_for 'Update blocked by your phone' 8 && ok "blocked-update help dialog" || bad "blocked-update help dialog"
+shot 01b-update-blocked
+has 'Auto Blocker' && has 'Install anyway' && ok "blocked-update dialog explains Auto Blocker and Play Protect" || bad "blocked-update dialog explains Auto Blocker and Play Protect"
+tap_text "LATER" >/dev/null 2>&1 || tap_text "Later" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+nap 1
 
 wide=$(width_dp)
 log "screen width ${wide}dp"

@@ -30,6 +30,8 @@ Quill (desktop) and Quill for Android are released together on [Quill's releases
 2. Open it on your phone and allow installs from that source. Android 11 or newer.
 3. Sign in to claude.ai with **email** (your Gmail address works). Google and Apple block their sign-in inside apps; the app explains this if you tap those buttons. If the email has a link, allow Quill to open claude.ai links (⚙ → Open claude.ai links in Quill) or use ⚙ → Paste sign-in link.
 
+**Samsung phones/tablets:** Auto Blocker (Settings → Security and privacy → Auto Blocker) blocks installing and updating apps that don't come from Google Play or the Galaxy Store. Turn it off while you install or update Quill, then turn it back on. If Google Play Protect warns about the app, tap "More details" → "Install anyway". From 0.9.1 the app explains this when an update is blocked and lets you retry with one tap.
+
 From 0.7.0 on, the app updates itself from GitHub releases: it shows a banner when a new version is out, checks the download's checksum and that it's signed with the same key, then Android asks you to confirm.
 
 On your computer, run Quill (0.1.0 or newer) with "Remote Control for every session" on (the default).

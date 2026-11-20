@@ -209,7 +209,9 @@ class Updater {
             String err = null;
             File f = new File(new File(a.getCacheDir(), "update"), "quill-update.apk");
             try {
-                download(r, f);
+                if (!(f.isFile() && f.length() == r.size && hex(fileSha(f)).equals(r.sha256))) {
+                    download(r, f);
+                }
                 verify(f, r);
                 session(f);
             } catch (Exception e) {
@@ -332,6 +334,18 @@ class Updater {
             PendingIntent pend = PendingIntent.getBroadcast(a, id, cb, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
             s.commit(pend.getIntentSender());
         }
+    }
+
+    static byte[] fileSha(File f) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        try (InputStream in = new FileInputStream(f)) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                md.update(buf, 0, n);
+            }
+        }
+        return md.digest();
     }
 
     static String hex(byte[] b) {
