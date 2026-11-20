@@ -43,10 +43,9 @@ public class MainActivity extends Activity {
     static final int MUTED = 0xFF9C9A92;
     static final int ZOOM_MIN = 80;
     static final int ZOOM_MAX = 200;
-    static final int ZOOM_STEP = 10;
     static final int FILE_PICK = 7;
     static final int SYNC_PICK = 8;
-    static final String QUILL_SYNCED = "0.1.1";
+    static final String QUILL_SYNCED = "0.1.3";
 
     WebView web;
     ProgressBar progress;
@@ -172,8 +171,23 @@ public class MainActivity extends Activity {
 
         web = new WebView(this);
         web.setBackgroundColor(BG);
+        zoomLabel = new TextView(this);
+        zoomLabel.setTextColor(TEXT);
+        zoomLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        zoomLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        zoomLabel.setPadding(dp(16), dp(8), dp(16), dp(8));
+        GradientDrawable zb = new GradientDrawable();
+        zb.setCornerRadius(dp(10));
+        zb.setColor(0xE62F2F2C);
+        zb.setStroke(dp(1), 0xFF444440);
+        zoomLabel.setBackground(zb);
+        zoomLabel.setContentDescription("Text size");
+        zoomLabel.setAlpha(0f);
         setupWeb();
-        column.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        android.widget.FrameLayout webFrame = new android.widget.FrameLayout(this);
+        webFrame.addView(web, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
+        webFrame.addView(zoomLabel, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        column.addView(webFrame, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         bars.applyMode(false);
 
         root.setOnApplyWindowInsetsListener((v, insets) -> {
@@ -232,60 +246,26 @@ public class MainActivity extends Activity {
     }
 
     View bar() {
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
+        android.widget.FrameLayout bar = new android.widget.FrameLayout(this);
         bar.setBackgroundColor(SIDE);
-        bar.setPadding(dp(10), 0, dp(4), 0);
+        bar.setPadding(dp(8), 0, dp(4), 0);
 
+        LinearLayout left = new LinearLayout(this);
+        left.setGravity(Gravity.CENTER_VERTICAL);
         sideArrow = new TextView(this);
         sideArrow.setContentDescription("Sidebar");
         sideArrow.setTextColor(ACCENT);
-        sideArrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        sideArrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         sideArrow.setTypeface(Typeface.DEFAULT_BOLD);
         sideArrow.setGravity(Gravity.CENTER);
         GradientDrawable ring = new GradientDrawable();
-        ring.setCornerRadius(dp(6));
+        ring.setCornerRadius(dp(7));
         ring.setColor(0x30D97757);
         sideArrow.setBackground(ring);
-        sideArrow.setOnClickListener(v -> bars.toggleSide());
-        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(32), dp(32));
-        ap.setMargins(0, 0, dp(10), 0);
-        bar.addView(sideArrow, ap);
-
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(R.drawable.icon);
-        bar.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
-
-        TextView title = new TextView(this);
-        title.setText("Quill");
-        title.setTextColor(TEXT);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(dp(10), 0, dp(10), 0);
-        title.setOnClickListener(v -> {
-            if (bars.vertical) {
-                bars.toggleSide();
-            } else {
-                web.evaluateJavascript("window.__quill&&window.__quill.sessions()", null);
-            }
-        });
-        title.setOnLongClickListener(v -> {
-            web.loadUrl(HOME);
-            return true;
-        });
-        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        bar.addView(title, tp);
-
-        bar.addView(button("A−", "Smaller text", v -> zoom(-ZOOM_STEP)));
-        zoomLabel = new TextView(this);
-        zoomLabel.setTextColor(MUTED);
-        zoomLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        zoomLabel.setGravity(Gravity.CENTER);
-        zoomLabel.setMinWidth(dp(38));
-        bar.addView(zoomLabel);
-        bar.addView(button("A+", "Larger text", v -> zoom(ZOOM_STEP)));
+        sideArrow.setOnClickListener(v -> toggleSessions());
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(42), dp(36));
+        ap.setMargins(0, 0, dp(3), 0);
+        left.addView(sideArrow, ap);
         centerBtn = button("≡", "Center everything", v -> {
             boolean all = centerCount() < CENTER_KEYS.length;
             SharedPreferences.Editor e = prefs.edit();
@@ -296,11 +276,44 @@ public class MainActivity extends Activity {
             syncCenter();
             inject();
         });
-        bar.addView(centerBtn);
-        bar.addView(button("⚙", "Settings", v -> settings()));
-        bar.addView(button("⟳", "Reload", v -> web.reload()));
+        left.addView(centerBtn);
+        bar.addView(left, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.CENTER_VERTICAL));
+
+        LinearLayout mid = new LinearLayout(this);
+        mid.setGravity(Gravity.CENTER);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.icon);
+        mid.addView(icon, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        TextView title = new TextView(this);
+        title.setText("Quill");
+        title.setTextColor(TEXT);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setPadding(dp(8), 0, 0, 0);
+        title.setSingleLine(true);
+        mid.addView(title);
+        mid.setOnClickListener(v -> toggleSessions());
+        mid.setOnLongClickListener(v -> {
+            web.loadUrl(HOME);
+            return true;
+        });
+        bar.addView(mid, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+
+        LinearLayout right = new LinearLayout(this);
+        right.setGravity(Gravity.CENTER_VERTICAL);
+        right.addView(button("⚙", "Settings", v -> settings()));
+        right.addView(button("⟳", "Reload", v -> web.reload()));
+        bar.addView(right, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END | Gravity.CENTER_VERTICAL));
         syncCenter();
         return bar;
+    }
+
+    void toggleSessions() {
+        if (bars.vertical) {
+            bars.toggleSide();
+        } else if (web != null) {
+            web.evaluateJavascript("window.__quill&&window.__quill.sessions()", v -> bars.syncArrow());
+        }
     }
 
     static final String[] CENTER_KEYS = {"centerText", "centerInput", "centerStatus"};
@@ -323,8 +336,9 @@ public class MainActivity extends Activity {
     void settings() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(8), dp(20), dp(4));
+        box.setPadding(dp(20), dp(4), dp(20), dp(8));
 
+        section(box, "Text", false);
         CheckBox[] checks = new CheckBox[CENTER_KEYS.length];
         CheckBox all = check("Center everything", centerCount() == CENTER_KEYS.length);
         boolean[] syncing = {false};
@@ -335,8 +349,6 @@ public class MainActivity extends Activity {
             syncing[0] = false;
         };
         box.addView(all);
-        LinearLayout row = new LinearLayout(this);
-        row.setPadding(dp(24), 0, 0, 0);
         for (int i = 0; i < CENTER_KEYS.length; i++) {
             String key = CENTER_KEYS[i];
             checks[i] = check(CENTER_LABELS[i], centerOn(key));
@@ -346,9 +358,8 @@ public class MainActivity extends Activity {
                 syncCenter();
                 inject();
             });
-            row.addView(checks[i], new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            box.addView(indent(checks[i]));
         }
-        box.addView(row);
         all.setOnCheckedChangeListener((b, on) -> {
             if (syncing[0]) {
                 return;
@@ -358,37 +369,17 @@ public class MainActivity extends Activity {
             }
         });
         syncAll.run();
+        TextView size = line("", TEXT);
+        Runnable syncSize = () -> size.setText("Text size  " + prefs.getInt("zoom", 115) + "%  ·  pinch to change");
+        syncSize.run();
+        TextView reset = textButton("Reset", v -> {
+            setZoom(115);
+            syncSize.run();
+        });
+        box.addView(row(size, reset));
 
-        TextView modeLabel = new TextView(this);
-        modeLabel.setText("Tabs");
-        modeLabel.setTextColor(MUTED);
-        modeLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        modeLabel.setPadding(0, dp(10), 0, 0);
-        box.addView(modeLabel);
-        android.widget.RadioGroup modes = new android.widget.RadioGroup(this);
-        modes.setOrientation(LinearLayout.HORIZONTAL);
-        String[][] modeOpts = {{"Auto", "auto"}, {"Horizontal", "horizontal"}, {"Vertical", "vertical"}};
-        String curMode = prefs.getString("tabMode", "auto");
-        for (int i = 0; i < modeOpts.length; i++) {
-            android.widget.RadioButton r = new android.widget.RadioButton(this);
-            r.setId(View.generateViewId());
-            r.setText(modeOpts[i][0]);
-            r.setTextColor(TEXT);
-            r.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-            r.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-            r.setMinHeight(dp(44));
-            String val = modeOpts[i][1];
-            r.setChecked(val.equals(curMode));
-            r.setOnCheckedChangeListener((b, on) -> {
-                if (on) {
-                    prefs.edit().putString("tabMode", val).apply();
-                    bars.applyMode(true);
-                }
-            });
-            modes.addView(r, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        }
-        box.addView(modes);
-
+        section(box, "Tabs", true);
+        box.addView(segmented(new String[][]{{"Auto", "auto"}, {"Horizontal", "horizontal"}, {"Vertical", "vertical"}}));
         LinearLayout barsRow = new LinearLayout(this);
         for (String[] b : new String[][]{{"Tab bar", "showTabs"}, {"Folder bar", "showFolders"}}) {
             CheckBox c = check(b[0], prefs.getBoolean(b[1], true));
@@ -400,39 +391,25 @@ public class MainActivity extends Activity {
         }
         box.addView(barsRow);
 
-
-        TextView ver = new TextView(this);
-        ver.setText("Quill for Android " + updater.current() + " · synced with Quill " + QUILL_SYNCED);
-        ver.setTextColor(MUTED);
-        ver.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        ver.setPadding(0, dp(14), 0, 0);
-        box.addView(ver);
-        box.addView(textButton("Check for updates", v -> {
-            toast("Checking for updates...");
-            updater.check(true);
-        }));
-
-        TextView fl = new TextView(this);
-        fl.setText("Folders from Quill");
-        fl.setTextColor(MUTED);
-        fl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        fl.setPadding(0, dp(14), 0, dp(4));
-        box.addView(fl);
-        TextView st = new TextView(this);
-        st.setText(sync.describe());
-        st.setTextColor(TEXT);
-        st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        box.addView(st);
-        LinearLayout pr = new LinearLayout(this);
-        pr.setOrientation(LinearLayout.VERTICAL);
-        pr.addView(textButton("Paste pairing link", v -> {
+        section(box, "Folders from Quill", true);
+        LinearLayout status = new LinearLayout(this);
+        status.setOrientation(LinearLayout.VERTICAL);
+        Runnable syncStatus = () -> {
+            status.removeAllViews();
+            for (String l : sync.describe().split("\n")) {
+                status.addView(line(l, MUTED));
+            }
+        };
+        syncStatus.run();
+        box.addView(status);
+        box.addView(textButton("Paste pairing link", v -> {
             android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
             CharSequence t = cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0
                     ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
             acceptPair(t == null ? null : Uri.parse(t.toString().trim()));
-            st.setText(sync.describe());
+            syncStatus.run();
         }));
-        pr.addView(textButton("Choose synced file", v -> {
+        box.addView(textButton("Choose synced file", v -> {
             Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType("*/*");
@@ -442,25 +419,115 @@ public class MainActivity extends Activity {
             } catch (ActivityNotFoundException ignored) {
             }
         }));
-        TextView sl = new TextView(this);
-        sl.setText("Sign-in");
-        sl.setTextColor(MUTED);
-        sl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        sl.setPadding(0, dp(14), 0, dp(4));
-        pr.addView(sl);
-        pr.addView(textButton("Open claude.ai links in Quill", v -> openLinkSettings()));
-        pr.addView(textButton("Paste sign-in link", v -> pasteSignInLink()));
-        pr.addView(textButton("Unpair", v -> {
+        box.addView(textButton("Unpair", v -> {
             sync.unpair();
-            st.setText(sync.describe());
+            syncStatus.run();
         }));
-        box.addView(pr);
+
+        section(box, "Sign-in", true);
+        box.addView(textButton("Open claude.ai links in Quill", v -> openLinkSettings()));
+        box.addView(textButton("Paste sign-in link", v -> pasteSignInLink()));
+
+        section(box, "About", true);
+        box.addView(line("Quill for Android " + updater.current() + "  ·  Quill " + QUILL_SYNCED, MUTED));
+        box.addView(textButton("Check for updates", v -> {
+            toast("Checking for updates...");
+            updater.check(true);
+        }));
 
         accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Quill")
+                .setTitle("Settings")
                 .setView(scroll(box))
                 .setPositiveButton("Done", null)
                 .show());
+    }
+
+    void section(LinearLayout box, String title, boolean divider) {
+        if (divider) {
+            View d = new View(this);
+            d.setBackgroundColor(0xFF3A3A37);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+            lp.setMargins(0, dp(10), 0, 0);
+            box.addView(d, lp);
+        }
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextColor(ACCENT);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setLetterSpacing(0.04f);
+        t.setSingleLine(true);
+        t.setPadding(0, dp(10), 0, dp(2));
+        box.addView(t);
+    }
+
+    TextView line(String text, int color) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(color);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        t.setSingleLine(true);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        t.setMinHeight(dp(28));
+        t.setGravity(Gravity.CENTER_VERTICAL);
+        return t;
+    }
+
+    View indent(View v) {
+        v.setPadding(v.getPaddingLeft() + dp(24), v.getPaddingTop(), v.getPaddingRight(), v.getPaddingBottom());
+        LinearLayout l = new LinearLayout(this);
+        l.setPadding(dp(4), 0, 0, 0);
+        l.addView(v, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return l;
+    }
+
+    View row(View main, View end) {
+        LinearLayout l = new LinearLayout(this);
+        l.setGravity(Gravity.CENTER_VERTICAL);
+        l.addView(main, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        l.addView(end, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return l;
+    }
+
+    View segmented(String[][] opts) {
+        LinearLayout l = new LinearLayout(this);
+        l.setPadding(0, dp(4), 0, dp(4));
+        TextView[] items = new TextView[opts.length];
+        Runnable sync = () -> {
+            String cur = prefs.getString("tabMode", "auto");
+            for (int i = 0; i < opts.length; i++) {
+                boolean on = opts[i][1].equals(cur);
+                GradientDrawable g = new GradientDrawable();
+                g.setCornerRadius(dp(8));
+                g.setColor(on ? 0x55D97757 : 0x00000000);
+                g.setStroke(dp(1), on ? ACCENT : 0xFF444440);
+                items[i].setBackground(g);
+                items[i].setTextColor(on ? TEXT : MUTED);
+                items[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+                items[i].setSelected(on);
+            }
+        };
+        for (int i = 0; i < opts.length; i++) {
+            TextView t = new TextView(this);
+            t.setText(opts[i][0]);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            t.setSingleLine(true);
+            t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            t.setGravity(Gravity.CENTER);
+            t.setMinHeight(dp(40));
+            String val = opts[i][1];
+            t.setOnClickListener(v -> {
+                prefs.edit().putString("tabMode", val).apply();
+                sync.run();
+                bars.applyMode(true);
+            });
+            items[i] = t;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.setMargins(i == 0 ? 0 : dp(3), 0, i == opts.length - 1 ? 0 : dp(3), 0);
+            l.addView(t, lp);
+        }
+        sync.run();
+        return l;
     }
 
     TextView banner;
@@ -559,7 +626,9 @@ public class MainActivity extends Activity {
         b.setTextColor(ACCENT);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setMinHeight(dp(44));
+        b.setMinHeight(dp(42));
+        b.setSingleLine(true);
+        b.setEllipsize(android.text.TextUtils.TruncateAt.END);
         b.setGravity(Gravity.CENTER_VERTICAL);
         b.setOnClickListener(onTap);
         return b;
@@ -572,7 +641,9 @@ public class MainActivity extends Activity {
         c.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         c.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
         c.setChecked(on);
-        c.setMinHeight(dp(44));
+        c.setMinHeight(dp(42));
+        c.setSingleLine(true);
+        c.setEllipsize(android.text.TextUtils.TruncateAt.END);
         return c;
     }
 
@@ -604,10 +675,6 @@ public class MainActivity extends Activity {
         ((GradientDrawable) centerBtn.getBackground()).setColor(fill);
     }
 
-    void zoom(int delta) {
-        setZoom(prefs.getInt("zoom", 115) + delta);
-    }
-
     void setZoom(int z) {
         z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
         if (z == prefs.getInt("zoom", 115) && web.getSettings().getTextZoom() == z) {
@@ -616,6 +683,9 @@ public class MainActivity extends Activity {
         prefs.edit().putInt("zoom", z).apply();
         web.getSettings().setTextZoom(z);
         zoomLabel.setText(z + "%");
+        zoomLabel.animate().cancel();
+        zoomLabel.setAlpha(1f);
+        zoomLabel.animate().alpha(0f).setStartDelay(900).setDuration(250).start();
     }
 
     static int pinchZoom(int start, float factor) {
@@ -792,6 +862,7 @@ public class MainActivity extends Activity {
                 + ",status:" + centerOn("centerStatus")
                 + "}"
                 + ",drawer:" + (bars == null || !bars.vertical)
+                + ",edgeArrow:false"
                 + ",folders:" + new org.json.JSONObject(folderMap)
                 + ",order:" + new org.json.JSONArray(folderOrder) + "};";
         web.evaluateJavascript(p + skin, null);

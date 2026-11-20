@@ -16,7 +16,8 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 - Sessions grouped by Quill's folders: Active, your own folders, Inactive, Archive, Created by Claude. Quill publishes its folders and the app picks them up (see "Folders from Quill").
 - Quill's dark theme and accent, readable text: comfortable line spacing, wrapped code blocks, scrollable tables, no zoom jumps when typing.
 - Centering like Quill: Center everything, or Chat text / Typing / Status separately.
-- Text size: pinch with two fingers (or A− / A+). Text reflows to the screen, so formatting and layout stay intact.
+- Text size: pinch with two fingers; text reflows to the screen, so formatting and layout stay intact. Reset in ⚙.
+- Long-press a folder: Open all in tabs (and expand/collapse all in the sidebar).
 - Arrows to slide side panels away, as in Quill.
 - Email sign-in links open straight in the app.
 

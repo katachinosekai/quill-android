@@ -363,19 +363,13 @@ class FolderSync {
 
     String describe() {
         if (!paired()) {
-            return "Not paired. Scan the QR code in Quill → Settings → Pair phone.";
+            return "Not paired  ·  Quill → Settings → Pair phone";
         }
         long at = prefs.getLong("folders.at", 0);
         String src = prefs.getString("folders.source", "");
-        String when = at == 0 ? "never" : ago(System.currentTimeMillis() - at);
-        StringBuilder sb = new StringBuilder("Paired with ").append(prefs.getString("pair.name", "Quill")).append(".\n");
-        sb.append("Folders updated ").append(when).append(src.isEmpty() ? "" : " via " + src).append(".");
-        if (!status.isEmpty()) {
-            sb.append("\n").append(status).append(".");
-        }
         List<String> srcs = new ArrayList<>();
         if (!prefs.getString("pair.key", "").isEmpty()) {
-            srcs.add("local network");
+            srcs.add("network");
         }
         if (!prefs.getString("pair.file", "").isEmpty()) {
             srcs.add("synced file");
@@ -383,7 +377,12 @@ class FolderSync {
         if (!prefs.getString("pair.gist", "").isEmpty()) {
             srcs.add("gist");
         }
-        sb.append("\nSources: ").append(String.join(", ", srcs)).append(".");
+        StringBuilder sb = new StringBuilder("Paired with ").append(prefs.getString("pair.name", "Quill"))
+                .append("  ·  ").append(String.join(", ", srcs));
+        sb.append("\nUpdated ").append(at == 0 ? "never" : ago(System.currentTimeMillis() - at)).append(src.isEmpty() ? "" : " via " + src);
+        if (!status.isEmpty()) {
+            sb.append("\n").append(status);
+        }
         return sb.toString();
     }
 

@@ -92,7 +92,7 @@ class SessionBars {
             sideAnim.cancel();
         }
         setSideWidth(vertical && prefs.getBoolean("sideOpen", true) ? a.dp(SIDE_W) + a.dp(1) : 0);
-        a.sideArrow.setVisibility(vertical ? View.VISIBLE : View.GONE);
+        a.sideArrow.setVisibility(View.VISIBLE);
         syncArrow();
         render();
         if (changed) {
@@ -130,8 +130,14 @@ class SessionBars {
     }
 
     void syncArrow() {
-        if (a.sideArrow != null) {
+        if (a.sideArrow == null || a.web == null) {
+            return;
+        }
+        if (vertical) {
             a.sideArrow.setText(prefs.getBoolean("sideOpen", true) ? "‹" : "›");
+        } else {
+            a.web.evaluateJavascript("(function(){try{return localStorage.getItem('quill.sessionsOpen')==='1'}catch(e){return false}})()",
+                    v -> a.sideArrow.setText("true".equals(v) ? "‹" : "›"));
         }
     }
 
@@ -179,6 +185,10 @@ class SessionBars {
             f.setOnClickListener(v -> {
                 prefs.edit().putBoolean("fold." + name, !open).apply();
                 render();
+            });
+            f.setOnLongClickListener(v -> {
+                folderMenu(v, name, list);
+                return true;
             });
             sideList.addView(f);
             if (!open) {
@@ -418,6 +428,52 @@ class SessionBars {
         return chip;
     }
 
+    void folderMenu(View anchor, String folder, List<Item> list) {
+        android.widget.PopupMenu m = new android.widget.PopupMenu(a, anchor);
+        m.getMenu().add(0, 1, 0, "Open all in tabs");
+        if (vertical) {
+            m.getMenu().add(0, 2, 1, "Expand all folders");
+            m.getMenu().add(0, 3, 2, "Collapse all folders");
+        }
+        m.setOnMenuItemClickListener(mi -> {
+            switch (mi.getItemId()) {
+                case 1:
+                    openAll(list);
+                    break;
+                case 2:
+                case 3:
+                    SharedPreferences.Editor e = prefs.edit();
+                    for (String f : order) {
+                        e.putBoolean("fold." + f, mi.getItemId() == 2);
+                    }
+                    for (Item it : items) {
+                        e.putBoolean("fold." + it.folder, mi.getItemId() == 2);
+                    }
+                    e.apply();
+                    render();
+                    break;
+            }
+            return true;
+        });
+        m.show();
+    }
+
+    void openAll(List<Item> list) {
+        for (Item it : list) {
+            if (tabIndex(it.id) < 0) {
+                tabs.add(new String[]{it.id, it.title});
+            }
+        }
+        while (tabs.size() > MAX_TABS) {
+            tabs.remove(0);
+        }
+        saveTabs();
+        render();
+        if (!list.isEmpty()) {
+            a.openSession(list.get(0).id);
+        }
+    }
+
     void tabMenu(View anchor, String id) {
         android.widget.PopupMenu m = new android.widget.PopupMenu(a, anchor);
         int i = tabIndex(id);
@@ -478,6 +534,10 @@ class SessionBars {
         b.setPadding(a.dp(8), 0, a.dp(10), 0);
         b.setMinHeight(a.dp(40));
         b.setOnClickListener(v -> dropDown(v, list));
+        b.setOnLongClickListener(v -> {
+            folderMenu(v, folder, list);
+            return true;
+        });
         b.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, a.dp(40)));
         return b;
     }

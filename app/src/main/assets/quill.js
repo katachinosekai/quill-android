@@ -68,6 +68,7 @@
     if (c.input) parts.push(CENTER_INPUT);
     if (c.status) parts.push(CENTER_STATUS);
     if (p.drawer === false) parts.push('#quill-drawer,#quill-drawer-shade,#quill-drawer-arrow{display:none!important}');
+    if (p.edgeArrow === false) parts.push('#quill-drawer-arrow{display:none!important}');
     var cw = pct(p.chatWidth), iw = pct(p.inputWidth);
     if (cw < 100) parts.push('main{padding-left:calc((100% - ' + cw + '%) / 2)!important;padding-right:calc((100% - ' + cw + '%) / 2)!important}');
     if (iw < 100) parts.push('[data-quill-input]{width:' + iw + '%!important;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}');

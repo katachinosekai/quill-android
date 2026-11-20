@@ -227,7 +227,21 @@ if [ "$AVD" = qfold ]; then
 fi
 
 if [ "$(width_dp)" -lt 600 ]; then
+	has 'content-desc="Sidebar"' && ok "top-left arrow on phone" || bad "top-left arrow on phone"
+	tap_text "Sidebar" && sleep 2
+	shot 03b-drawer-open
+	wait_for 'text="Sessions"' 5 && ok "arrow opens session drawer" || bad "arrow opens session drawer"
+	tap_text "Sidebar" && sleep 2
 	wait_for 'text="Other (4)"' 15 && ok "folder bar" || bad "folder bar"
+	b=$(dump | tr '>' '\n' | grep -F 'text="Other (4)"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	if [ -n "$b" ]; then
+		set -- $b
+		adb_ shell input swipe $((($1 + $3) / 2)) $((($2 + $4) / 2)) $((($1 + $3) / 2)) $((($2 + $4) / 2)) 900
+		sleep 2
+		tap_text "Open all in tabs" && sleep 3
+		n=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o 'session_[A-Za-z0-9]*' | sort -u | wc -l)
+		[ "$n" -ge 4 ] && ok "folder long-press: open all in tabs ($n)" || bad "folder long-press: open all in tabs" "$n tabs"
+	fi
 	tap_text "Other (4)" && sleep 2
 	shot 04-dropdown
 	has 'text="Unsorted idea"' && ok "folder drop-down" || bad "folder drop-down"
@@ -255,27 +269,39 @@ gone 'content-desc="Sign-in tip"' 5 && ok "sign-in tip dismissed" || bad "sign-i
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
 sleep 3
 
-tap_text "A+" && sleep 1
-has 'text="125%"' && ok "text size A+" || bad "text size A+"
-tap_text "A−" && sleep 1
-has 'text="115%"' && ok "text size A−" || bad "text size A−"
+if has 'text="A+"' || has 'text="A−"'; then bad "A+/A− removed from top bar"; else ok "A+/A− removed from top bar"; fi
 pinch() {
 	adb_ shell am force-stop "$PKG"
 	launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/ --ef quill.testPinch "$1"
 	sleep 3
-	has "text=\"$2\"" && ok "pinch x$1 -> $2" || bad "pinch x$1 -> $2" "$(dump | grep -o 'text="[0-9]*%"' | head -1)"
+	tap_text "Settings" && sleep 2
+	has "Text size  $2" && ok "pinch x$1 -> $2" || bad "pinch x$1 -> $2" "$(dump | grep -o 'Text size  [0-9]*%' | head -1)"
+	adb_ shell input keyevent KEYCODE_BACK
+	sleep 1
 }
 pinch 1.5 175%
 pinch 0.5 90%
 pinch 10 200%
 pinch 0.1 80%
 pinch 1.4375 115%
+pinch 1.5 175%
+tap_text "Settings" && sleep 2
+tap_text "Reset" && sleep 1
+has 'Text size  115%' && ok "settings: Reset text size" || bad "settings: Reset text size"
+shot 05c-settings-top
+tap_scroll "Check for updates" >/dev/null 2>&1
+shot 05d-settings-bottom
+has 'text="About"' && has 'text="Sign-in"' && ok "settings sections: Sign-in, About" || bad "settings sections: Sign-in, About"
+adb_ shell input keyevent KEYCODE_BACK
+sleep 1
 
 tap_text "Settings" && sleep 2
 shot 05-settings
 has 'text="Folders from Quill"' && ok "settings dialog" || bad "settings dialog"
 if has 'Chat width' || has 'Message box width'; then bad "width sliders removed"; else ok "width sliders removed"; fi
-has 'text="Not paired. Scan the QR code in Quill → Settings → Pair phone."' && ok "settings: not paired" || bad "settings: not paired"
+has 'text="Not paired  ·  Quill → Settings → Pair phone"' && ok "settings: not paired" || bad "settings: not paired"
+for sec in Text Tabs "Folders from Quill"; do has "text=\"$sec\"" && ok "settings section: $sec" || bad "settings section: $sec"; done
+has 'Text size  115%' && ok "settings: text size row" || bad "settings: text size row"
 tap_scroll "Open claude.ai links in Quill"
 for i in $(seq 1 10); do
 	adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q -i settings && break
