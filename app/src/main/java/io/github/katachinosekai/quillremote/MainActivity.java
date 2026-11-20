@@ -55,6 +55,15 @@ public class MainActivity extends Activity {
     String skin;
     ValueCallback<Uri[]> pendingFiles;
     SessionBars bars;
+    TextView sideArrow;
+
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration c) {
+        super.onConfigurationChanged(c);
+        if (bars != null) {
+            bars.applyMode(false);
+        }
+    }
 
     void openSession(String id) {
         if (web == null || !SessionBars.SESSION.matcher("/code/" + id).matches()) {
@@ -85,20 +94,28 @@ public class MainActivity extends Activity {
 
         root.addView(bar(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
         bars = new SessionBars(this, prefs);
-        root.addView(bars.tabScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
-        root.addView(bars.bookScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(body, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        body.addView(bars.side, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT));
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        body.addView(column, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+        column.addView(bars.tabScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+        column.addView(bars.bookScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(false);
         progress.setMax(100);
         progress.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
         progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(SIDE));
-        root.addView(progress, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
+        column.addView(progress, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
 
         web = new WebView(this);
         web.setBackgroundColor(BG);
         setupWeb();
-        root.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        column.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        bars.applyMode(false);
 
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
@@ -128,6 +145,21 @@ public class MainActivity extends Activity {
         bar.setBackgroundColor(SIDE);
         bar.setPadding(dp(10), 0, dp(4), 0);
 
+        sideArrow = new TextView(this);
+        sideArrow.setContentDescription("Sidebar");
+        sideArrow.setTextColor(ACCENT);
+        sideArrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        sideArrow.setTypeface(Typeface.DEFAULT_BOLD);
+        sideArrow.setGravity(Gravity.CENTER);
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(dp(6));
+        ring.setColor(0x30D97757);
+        sideArrow.setBackground(ring);
+        sideArrow.setOnClickListener(v -> bars.toggleSide());
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(32), dp(32));
+        ap.setMargins(0, 0, dp(10), 0);
+        bar.addView(sideArrow, ap);
+
         ImageView icon = new ImageView(this);
         icon.setImageResource(R.drawable.icon);
         bar.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
@@ -138,7 +170,13 @@ public class MainActivity extends Activity {
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(dp(10), 0, dp(10), 0);
-        title.setOnClickListener(v -> web.evaluateJavascript("window.__quill&&window.__quill.sessions()", null));
+        title.setOnClickListener(v -> {
+            if (bars.vertical) {
+                bars.toggleSide();
+            } else {
+                web.evaluateJavascript("window.__quill&&window.__quill.sessions()", null);
+            }
+        });
         title.setOnLongClickListener(v -> {
             web.loadUrl(HOME);
             return true;
@@ -227,6 +265,36 @@ public class MainActivity extends Activity {
             }
         });
         syncAll.run();
+
+        TextView modeLabel = new TextView(this);
+        modeLabel.setText("Tabs");
+        modeLabel.setTextColor(MUTED);
+        modeLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        modeLabel.setPadding(0, dp(10), 0, 0);
+        box.addView(modeLabel);
+        android.widget.RadioGroup modes = new android.widget.RadioGroup(this);
+        modes.setOrientation(LinearLayout.HORIZONTAL);
+        String[][] modeOpts = {{"Auto", "auto"}, {"Horizontal", "horizontal"}, {"Vertical", "vertical"}};
+        String curMode = prefs.getString("tabMode", "auto");
+        for (int i = 0; i < modeOpts.length; i++) {
+            android.widget.RadioButton r = new android.widget.RadioButton(this);
+            r.setId(View.generateViewId());
+            r.setText(modeOpts[i][0]);
+            r.setTextColor(TEXT);
+            r.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            r.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+            r.setMinHeight(dp(44));
+            String val = modeOpts[i][1];
+            r.setChecked(val.equals(curMode));
+            r.setOnCheckedChangeListener((b, on) -> {
+                if (on) {
+                    prefs.edit().putString("tabMode", val).apply();
+                    bars.applyMode(true);
+                }
+            });
+            modes.addView(r, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        box.addView(modes);
 
         LinearLayout barsRow = new LinearLayout(this);
         for (String[] b : new String[][]{{"Tab bar", "showTabs"}, {"Folder bar", "showFolders"}}) {
@@ -436,7 +504,8 @@ public class MainActivity extends Activity {
                 + ",input:" + centerOn("centerInput")
                 + ",status:" + centerOn("centerStatus")
                 + "},chatWidth:" + prefs.getInt("chatWidth", 100)
-                + ",inputWidth:" + prefs.getInt("inputWidth", 100) + "};";
+                + ",inputWidth:" + prefs.getInt("inputWidth", 100)
+                + ",drawer:" + (bars == null || !bars.vertical) + "};";
         web.evaluateJavascript(p + skin, null);
     }
 

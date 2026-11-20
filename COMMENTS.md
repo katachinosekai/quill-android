@@ -26,6 +26,11 @@ Both are native (SessionBars.java) between the top bar and the WebView, so they 
 - ⚙ has "Tab bar" / "Folder bar" toggles (`showTabs`, `showFolders`, default on). Empty bars hide themselves.
 - Not mirrored: split view (too narrow on a phone), "Delete session..." (deletes transcripts on the computer, which the phone can't reach), Format Rules (no sorting rules here).
 
+## Vertical tabs (0.5.0, Quill's Horizontal/Vertical tab layout)
+Quill's "Vertical" layout swaps the tab row and bookmark row for the folder sidebar. Here `SessionBars.applyMode` picks the layout from ⚙ "Tabs: Auto / Horizontal / Vertical" (pref `tabMode`, default auto). Auto means vertical when `screenWidthDp >= 600` (tablets, unfolded foldables, wide landscape) and horizontal otherwise. It re-runs in `onConfigurationChanged`, so folding, unfolding or rotating switches live (the activity handles screenSize/smallestScreenSize/screenLayout itself, so the WebView is not reloaded).
+- Vertical: a native 300dp folder sidebar docked left of the page (`side`, 1dp #3a3a37 edge), not an overlay. Folders are collapsible (`fold.<name>`), the open session is outlined and bold, tap opens. A Quill-style ring arrow (‹/›) in the top bar, or tapping "Quill", slides it (220 ms width animation, `sideOpen`). The tab and folder bars and the JS drawer are hidden (`drawer:false` in `__quillPrefs`).
+- Horizontal: the 0.4.0 tab bar plus folder bar, and the JS drawer.
+
 ## Synced with Quill e2724f8 (styles last compared at b2d351b)
 Style and formatting are mirrored from Quill's desktop settings. To sync later, look at `git log b2d351b..` in Projects/quill for theme.go, chatview.go and desk.go changes and port what makes sense on a phone.
 - Centring: "Center everything" master plus Chat text / Typing / Status, the same prefs and defaults as Quill (`centerText` on, `centerInput` off, `centerStatus` off). Chat text keeps code, tables and tool details left-aligned and puts list bullets inline (Quill's centred lists). Status = `role=status` / `aria-live` regions.

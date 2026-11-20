@@ -50,6 +50,12 @@ class SessionBars {
     final List<String> order = new ArrayList<>();
     final List<String[]> tabs = new ArrayList<>();
     String current;
+    static final int SIDE_W = 300;
+    static final int WIDE_DP = 600;
+    final LinearLayout side, sideList;
+    final android.widget.ScrollView sideScroll;
+    boolean vertical;
+    android.animation.ValueAnimator sideAnim;
 
     SessionBars(MainActivity a, SharedPreferences prefs) {
         this.a = a;
@@ -58,8 +64,148 @@ class SessionBars {
         bookRow = row();
         tabScroll = scroller(tabRow);
         bookScroll = scroller(bookRow);
+        sideList = new LinearLayout(a);
+        sideList.setOrientation(LinearLayout.VERTICAL);
+        sideList.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(16));
+        sideScroll = new android.widget.ScrollView(a);
+        sideScroll.setBackgroundColor(MainActivity.SIDE);
+        sideScroll.addView(sideList, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        side = new LinearLayout(a);
+        side.setOrientation(LinearLayout.HORIZONTAL);
+        side.addView(sideScroll, new LinearLayout.LayoutParams(a.dp(SIDE_W), ViewGroup.LayoutParams.MATCH_PARENT));
+        View edge = new View(a);
+        edge.setBackgroundColor(0xFF3A3A37);
+        side.addView(edge, new LinearLayout.LayoutParams(a.dp(1), ViewGroup.LayoutParams.MATCH_PARENT));
         loadTabs();
+    }
+
+    boolean wide() {
+        return a.getResources().getConfiguration().screenWidthDp >= WIDE_DP;
+    }
+
+    void applyMode(boolean animate) {
+        String mode = prefs.getString("tabMode", "auto");
+        boolean v = mode.equals("vertical") || (mode.equals("auto") && wide());
+        boolean changed = v != vertical;
+        vertical = v;
+        if (sideAnim != null) {
+            sideAnim.cancel();
+        }
+        setSideWidth(vertical && prefs.getBoolean("sideOpen", true) ? a.dp(SIDE_W) + a.dp(1) : 0);
+        a.sideArrow.setVisibility(vertical ? View.VISIBLE : View.GONE);
+        syncArrow();
         render();
+        if (changed) {
+            a.inject();
+        }
+    }
+
+    void setSideWidth(int w) {
+        ViewGroup.LayoutParams lp = side.getLayoutParams();
+        if (lp == null) {
+            return;
+        }
+        lp.width = w;
+        side.setLayoutParams(lp);
+        side.setVisibility(w > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    void toggleSide() {
+        if (!vertical) {
+            return;
+        }
+        boolean open = !prefs.getBoolean("sideOpen", true);
+        prefs.edit().putBoolean("sideOpen", open).apply();
+        syncArrow();
+        int full = a.dp(SIDE_W) + a.dp(1);
+        int from = side.getVisibility() == View.VISIBLE ? side.getWidth() : 0;
+        if (sideAnim != null) {
+            sideAnim.cancel();
+        }
+        sideAnim = android.animation.ValueAnimator.ofInt(from, open ? full : 0);
+        sideAnim.setDuration(220);
+        sideAnim.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        sideAnim.addUpdateListener(an -> setSideWidth((int) an.getAnimatedValue()));
+        sideAnim.start();
+    }
+
+    void syncArrow() {
+        if (a.sideArrow != null) {
+            a.sideArrow.setText(prefs.getBoolean("sideOpen", true) ? "‹" : "›");
+        }
+    }
+
+    boolean folderOpen(String name) {
+        return prefs.getBoolean("fold." + name, !name.equals("Archive") && !name.equals("Created by Claude"));
+    }
+
+    void renderSide(Map<String, List<Item>> groups) {
+        sideList.removeAllViews();
+        TextView head = new TextView(a);
+        head.setText("Sessions");
+        head.setTextColor(MainActivity.TEXT);
+        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        head.setTypeface(Typeface.DEFAULT_BOLD);
+        head.setPadding(a.dp(8), a.dp(4), a.dp(8), a.dp(8));
+        sideList.addView(head);
+        if (items.isEmpty()) {
+            TextView empty = new TextView(a);
+            empty.setText("No sessions found on this page yet. Open claude.ai's own session list once, then they show up here.");
+            empty.setTextColor(MainActivity.MUTED);
+            empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            empty.setPadding(a.dp(8), 0, a.dp(8), 0);
+            sideList.addView(empty);
+            return;
+        }
+        for (Map.Entry<String, List<Item>> e : groups.entrySet()) {
+            List<Item> list = e.getValue();
+            if (list.isEmpty()) {
+                continue;
+            }
+            String name = e.getKey();
+            boolean open = folderOpen(name);
+            TextView f = new TextView(a);
+            f.setText(name + "  " + list.size());
+            f.setTextColor(MainActivity.TEXT);
+            f.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            f.setTypeface(Typeface.DEFAULT_BOLD);
+            f.setSingleLine(true);
+            f.setEllipsize(TextUtils.TruncateAt.END);
+            f.setGravity(Gravity.CENTER_VERTICAL);
+            f.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.folder, 0, 0, 0);
+            f.setCompoundDrawablePadding(a.dp(8));
+            f.setPadding(a.dp(8), 0, a.dp(8), 0);
+            f.setMinHeight(a.dp(40));
+            f.setOnClickListener(v -> {
+                prefs.edit().putBoolean("fold." + name, !open).apply();
+                render();
+            });
+            sideList.addView(f);
+            if (!open) {
+                continue;
+            }
+            for (Item it : list) {
+                TextView r = new TextView(a);
+                r.setText(it.title);
+                r.setTextColor(MainActivity.TEXT);
+                r.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                r.setSingleLine(true);
+                r.setEllipsize(TextUtils.TruncateAt.END);
+                r.setGravity(Gravity.CENTER_VERTICAL);
+                r.setMinHeight(a.dp(42));
+                r.setPadding(a.dp(34), 0, a.dp(8), 0);
+                if (it.id.equals(current)) {
+                    GradientDrawable o = new GradientDrawable();
+                    o.setCornerRadius(a.dp(8));
+                    o.setStroke(a.dp(2), MainActivity.TEXT);
+                    o.setColor(0);
+                    r.setBackground(o);
+                    r.setTypeface(Typeface.DEFAULT_BOLD);
+                }
+                r.setOnClickListener(v -> a.openSession(it.id));
+                sideList.addView(r);
+            }
+        }
     }
 
     LinearLayout row() {
@@ -195,7 +341,7 @@ class SessionBars {
             }
             tabRow.addView(chip);
         }
-        tabScroll.setVisibility(prefs.getBoolean("showTabs", true) && !tabs.isEmpty() ? View.VISIBLE : View.GONE);
+        tabScroll.setVisibility(!vertical && prefs.getBoolean("showTabs", true) && !tabs.isEmpty() ? View.VISIBLE : View.GONE);
         if (active != null) {
             View v = active;
             tabScroll.post(() -> tabScroll.smoothScrollTo(Math.max(0, v.getLeft() - a.dp(24)), 0));
@@ -219,7 +365,10 @@ class SessionBars {
                 bookRow.addView(bookmark(e.getKey(), e.getValue()));
             }
         }
-        bookScroll.setVisibility(prefs.getBoolean("showFolders", true) && bookRow.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+        bookScroll.setVisibility(!vertical && prefs.getBoolean("showFolders", true) && bookRow.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+        if (vertical) {
+            renderSide(groups);
+        }
     }
 
     View tabChip(String id, String title, boolean active) {
