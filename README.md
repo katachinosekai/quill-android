@@ -41,6 +41,11 @@ In Quill (0.1.1 or newer), open Settings → Phone:
 
 The app uses whichever source has the newest folders.
 
+## Notifications
+With Quill 0.1.5 or newer (paired as above), the app notifies you when a session needs approval, asks a question, has a plan to approve, finishes or hits an error, but not for the session you're looking at. Tap a notification to open that session. Choose the types in ⚙ → Notifications.
+
+While the app is closed, turn on ⚙ → "Notify in background (local network)": Android then shows a small "Quill is watching for approvals" notification with a Stop button. Background alerts work on the same network as your computer (or over Tailscale/VPN). Notifications only carry session titles and folders, never chat content.
+
 ## How it works
 The app is a WebView of `https://claude.ai/code` with a small script (`app/src/main/assets/quill.js`) injected on every page. The script restyles the page and builds the session drawer from the session links on the page. It never sends data anywhere; everything stays between your phone and claude.ai. Design notes are in [COMMENTS.md](COMMENTS.md).
 

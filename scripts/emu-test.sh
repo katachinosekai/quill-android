@@ -322,7 +322,9 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 	(cd "$WORK/fd" && GOFLAGS=-mod=mod go build -o foldersd . 2> "$OUT/foldersd-build.log")
 	KEY=emutest_0123456789abcdef
 	MAP='{"session_A1":"Active","session_B2":"Archive","session_C3":"Zomboid"}'
-	"$WORK/fd/foldersd" "$WORK/fd/cert" 0 "$KEY" "$MAP" > "$WORK/fd/out" 2>"$OUT/foldersd.log" &
+	echo '[]' > "$WORK/fd/events.json"
+	adb_ shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
+	"$WORK/fd/foldersd" "$WORK/fd/cert" 0 "$KEY" "$MAP" "$WORK/fd/events.json" > "$WORK/fd/out" 2>"$OUT/foldersd.log" &
 	FOLD_PID=$!
 	for i in $(seq 1 20); do [ -s "$WORK/fd/out" ] && break; sleep 0.5; done
 	read -r FPORT FP < "$WORK/fd/out"
@@ -338,6 +340,42 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 			wait_for 'text="Active  1"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
 			has 'text="Zomboid  1"' && ok "pairing: grouping" || bad "pairing: grouping"
 		fi
+		notif() { adb_ shell dumpsys notification --noredact 2>/dev/null | grep -c -F "$1"; }
+		now() { echo $(( $(date +%s) * 1000 )); }
+		sleep 4
+		EVS=""
+		addev() { EVS="$EVS${EVS:+,}{\"time\":$1,\"type\":\"$2\",\"rc\":\"$3\",\"quill\":\"q\",\"title\":\"$4\",\"folder\":\"$5\"}"; echo "[$EVS]" > "$WORK/fd/events.json"; }
+		addev "$(now)" approval session_C3 "Zomboid launcher" Zomboid
+		addev "$(now)" finished session_A1 "Fix edits" Active
+		for i in $(seq 1 20); do [ "$(notif 'Approval needed: Zomboid launcher')" -ge 1 ] && break; sleep 1; done
+		[ "$(notif 'Approval needed: Zomboid launcher')" -ge 1 ] && ok "notify: approval for another session" || bad "notify: approval for another session"
+		[ "$(notif 'Finished: Fix edits')" = 0 ] && ok "notify: silent for the session on screen" || bad "notify: silent for the session on screen"
+		addev 1000 error session_B2 "Stale event" Archive
+		sleep 4
+		[ "$(notif 'Stale event')" = 0 ] && ok "notify: ignores stale events" || bad "notify: ignores stale events"
+		tap_text "Settings" && sleep 2
+		tap_scroll "Notify in background" && sleep 3
+		adb_ shell input keyevent KEYCODE_BACK
+		sleep 1
+		adb_ shell dumpsys activity services "$PKG" | grep -q NotifyService && ok "background service starts" || bad "background service starts"
+		[ "$(notif 'Quill is watching for approvals')" -ge 1 ] && ok "background service notification shown" || bad "background service notification shown"
+		adb_ shell input keyevent KEYCODE_HOME
+		sleep 2
+		addev "$(now)" question session_B2 "Old server notes" Archive
+		for i in $(seq 1 30); do [ "$(notif 'Question: Old server notes')" -ge 1 ] && break; sleep 1; done
+		[ "$(notif 'Question: Old server notes')" -ge 1 ] && ok "notify in background (app closed)" || bad "notify in background (app closed)"
+		shot 06c-notifications
+		adb_ logcat -c
+		adb_ shell am start -W -n "$PKG/.MainActivity" --es quill.openSession session_C3 >/dev/null 2>&1
+		sleep 4
+		adb_ logcat -d -s QuillOpen:I | grep -q session_C3 && ok "notification opens its session" || bad "notification opens its session"
+		launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
+		sleep 3
+		tap_text "Settings" && sleep 2
+		tap_scroll "Notify in background" && sleep 2
+		adb_ shell input keyevent KEYCODE_BACK
+		sleep 2
+		adb_ shell dumpsys activity services "$PKG" | grep -q NotifyService && bad "background service stops" || ok "background service stops"
 		kill -INT "$FOLD_PID" 2>/dev/null
 		FOLD_PID=""
 		adb_ shell am force-stop "$PKG"

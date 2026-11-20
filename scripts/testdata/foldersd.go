@@ -12,8 +12,8 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 5 {
-		fmt.Fprintln(os.Stderr, "usage: foldersd <certdir> <port> <key> <sessions-json>")
+	if len(os.Args) < 5 {
+		fmt.Fprintln(os.Stderr, "usage: foldersd <certdir> <port> <key> <sessions-json> [events-file]")
 		os.Exit(2)
 	}
 	cert, fp, err := folders.LoadOrCreateCert(os.Args[1])
@@ -30,6 +30,23 @@ func main() {
 		panic(err)
 	}
 	s.Set(folders.Build("emu-test", []string{"Active", "Zomboid", "Inactive", "Archive", "Created by Claude"}, sessions, time.Now()).JSON())
+	s.SetEvents(true)
+	if len(os.Args) > 5 {
+		file := os.Args[5]
+		go func() {
+			sent := 0
+			for range time.Tick(300 * time.Millisecond) {
+				var evs []folders.Event
+				b, err := os.ReadFile(file)
+				if err != nil || json.Unmarshal(b, &evs) != nil {
+					continue
+				}
+				for ; sent < len(evs); sent++ {
+					s.Emit(evs[sent])
+				}
+			}
+		}()
+	}
 	fmt.Println(s.Port, fp)
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt)

@@ -273,6 +273,7 @@ class SessionBars {
             }
             Matcher m = SESSION.matcher(o.optString("path"));
             current = m.find() ? m.group(1) : null;
+            Notifier.foregroundRc = current;
         } catch (JSONException e) {
             return;
         }

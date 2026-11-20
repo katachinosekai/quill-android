@@ -56,6 +56,38 @@ public class MainActivity extends Activity {
     ValueCallback<Uri[]> pendingFiles;
     SessionBars bars;
     FolderSync sync;
+    Notifier fgNotifier;
+
+    void askNotifyPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 9);
+        }
+    }
+
+    void syncNotifier() {
+        boolean paired = !prefs.getString("pair.key", "").isEmpty();
+        if (paired && prefs.getBoolean("notifyBackground", false)) {
+            fgNotifier.stop();
+            NotifyService.start(this);
+        } else {
+            NotifyService.stop(this);
+            if (paired && Notifier.appVisible) {
+                fgNotifier.start(25);
+            } else {
+                fgNotifier.stop();
+            }
+        }
+    }
+
+    boolean handleOpen(Intent intent) {
+        String id = intent == null ? null : intent.getStringExtra(Notifier.EXTRA_OPEN);
+        if (id == null || !SessionBars.SESSION.matcher("/code/" + id).matches()) {
+            return false;
+        }
+        android.util.Log.i("QuillOpen", id);
+        web.loadUrl(HOME + "/" + id);
+        return true;
+    }
     Updater updater;
     Updater.Release pendingUpdate;
     TextView updateBanner;
@@ -108,6 +140,8 @@ public class MainActivity extends Activity {
         android.widget.Toast.makeText(this, name == null ? "Not a valid Quill pairing link" : "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
         if (name != null) {
             sync.refresh();
+            askNotifyPermission();
+            syncNotifier();
         }
     }
     TextView sideArrow;
@@ -207,6 +241,7 @@ public class MainActivity extends Activity {
             web.restoreState(state);
         }
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
+        fgNotifier = new Notifier(this);
         Updater.clean(this);
         updater = new Updater(this, prefs, new Updater.Listener() {
             @Override
@@ -240,6 +275,8 @@ public class MainActivity extends Activity {
         String test = testUrl(getIntent());
         if (test != null) {
             web.loadUrl(test);
+        } else if (handleOpen(getIntent())) {
+            return;
         } else if (state == null || web.getUrl() == null) {
             web.loadUrl(pairing ? startUrl(null) : startUrl(getIntent()));
         }
@@ -421,8 +458,27 @@ public class MainActivity extends Activity {
         }));
         box.addView(textButton("Unpair", v -> {
             sync.unpair();
+            syncNotifier();
             syncStatus.run();
         }));
+
+        section(box, "Notifications", true);
+        for (int i = 0; i < Notifier.TYPES.size(); i++) {
+            String key = "notify." + Notifier.TYPES.get(i);
+            CheckBox c = check(Notifier.LABELS[i], prefs.getBoolean(key, true));
+            c.setOnCheckedChangeListener((v, on) -> prefs.edit().putBoolean(key, on).apply());
+            box.addView(c);
+        }
+        CheckBox bg = check("Notify in background (local network)", prefs.getBoolean("notifyBackground", false));
+        bg.setContentDescription("Notify in background");
+        bg.setOnCheckedChangeListener((v, on) -> {
+            prefs.edit().putBoolean("notifyBackground", on).apply();
+            if (on) {
+                askNotifyPermission();
+            }
+            syncNotifier();
+        });
+        box.addView(bg);
 
         section(box, "Sign-in", true);
         box.addView(textButton("Open claude.ai links in Quill", v -> openLinkSettings()));
@@ -917,6 +973,9 @@ public class MainActivity extends Activity {
             web.loadUrl(test);
             return;
         }
+        if (handleOpen(intent)) {
+            return;
+        }
         Uri data = intent.getData();
         if (data != null && inApp(data)) {
             web.loadUrl(data.toString());
@@ -961,6 +1020,10 @@ public class MainActivity extends Activity {
         if (sync != null) {
             sync.stop();
         }
+        Notifier.appVisible = false;
+        if (fgNotifier != null && !prefs.getBoolean("notifyBackground", false)) {
+            fgNotifier.stop();
+        }
     }
 
     @Override
@@ -971,6 +1034,10 @@ public class MainActivity extends Activity {
         }
         if (updater != null) {
             updater.checkIfDue();
+        }
+        Notifier.appVisible = true;
+        if (fgNotifier != null) {
+            syncNotifier();
         }
     }
 

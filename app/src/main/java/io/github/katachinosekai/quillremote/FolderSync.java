@@ -149,7 +149,7 @@ class FolderSync {
     void unpair() {
         prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
                 .remove("pair.name").remove("pair.fileName").remove("pair.file").remove("folders.cache").remove("folders.source")
-                .remove("folders.at").apply();
+                .remove("folders.at").remove("events.boot").remove("events.since").apply();
         listener.onFolders(new LinkedHashMap<>(), new ArrayList<>());
     }
 

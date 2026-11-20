@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.katachinosekai.quillremote"
         minSdk = 30
         targetSdk = 36
-        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 11
-        versionName = (project.findProperty("qVersionName") as String?) ?: "0.7.2"
+        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 12
+        versionName = (project.findProperty("qVersionName") as String?) ?: "0.8.0"
     }
 
     signingConfigs {
