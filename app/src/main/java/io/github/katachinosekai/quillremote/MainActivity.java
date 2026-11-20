@@ -45,7 +45,7 @@ public class MainActivity extends Activity {
     static final int ZOOM_MAX = 200;
     static final int FILE_PICK = 7;
     static final int SYNC_PICK = 8;
-    static final String QUILL_SYNCED = "0.1.3";
+    static final String QUILL_SYNCED = "0.1.8";
 
     WebView web;
     ProgressBar progress;
@@ -198,6 +198,7 @@ public class MainActivity extends Activity {
         body.addView(column, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
         column.addView(bars.tabScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
         column.addView(bars.bookScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+        column.addView(bars.usageStrip, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(false);
@@ -247,6 +248,11 @@ public class MainActivity extends Activity {
         }
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
         fgNotifier = new Notifier(this);
+        sync.usageListener = json -> bars.setUsage(json);
+        String cachedUsage = prefs.getString("usage.cache", null);
+        if (cachedUsage != null) {
+            bars.setUsage(cachedUsage);
+        }
         Updater.clean(this);
         updater = new Updater(this, prefs, new Updater.Listener() {
             @Override
@@ -949,6 +955,7 @@ public class MainActivity extends Activity {
                 + "}"
                 + ",drawer:false"
                 + ",hwkb:" + hardwareKeyboard()
+                + ",debugKeys:" + debuggable
                 + ",edgeArrow:false"
                 + ",folders:" + new org.json.JSONObject(folderMap)
                 + ",order:" + new org.json.JSONArray(folderOrder) + "};";

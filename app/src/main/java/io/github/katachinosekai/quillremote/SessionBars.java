@@ -50,6 +50,127 @@ class SessionBars {
     final List<String> order = new ArrayList<>();
     final List<String[]> tabs = new ArrayList<>();
     String current;
+    JSONObject usage;
+    JSONObject meta = new JSONObject();
+    final TextView usageStrip;
+
+    void setUsage(String json) {
+        try {
+            JSONObject o = new JSONObject(json);
+            if (o.optInt("version") != 1) {
+                return;
+            }
+            usage = o.optJSONObject("usage");
+            meta = o.optJSONObject("meta") == null ? new JSONObject() : o.optJSONObject("meta");
+        } catch (JSONException e) {
+            return;
+        }
+        render();
+    }
+
+    static String tok(long n) {
+        if (n >= 1_000_000_000L) {
+            return String.format(java.util.Locale.ROOT, "%.1fB", n / 1e9);
+        }
+        if (n >= 1_000_000L) {
+            return String.format(java.util.Locale.ROOT, "%.1fM", n / 1e6);
+        }
+        if (n >= 1000) {
+            return String.format(java.util.Locale.ROOT, "%.1fK", n / 1e3);
+        }
+        return String.valueOf(n);
+    }
+
+    static String pct(JSONObject w) {
+        return w == null ? "–" : Math.round(w.optDouble("utilization") * 100) + "%";
+    }
+
+    static String resets(JSONObject w) {
+        long t = w == null ? 0 : w.optLong("resetsAt");
+        return t == 0 ? "" : " · resets " + new java.text.SimpleDateFormat("H:mm", java.util.Locale.getDefault()).format(new java.util.Date(t * 1000));
+    }
+
+    String[] usageParts() {
+        if (usage == null) {
+            return null;
+        }
+        JSONObject five = usage.optJSONObject("fiveHour"), week = usage.optJSONObject("weekly");
+        JSONObject m = current == null ? null : meta.optJSONObject(current);
+        String sess = m == null ? "–" : tok(m.optLong("tokens")) + (m.optLong("contextMax") > 0 ? " · ctx " + Math.round(100.0 * m.optLong("context") / m.optLong("contextMax")) + "%" : "");
+        String credits = usage.optString("credits");
+        return new String[]{
+                "5-hour " + pct(five) + resets(five),
+                "Session " + sess,
+                "All sessions " + tok(usage.optLong("today")) + " today",
+                "Weekly " + pct(week) + (credits.isEmpty() || credits.equals("not reported") ? "" : " · credits " + credits)};
+    }
+
+    static int statusColor(String s) {
+        switch (s) {
+            case "running":
+                return 0xFF5BA8F5;
+            case "waiting":
+                return 0xFFF2B33D;
+            case "idle":
+                return 0xFF6CC06C;
+            case "error":
+                return 0xFFE55B5B;
+            case "terminal":
+                return 0xFFA07CE8;
+        }
+        return 0x00000000;
+    }
+
+    CharSequence subline(Item it) {
+        JSONObject m = meta.optJSONObject(it.id);
+        if (m == null) {
+            return null;
+        }
+        long last = m.optLong("last");
+        String txt = (last > 0 ? FolderSync.ago(System.currentTimeMillis() - last) : "") + (m.optInt("msgs") > 0 ? "  ·  " + m.optInt("msgs") + " msgs" : "");
+        int col = statusColor(m.optString("status"));
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        if (col != 0) {
+            sb.append("● ");
+            sb.setSpan(new android.text.style.ForegroundColorSpan(col), 0, 1, 0);
+        }
+        sb.append(txt);
+        return sb;
+    }
+
+    View twoLine(Item it, int padLeft, int titleSp) {
+        LinearLayout l = new LinearLayout(a);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setGravity(Gravity.CENTER_VERTICAL);
+        l.setMinimumHeight(a.dp(44));
+        l.setPadding(padLeft, a.dp(4), a.dp(10), a.dp(4));
+        TextView t = new TextView(a);
+        t.setText(it.title);
+        t.setTextColor(MainActivity.TEXT);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, titleSp);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        l.addView(t);
+        CharSequence sub = subline(it);
+        if (sub != null) {
+            TextView s = new TextView(a);
+            s.setText(sub);
+            s.setTextColor(MainActivity.MUTED);
+            s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            s.setSingleLine(true);
+            s.setEllipsize(TextUtils.TruncateAt.END);
+            l.addView(s);
+        }
+        if (it.id.equals(current)) {
+            GradientDrawable o = new GradientDrawable();
+            o.setCornerRadius(a.dp(8));
+            o.setStroke(a.dp(2), MainActivity.TEXT);
+            o.setColor(0);
+            l.setBackground(o);
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        return l;
+    }
     static final int SIDE_W = 300;
     static final int WIDE_DP = 600;
     final LinearLayout side, sideList;
@@ -63,6 +184,16 @@ class SessionBars {
         tabRow = row();
         bookRow = row();
         tabScroll = scroller(tabRow);
+        usageStrip = new TextView(a);
+        usageStrip.setTextColor(MainActivity.MUTED);
+        usageStrip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        usageStrip.setSingleLine(true);
+        usageStrip.setEllipsize(TextUtils.TruncateAt.END);
+        usageStrip.setGravity(Gravity.CENTER);
+        usageStrip.setBackgroundColor(MainActivity.SIDE);
+        usageStrip.setPadding(a.dp(8), 0, a.dp(8), a.dp(2));
+        usageStrip.setContentDescription("Usage");
+        usageStrip.setVisibility(View.GONE);
         bookScroll = scroller(bookRow);
         sideList = new LinearLayout(a);
         sideList.setOrientation(LinearLayout.VERTICAL);
@@ -214,6 +345,19 @@ class SessionBars {
         head.setTypeface(Typeface.DEFAULT_BOLD);
         head.setPadding(a.dp(8), a.dp(4), a.dp(8), a.dp(8));
         sideList.addView(head);
+        String[] parts = usageParts();
+        if (parts != null) {
+            for (String p : parts) {
+                TextView u = new TextView(a);
+                u.setText(p);
+                u.setTextColor(MainActivity.MUTED);
+                u.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                u.setSingleLine(true);
+                u.setEllipsize(TextUtils.TruncateAt.END);
+                u.setPadding(a.dp(8), 0, a.dp(8), a.dp(2));
+                sideList.addView(u);
+            }
+        }
         if (items.isEmpty()) {
             TextView empty = new TextView(a);
             empty.setText("No sessions found on this page yet. Open claude.ai's own session list once, then they show up here.");
@@ -255,23 +399,7 @@ class SessionBars {
                 continue;
             }
             for (Item it : list) {
-                TextView r = new TextView(a);
-                r.setText(it.title);
-                r.setTextColor(MainActivity.TEXT);
-                r.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-                r.setSingleLine(true);
-                r.setEllipsize(TextUtils.TruncateAt.END);
-                r.setGravity(Gravity.CENTER_VERTICAL);
-                r.setMinHeight(a.dp(42));
-                r.setPadding(a.dp(34), 0, a.dp(8), 0);
-                if (it.id.equals(current)) {
-                    GradientDrawable o = new GradientDrawable();
-                    o.setCornerRadius(a.dp(8));
-                    o.setStroke(a.dp(2), MainActivity.TEXT);
-                    o.setColor(0);
-                    r.setBackground(o);
-                    r.setTypeface(Typeface.DEFAULT_BOLD);
-                }
+                View r = twoLine(it, a.dp(34), 14);
                 r.setOnClickListener(v -> a.openSession(it.id));
                 sideList.addView(r);
             }
@@ -424,6 +552,11 @@ class SessionBars {
             tabRow.addView(chip);
         }
         boolean barsOn = !prefs.getBoolean("barsHidden", false);
+        String[] up = usageParts();
+        if (up != null) {
+            usageStrip.setText(String.join("   |   ", up));
+        }
+        usageStrip.setVisibility(!vertical && barsOn && up != null ? View.VISIBLE : View.GONE);
         tabScroll.setVisibility(!vertical && barsOn && prefs.getBoolean("showTabs", true) && !tabs.isEmpty() ? View.VISIBLE : View.GONE);
         if (active != null) {
             View v = active;
@@ -621,28 +754,7 @@ class SessionBars {
         pop.setAdapter(new ArrayAdapter<Item>(a, android.R.layout.simple_list_item_1, list) {
             @Override
             public View getView(int pos, View convert, ViewGroup parent) {
-                TextView t = convert instanceof TextView ? (TextView) convert : new TextView(a);
-                Item it = getItem(pos);
-                t.setText(it.title);
-                t.setTextColor(MainActivity.TEXT);
-                t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-                t.setSingleLine(true);
-                t.setEllipsize(TextUtils.TruncateAt.END);
-                t.setMinHeight(a.dp(44));
-                t.setGravity(Gravity.CENTER_VERTICAL);
-                t.setPadding(a.dp(14), 0, a.dp(14), 0);
-                boolean cur = it.id.equals(current);
-                t.setTypeface(cur ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-                if (cur) {
-                    GradientDrawable o = new GradientDrawable();
-                    o.setCornerRadius(a.dp(8));
-                    o.setStroke(a.dp(2), MainActivity.TEXT);
-                    o.setColor(0);
-                    t.setBackground(o);
-                } else {
-                    t.setBackground(new ColorDrawable(0));
-                }
-                return t;
+                return twoLine(getItem(pos), a.dp(14), 15);
             }
         });
         pop.setOnItemClickListener((p, v, pos, id) -> {

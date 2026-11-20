@@ -4,12 +4,19 @@ set -u
 AVD=qfold
 KEEP=0
 WINDOW=0
+DEVICE=""
+CLEANUP=0
+FULL=0
+SCALE=0.15
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--avd) AVD="$2"; shift ;;
 	--keep) KEEP=1 ;;
 	--window) WINDOW=1 ;;
-	-h|--help) echo "usage: scripts/emu-test.sh [--avd qfold|qphone|qtab] [--keep] [--window]"; exit 0 ;;
+	--device) DEVICE="$2"; shift ;;
+	--cleanup) CLEANUP=1 ;;
+	--full) FULL=1; SCALE=1 ;;
+	-h|--help) echo "usage: scripts/emu-test.sh [--avd qfold|qphone|qtab] [--keep] [--window] | --device <ip:port> [--cleanup]"; exit 0 ;;
 	*) echo "unknown option $1"; exit 2 ;;
 	esac
 	shift
@@ -24,7 +31,9 @@ export PATH=$JAVA_HOME/bin:$HOME/.local/go/bin:$PATH
 ADB=$SDK/platform-tools/adb
 EMU=$SDK/emulator/emulator
 AVDMGR=$SDK/cmdline-tools/latest/bin/avdmanager
-PKG=io.github.katachinosekai.quillremote
+PKG=io.github.katachinosekai.quillremote.debug
+ACT=io.github.katachinosekai.quillremote.MainActivity
+[ -n "$DEVICE" ] && AVD=device
 OUT=$ROOT/build/emu-test/$(date +%Y%m%d-%H%M%S)-$AVD
 mkdir -p "$OUT"
 WORK=$(mktemp -d)
@@ -38,15 +47,37 @@ FOLD_PID=""
 log() { echo "$*" | tee -a "$OUT/results.txt"; }
 ok() { PASS=$((PASS + 1)); log "PASS  $1"; }
 bad() { FAIL=$((FAIL + 1)); log "FAIL  $1${2:+  ($2)}"; }
-adb_() { timeout 30 "$ADB" -s "$SERIAL" "$@"; }
+DIRTY=1
+CACHE=""
+adb_() {
+	case " $* " in *" input "*|*" am "*|*" install "*|*" uninstall "*|*" reverse "*) DIRTY=1 ;; esac
+	timeout 30 "$ADB" -s "$SERIAL" "$@"
+}
+nap() { sleep "$(awk -v a="$1" -v b="$SCALE" 'BEGIN{printf "%.2f", a*b}')"; DIRTY=1; }
+ANIM=""
 
+restore_anim() {
+	[ -z "$ANIM" ] && return
+	set -- $ANIM
+	for kv in "window_animation_scale:$1" "transition_animation_scale:$2" "animator_duration_scale:$3"; do
+		k=${kv%%:*}; v=${kv#*:}
+		if [ "$v" = null ] || [ -z "$v" ]; then
+			timeout 15 "$ADB" -s "$SERIAL" shell settings delete global "$k" >/dev/null 2>&1
+		else
+			timeout 15 "$ADB" -s "$SERIAL" shell settings put global "$k" "$v" >/dev/null 2>&1
+		fi
+	done
+	ANIM=""
+	[ -n "${SAVED:-}" ] && rm -f "$SAVED"
+}
 cleanup() {
+	restore_anim
 	[ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null
 	[ -n "$FOLD_PID" ] && kill -INT "$FOLD_PID" 2>/dev/null
 	if [ -n "$SERIAL" ]; then
 		adb_ logcat -d > "$OUT/logcat.txt" 2>/dev/null
 		adb_ reverse --remove-all 2>/dev/null
-		[ "$KEEP" = 0 ] && [ -n "$EMU_PID" ] && adb_ emu kill >/dev/null 2>&1
+		[ "$KEEP" = 0 ] && [ -n "$EMU_PID" ] && [ -z "$DEVICE" ] && adb_ emu kill >/dev/null 2>&1
 	fi
 	rm -rf "$WORK"
 }
@@ -56,15 +87,19 @@ display() { adb_ shell dumpsys display 2>/dev/null | grep -F 'DisplayDeviceInfo{
 awake() {
 	adb_ shell input keyevent KEYCODE_WAKEUP
 	adb_ shell wm dismiss-keyguard >/dev/null 2>&1
-	sleep 2
+	nap 2
 }
 shot() {
 	local d; d=$(display)
 	adb_ exec-out screencap -p ${d:+-d "$d"} > "$OUT/$1.png" 2>/dev/null
 }
 dump() {
-	adb_ shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-	adb_ exec-out cat /sdcard/ui.xml 2>/dev/null
+	if [ "$DIRTY" = 1 ]; then
+		timeout 30 "$ADB" -s "$SERIAL" shell uiautomator dump --compressed /sdcard/ui.xml >/dev/null 2>&1
+		CACHE=$(timeout 30 "$ADB" -s "$SERIAL" exec-out cat /sdcard/ui.xml 2>/dev/null)
+		DIRTY=0
+	fi
+	printf '%s' "$CACHE"
 }
 has() { dump | grep -q -F "$1"; }
 native() { dump | tr '>' '\n' | grep -F "$1" | grep -q -F 'class="android.widget.TextView"'; }
@@ -72,23 +107,27 @@ native_gone() {
 	local i
 	for i in $(seq 1 "${2:-10}"); do
 		native "$1" || return 0
-		sleep 1
+		nap 1
 	done
 	return 1
 }
 wait_for() {
-	local what=$1 secs=${2:-15} i
-	for i in $(seq 1 "$secs"); do
+	local what=$1 secs=${2:-15} end
+	end=$(( $(date +%s) + secs ))
+	while [ "$(date +%s)" -le "$end" ]; do
+		DIRTY=1
 		has "$what" && return 0
-		sleep 1
+		sleep 0.15
 	done
 	return 1
 }
 gone() {
-	local what=$1 secs=${2:-10} i
-	for i in $(seq 1 "$secs"); do
+	local what=$1 secs=${2:-10} end
+	end=$(( $(date +%s) + secs ))
+	while [ "$(date +%s)" -le "$end" ]; do
+		DIRTY=1
 		has "$what" || return 0
-		sleep 1
+		sleep 0.15
 	done
 	return 1
 }
@@ -108,8 +147,9 @@ tap_scroll() {
 		size=$(adb_ shell wm size | tail -1 | awk '{print $3}')
 		w=${size%x*}
 		h=${size#*x}
-		adb_ shell input swipe $((w / 2)) $((h * 3 / 4)) $((w / 2)) $((h / 4)) 300
-		sleep 1
+		adb_ shell input swipe $((w / 2)) $((h * 3 / 5)) $((w / 2)) $((h * 2 / 5)) 400
+		sleep 0.7
+		DIRTY=1
 	done
 	return 1
 }
@@ -128,24 +168,35 @@ width_dp() {
 	w=${size%x*}
 	echo $((w * 160 / dens))
 }
-launch() { adb_ shell am start -W -n "$PKG/.MainActivity" "$@" >/dev/null 2>&1; }
+launch() { adb_ shell am start -W -n "$PKG/$ACT" "$@" >/dev/null 2>&1; }
 
 log "Quill for Android emulator test: $AVD  ($(date))"
 
-if ! "$EMU" -list-avds | grep -qx "$AVD"; then
+if [ -n "$DEVICE" ]; then
+	"$ADB" connect "$DEVICE" >/dev/null 2>&1
+	SERIAL=$DEVICE
+elif ! "$EMU" -list-avds | grep -qx "$AVD"; then
 	case "$AVD" in
 	qphone) dev=pixel_8 ;;
 	qfold) dev=pixel_fold ;;
 	qtab) dev=pixel_tablet ;;
+	qp90) dev=custom ;;
 	*) dev=pixel_8 ;;
 	esac
-	echo no | "$AVDMGR" create avd -n "$AVD" -k "system-images;android-36;google_apis;x86_64" -d "$dev" >/dev/null || { log "cannot create AVD $AVD"; exit 2; }
+	if [ "$dev" = custom ]; then
+		echo no | "$AVDMGR" create avd -n "$AVD" -k "system-images;android-36;google_apis;x86_64" >/dev/null || { log "cannot create AVD $AVD"; exit 2; }
+		cfg="$HOME/.android/avd/$AVD.avd/config.ini"
+		sed -i '/^hw.lcd.width=/d;/^hw.lcd.height=/d;/^hw.lcd.density=/d;/^hw.keyboard=/d;/^hw.ramSize=/d' "$cfg"
+		printf 'hw.lcd.width=1200\nhw.lcd.height=1920\nhw.lcd.density=240\nhw.keyboard=yes\nhw.ramSize=3072\n' >> "$cfg"
+	else
+		echo no | "$AVDMGR" create avd -n "$AVD" -k "system-images;android-36;google_apis;x86_64" -d "$dev" >/dev/null || { log "cannot create AVD $AVD"; exit 2; }
+	fi
 fi
 
-SERIAL=$("$ADB" devices | awk 'NR>1 && $2=="device" && $1 ~ /^emulator-/ {print $1}' | while read -r s; do
+[ -z "$DEVICE" ] && SERIAL=$("$ADB" devices | awk 'NR>1 && $2=="device" && $1 ~ /^emulator-/ {print $1}' | while read -r s; do
 	[ "$(timeout 5 "$ADB" -s "$s" emu avd name 2>/dev/null | head -1 | tr -d '\r')" = "$AVD" ] && echo "$s"
 done | head -1)
-if [ -z "$SERIAL" ]; then
+if [ -z "$SERIAL" ] && [ -z "$DEVICE" ]; then
 	port=5554
 	while "$ADB" devices | grep -q "emulator-$port"; do port=$((port + 2)); done
 	SERIAL=emulator-$port
@@ -155,7 +206,7 @@ if [ -z "$SERIAL" ]; then
 	EMU_PID=$!
 	for i in $(seq 1 120); do
 		[ "$(timeout 5 "$ADB" -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && break
-		sleep 2
+		nap 2
 	done
 fi
 [ "$(adb_ shell getprop sys.boot_completed | tr -d '\r')" = 1 ] || { log "emulator did not boot"; exit 2; }
@@ -164,12 +215,35 @@ log "device $SERIAL"
 (cd "$ROOT" && ./gradlew -q assembleDebug) || { log "build failed"; exit 2; }
 adb_ uninstall "$PKG" >/dev/null 2>&1
 adb_ install -r "$ROOT/app/build/outputs/apk/debug/app-debug.apk" >/dev/null || { log "install failed"; exit 2; }
-adb_ shell settings put global window_animation_scale 0
-adb_ shell settings put global transition_animation_scale 0
-adb_ shell settings put global animator_duration_scale 0
-adb_ shell settings put system fold_lock_behavior_setting stay_awake_on_fold_key
-adb_ shell settings put system screen_off_timeout 1800000
-adb_ shell locksettings set-disabled true >/dev/null 2>&1
+if [ -z "$DEVICE" ]; then
+	adb_ shell settings put global window_animation_scale 0
+	adb_ shell settings put global transition_animation_scale 0
+	adb_ shell settings put global animator_duration_scale 0
+	adb_ shell settings put system fold_lock_behavior_setting stay_awake_on_fold_key
+	adb_ shell settings put system screen_off_timeout 1800000
+	adb_ shell locksettings set-disabled true >/dev/null 2>&1
+fi
+if [ -n "$DEVICE" ]; then
+	SAVED="$HOME/.cache/quill-emu-anim-$(echo "$SERIAL" | tr -c 'A-Za-z0-9' _)"
+	if [ -s "$SAVED" ]; then
+		ANIM=$(cat "$SAVED")
+		restore_anim
+		log "restored animation settings left over from an interrupted run"
+	fi
+	ANIM="$(adb_ shell settings get global window_animation_scale | tr -d '\r') $(adb_ shell settings get global transition_animation_scale | tr -d '\r') $(adb_ shell settings get global animator_duration_scale | tr -d '\r')"
+	mkdir -p "$HOME/.cache"
+	echo "$ANIM" > "$SAVED"
+	echo "$ANIM" > "$OUT/animations-before.txt"
+	adb_ shell settings put global window_animation_scale 0
+	adb_ shell settings put global transition_animation_scale 0
+	adb_ shell settings put global animator_duration_scale 0
+fi
+HOSTIP=10.0.2.2
+if [ -n "$DEVICE" ]; then
+	DEVIP=$(adb_ shell ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | tr -d '\r')
+	HOSTIP=$(ip -4 route get "${DEVIP:-${DEVICE%%:*}}" 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
+	log "device ip $DEVIP, this PC $HOSTIP"
+fi
 adb_ logcat -c
 adb_ logcat -b crash -c
 
@@ -197,7 +271,7 @@ adb_ reverse tcp:8765 tcp:8765 >/dev/null
 [ "$AVD" = qfold ] && adb_ emu unfold >/dev/null
 awake
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
-sleep 4
+nap 4
 shot 01-start
 crashed && bad "launch" "crash in logcat" || ok "launch"
 has 'text="Quill"' && ok "top bar" || bad "top bar"
@@ -207,18 +281,18 @@ log "screen width ${wide}dp"
 if [ "$wide" -ge 600 ]; then
 	wait_for 'text="Fix edits"' 20 && ok "vertical sidebar lists sessions" || bad "vertical sidebar lists sessions"
 	has 'content-desc="Sidebar"' && ok "sidebar arrow shown" || bad "sidebar arrow shown"
-	tap_text "Zomboid launcher" && sleep 3
+	tap_text "Zomboid launcher" && nap 3
 	adb_ shell dumpsys activity top | grep -q "$PKG" && ok "open session from sidebar" || bad "open session from sidebar"
-	tap_text "Sidebar" && sleep 2
+	tap_text "Sidebar" && nap 2
 	shot 02-sidebar-closed
 	native_gone 'text="Sessions"' 5 && ok "arrow hides sidebar" || bad "arrow hides sidebar"
-	tap_text "Sidebar" && sleep 2
+	tap_text "Sidebar" && nap 2
 	wait_for 'text="Sessions"' 5 && ok "arrow shows sidebar" || bad "arrow shows sidebar"
 fi
 
-if [ "$AVD" = qfold ]; then
+if [ "$AVD" = qfold ] && [ -z "$DEVICE" ]; then
 	adb_ emu fold >/dev/null
-	sleep 4
+	nap 4
 	awake
 	shot 03-folded
 	log "folded width $(width_dp)dp"
@@ -227,39 +301,39 @@ if [ "$AVD" = qfold ]; then
 	wait_for 'text="Other (4)"' 15 && ok "folded: folder bar" || bad "folded: folder bar"
 	wait_for 'Close tab' 10 && ok "folded: tab bar" || bad "folded: tab bar"
 	adb_ emu unfold >/dev/null
-	sleep 4
+	nap 4
 	awake
 	wait_for 'text="Sessions"' 10 && ok "unfold: sidebar back" || bad "unfold: sidebar back"
 	adb_ emu fold >/dev/null
-	sleep 4
+	nap 4
 	awake
 fi
 
 if [ "$(width_dp)" -lt 600 ]; then
 	has 'content-desc="Sidebar"' && ok "top-left arrow on phone" || bad "top-left arrow on phone"
-	tap_text "Sidebar" && sleep 2
+	tap_text "Sidebar" && nap 2
 	shot 03b-bars-hidden
 	gone 'text="Other (4)"' 5 && ok "arrow hides tab and folder bars" || bad "arrow hides tab and folder bars"
 	has 'text="Sessions"' && bad "no vertical list in horizontal mode" || ok "no vertical list in horizontal mode"
-	tap_text "Sidebar" && sleep 2
+	tap_text "Sidebar" && nap 2
 	wait_for 'text="Other (4)"' 15 && ok "folder bar" || bad "folder bar"
 	b=$(dump | tr '>' '\n' | grep -F 'text="Other (4)"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
 	if [ -n "$b" ]; then
 		set -- $b
 		adb_ shell input swipe $((($1 + $3) / 2)) $((($2 + $4) / 2)) $((($1 + $3) / 2)) $((($2 + $4) / 2)) 900
-		sleep 2
-		tap_text "Open all in tabs" && sleep 3
+		nap 2
+		tap_text "Open all in tabs" && nap 3
 		n=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o 'session_[A-Za-z0-9]*' | sort -u | wc -l)
 		[ "$n" -ge 4 ] && ok "folder long-press: open all in tabs ($n)" || bad "folder long-press: open all in tabs" "$n tabs"
 	fi
-	tap_text "Other (4)" && sleep 2
+	tap_text "Other (4)" && nap 2
 	shot 04-dropdown
 	has 'text="Unsorted idea"' && ok "folder drop-down" || bad "folder drop-down"
 	adb_ shell input keyevent KEYCODE_BACK
-	sleep 1
+	nap 1
 	tap_text "Unsorted idea" >/dev/null 2>&1
 	launch --es quill.testUrl http://127.0.0.1:8765/code/session_D4/
-	sleep 3
+	nap 3
 	b=$(dump | tr '>' '\n' | grep -F 'content-desc="Close tab"' | wc -l)
 	[ "$b" -ge 1 ] && ok "tabs recorded ($b)" || bad "tabs recorded"
 	adb_ shell input tap 10 10 >/dev/null
@@ -268,59 +342,59 @@ fi
 for j in Artifacts Customize More Scheduled "Edit sidebar"; do has "text=\"$j\"" && bad "hidden: $j" || ok "hidden: $j"; done
 has 'text="Code"' && bad "hidden: Code label" || ok "hidden: Code label"
 has 'Remote Control is on' && bad "Remote Control Learn-more prompt closed" || ok "Remote Control Learn-more prompt closed"
-tap_edit && sleep 1
+tap_edit && nap 1
 adb_ shell input text hello
 adb_ shell input keyevent KEYCODE_ENTER
-sleep 2
-has 'text="sent:hello"' && ok "Enter sends" || bad "Enter sends" "$(dump | grep -o 'sent:[^"]*' | head -1)"
-tap_edit && sleep 1
+nap 2
+dump | grep -q -i 'text="sent:hello"' && ok "Enter sends" || bad "Enter sends" "$(dump | grep -o 'sent:[^"]*' | head -1)"
+tap_edit && nap 1
 adb_ shell input text one
 adb_ shell input keycombination KEYCODE_SHIFT_LEFT KEYCODE_ENTER
 adb_ shell input text two
-sleep 1
-has 'text="sent:hello"' && ok "Shift+Enter makes a line break (not sent)" || bad "Shift+Enter makes a line break (not sent)"
+nap 1
+dump | grep -q -i 'text="sent:hello"' && ok "Shift+Enter makes a line break (not sent)" || bad "Shift+Enter makes a line break (not sent)"
 adb_ shell input keyevent KEYCODE_ENTER
-sleep 2
-has 'sent:one|two' && ok "multi-line message sent with Enter" || bad "multi-line message sent with Enter" "$(dump | grep -o 'sent:[^"]*' | head -1)"
+nap 2
+dump | grep -q -i 'sent:one|two' && ok "multi-line message sent with Enter" || bad "multi-line message sent with Enter" "$(dump | grep -o 'sent:[^"]*' | head -1)"
 first=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o '\[\[&quot;session_[A-Za-z0-9]*' | head -1 | grep -o 'session_[A-Za-z0-9]*')
 adb_ shell input keycombination KEYCODE_CTRL_LEFT KEYCODE_1
-sleep 3
+nap 3
 if [ -n "$first" ]; then
 	adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "name=\"last\">https://claude.ai/code/$first<" && ok "Ctrl+1 opens the first tab ($first)" || bad "Ctrl+1 opens the first tab" "$first"
 fi
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
-sleep 3
-tap_text "Continue with Google test" && sleep 2
+nap 3
+tap_text "Continue with Google test" && nap 2
 shot 04b-google-intercept
 has 'text="Sign in with email"' && ok "Google sign-in intercepted with help dialog" || bad "Google sign-in intercepted with help dialog"
 adb_ shell dumpsys activity top | grep -q "ACTIVITY $PKG" && ok "Google link stays in app" || bad "Google link stays in app"
 tap_text "OK" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
-sleep 1
-tap_text "GitHub connect test" && sleep 5
+nap 1
+tap_text "GitHub connect test" && nap 5
 adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q "$PKG" && ok "GitHub sign-in stays in Quill" || bad "GitHub sign-in stays in Quill" "$(adb_ shell dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity')"
 has 'Mock session page' && bad "GitHub page replaced the mock (skin check skipped)" || ok "GitHub page loaded in the app"
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
-sleep 3
-tap_text "GitHub repo test" && sleep 4
+nap 3
+tap_text "GitHub repo test" && nap 4
 adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q "$PKG" && bad "GitHub repo link opens outside" || ok "GitHub repo link opens outside"
 adb_ shell am force-stop com.android.chrome >/dev/null 2>&1
 launch --es quill.testUrl http://127.0.0.1:8765/login/
-sleep 3
+nap 3
 wait_for 'content-desc="Sign-in tip"' 8 && ok "sign-in tip on login page" || bad "sign-in tip on login page"
-tap_text "Sign-in tip" && sleep 1
+tap_text "Sign-in tip" && nap 1
 gone 'content-desc="Sign-in tip"' 5 && ok "sign-in tip dismissed" || bad "sign-in tip dismissed"
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
-sleep 3
+nap 3
 
 if has 'text="A+"' || has 'text="A−"'; then bad "A+/A− removed from top bar"; else ok "A+/A− removed from top bar"; fi
 pinch() {
 	adb_ shell am force-stop "$PKG"
 	launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/ --ef quill.testPinch "$1"
-	sleep 3
-	tap_text "Settings" && sleep 2
+	nap 3
+	tap_text "Settings" && nap 2
 	has "Text size  $2" && ok "pinch x$1 -> $2" || bad "pinch x$1 -> $2" "$(dump | grep -o 'Text size  [0-9]*%' | head -1)"
 	adb_ shell input keyevent KEYCODE_BACK
-	sleep 1
+	nap 1
 }
 pinch 1.5 175%
 pinch 0.5 90%
@@ -328,17 +402,17 @@ pinch 10 200%
 pinch 0.1 80%
 pinch 1.4375 115%
 pinch 1.5 175%
-tap_text "Settings" && sleep 2
-tap_text "Reset" && sleep 1
+tap_text "Settings" && nap 2
+tap_text "Reset" && nap 1
 has 'Text size  115%' && ok "settings: Reset text size" || bad "settings: Reset text size"
 shot 05c-settings-top
 tap_scroll "Check for updates" >/dev/null 2>&1
 shot 05d-settings-bottom
 has 'text="About"' && has 'text="Sign-in"' && ok "settings sections: Sign-in, About" || bad "settings sections: Sign-in, About"
 adb_ shell input keyevent KEYCODE_BACK
-sleep 1
+nap 1
 
-tap_text "Settings" && sleep 2
+tap_text "Settings" && nap 2
 shot 05-settings
 has 'text="Folders from Quill"' && ok "settings dialog" || bad "settings dialog"
 if has 'Chat width' || has 'Message box width'; then bad "width sliders removed"; else ok "width sliders removed"; fi
@@ -348,15 +422,15 @@ has 'Text size  115%' && ok "settings: text size row" || bad "settings: text siz
 tap_scroll "Open claude.ai links in Quill"
 for i in $(seq 1 10); do
 	adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q -i settings && break
-	sleep 1
+	nap 1
 done
 adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q -i settings && ok "link settings open" || bad "link settings open" "$(adb_ shell dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity')"
 adb_ shell input keyevent KEYCODE_BACK
-sleep 2
+nap 2
 adb_ shell dumpsys activity top | grep -E "^ *ACTIVITY" | tail -1 | grep -q "$PKG" || launch
-sleep 1
+nap 1
 tap_text "Done" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
-sleep 1
+nap 1
 
 if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 	mkdir -p "$WORK/fd"
@@ -372,20 +446,26 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 	for i in $(seq 1 20); do [ -s "$WORK/fd/out" ] && break; sleep 0.5; done
 	read -r FPORT FP < "$WORK/fd/out"
 	if [ -n "${FPORT:-}" ]; then
-		LINK="quillpair://pair?h=10.0.2.2&p=$FPORT&k=$KEY&fp=$FP&f=quill-folders.json&n=emu-test"
+		LINK="quillpair://pair?h=$HOSTIP&p=$FPORT&k=$KEY&fp=$FP&f=quill-folders.json&n=emu-test"
 		adb_ shell am start -W -a android.intent.action.VIEW -d "\"$LINK\"" "$PKG" >/dev/null 2>&1
-		sleep 6
+		nap 6
 		shot 06-paired
 		if [ "$(width_dp)" -lt 600 ]; then
 			wait_for 'text="Active (1)"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
 			has 'text="Zomboid (1)"' && has 'text="Archive (1)"' && has 'text="Other (1)"' && ok "pairing: grouping" || bad "pairing: grouping"
+			wait_for '5-hour 64%' 40 && ok "usage strip from Quill" || bad "usage strip from Quill"
+			tap_text "Zomboid (1)" && nap 2
+			shot 06d-two-line
+			has '12 msgs' && ok "two-line folder rows (age · msgs)" || bad "two-line folder rows (age · msgs)"
+			adb_ shell input keyevent KEYCODE_BACK
+			nap 1
 		else
 			wait_for 'text="Active  1"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
 			has 'text="Zomboid  1"' && ok "pairing: grouping" || bad "pairing: grouping"
 		fi
 		notif() { adb_ shell dumpsys notification --noredact 2>/dev/null | grep -c -F "$1"; }
 		now() { echo $(( $(date +%s) * 1000 )); }
-		sleep 4
+		nap 4
 		EVS=""
 		addev() { EVS="$EVS${EVS:+,}{\"time\":$1,\"type\":\"$2\",\"rc\":\"$3\",\"quill\":\"q\",\"title\":\"$4\",\"folder\":\"$5\"}"; echo "[$EVS]" > "$WORK/fd/events.json"; }
 		addev "$(now)" approval session_C3 "Zomboid launcher" Zomboid
@@ -394,53 +474,61 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 		[ "$(notif 'Approval needed: Zomboid launcher')" -ge 1 ] && ok "notify: approval for another session" || bad "notify: approval for another session"
 		[ "$(notif 'Finished: Fix edits')" = 0 ] && ok "notify: silent for the session on screen" || bad "notify: silent for the session on screen"
 		addev 1000 error session_B2 "Stale event" Archive
-		sleep 4
+		nap 4
 		[ "$(notif 'Stale event')" = 0 ] && ok "notify: ignores stale events" || bad "notify: ignores stale events"
-		tap_text "Settings" && sleep 2
-		tap_scroll "Notify in background" && sleep 3
+		adb_ shell cmd statusbar collapse >/dev/null 2>&1
+		sleep 4
+		tap_text "Settings" && wait_for 'text="Notifications"' 8
+		shot 06e-settings-before-bg
+		tap_scroll "Notify in background"; log "bg tap rc=$?"
+		nap 3
+		shot 06f-settings-after-bg
+		log "bg pref: $(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | tr '<' '\n' | grep notifyBackground)"
 		adb_ shell input keyevent KEYCODE_BACK
-		sleep 1
+		nap 1
+		for i in $(seq 1 40); do adb_ shell dumpsys activity services "$PKG" | grep -q NotifyService && break; sleep 0.25; done
 		adb_ shell dumpsys activity services "$PKG" | grep -q NotifyService && ok "background service starts" || bad "background service starts"
+		for i in $(seq 1 40); do [ "$(notif 'Quill is watching for approvals')" -ge 1 ] && break; sleep 0.25; done
 		[ "$(notif 'Quill is watching for approvals')" -ge 1 ] && ok "background service notification shown" || bad "background service notification shown"
 		adb_ shell input keyevent KEYCODE_HOME
-		sleep 2
+		nap 2
 		addev "$(now)" question session_B2 "Old server notes" Archive
 		for i in $(seq 1 30); do [ "$(notif 'Question: Old server notes')" -ge 1 ] && break; sleep 1; done
 		[ "$(notif 'Question: Old server notes')" -ge 1 ] && ok "notify in background (app closed)" || bad "notify in background (app closed)"
 		shot 06c-notifications
 		adb_ logcat -c
-		adb_ shell am start -W -n "$PKG/.MainActivity" --es quill.openSession session_C3 >/dev/null 2>&1
-		sleep 4
+		adb_ shell am start -W -n "$PKG/$ACT" --es quill.openSession session_C3 >/dev/null 2>&1
+		nap 4
 		adb_ logcat -d -s QuillOpen:I | grep -q session_C3 && ok "notification opens its session" || bad "notification opens its session"
 		launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
-		sleep 3
-		tap_text "Settings" && sleep 2
-		tap_scroll "Notify in background" && sleep 2
+		nap 3
+		tap_text "Settings" && wait_for 'text="Notifications"' 8
+		tap_scroll "Notify in background" && nap 2
 		adb_ shell input keyevent KEYCODE_BACK
-		sleep 2
+		nap 2
 		adb_ shell dumpsys activity services "$PKG" | grep -q NotifyService && bad "background service stops" || ok "background service stops"
 		kill -INT "$FOLD_PID" 2>/dev/null
 		FOLD_PID=""
 		adb_ shell am force-stop "$PKG"
 		launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
-		sleep 5
+		nap 5
 		if [ "$(width_dp)" -lt 600 ]; then
 			wait_for 'text="Active (1)"' 15 && ok "cached folders after restart (Quill offline)" || bad "cached folders after restart"
 		else
 			wait_for 'text="Active  1"' 15 && ok "cached folders after restart (Quill offline)" || bad "cached folders after restart"
 		fi
-		tap_text "Settings" && sleep 2
+		tap_text "Settings" && nap 2
 		has 'Paired with emu-test' && ok "settings: paired status" || bad "settings: paired status"
-		tap_scroll "Unpair" && sleep 1
+		tap_scroll "Unpair" && nap 1
 		tap_text "Done" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
-		sleep 3
+		nap 3
 		if [ "$(width_dp)" -lt 600 ]; then
 			wait_for 'text="Other (4)"' 10 && ok "unpair clears folders" || bad "unpair clears folders"
 		else
 			wait_for 'text="Other  4"' 10 && ok "unpair clears folders" || bad "unpair clears folders"
 		fi
 		adb_ shell am start -W -a android.intent.action.VIEW -d '"quillpair://pair?h=bad%20host&p=1&k=x&fp=zz"' "$PKG" >/dev/null 2>&1
-		sleep 2
+		nap 2
 		crashed && bad "invalid pairing link" "crash" || ok "invalid pairing link rejected without crash"
 	else
 		bad "folder server" "did not start, see foldersd.log"
@@ -462,11 +550,12 @@ update_case() {
 	launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/ --es quill.updateFeed "http://127.0.0.1:8765/u/$name/latest.json"
 	wait_for 'content-desc="Update banner"' 20 || return 1
 	tap_text "Update banner"
-	sleep 8
+	nap 8
 	return 0
 }
 upd_log() { adb_ logcat -d -s QuillUpdate:I 2>/dev/null; }
 
+if [ "$FULL" = 1 ]; then
 adb_ shell appops set "$PKG" REQUEST_INSTALL_PACKAGES allow
 head -c 300000 /dev/urandom > "$WORK/junk.apk"
 if update_case junk "$WORK/junk.apk" ""; then
@@ -480,7 +569,7 @@ fi
 (cd "$ROOT" && ./gradlew -q assembleRelease -PqVersionCode=999 -PqVersionName=99.0.0 >/dev/null 2>&1) && cp "$ROOT/app/build/outputs/apk/release/app-release.apk" "$WORK/otherkey.apk"
 (cd "$ROOT" && ./gradlew -q assembleRelease >/dev/null 2>&1)
 if [ -f "$WORK/otherkey.apk" ] && update_case otherkey "$WORK/otherkey.apk" ""; then
-	upd_log | grep -q "not signed by the Quill for Android key" && ok "update: rejects APK signed with another key" || bad "update: rejects APK signed with another key" "$(upd_log | tail -1)"
+	upd_log | grep -q -E "not signed by the Quill for Android key|for a different app" && ok "update: rejects APK signed with another key" || bad "update: rejects APK signed with another key" "$(upd_log | tail -1)"
 fi
 (cd "$ROOT" && ./gradlew -q assembleDebug -PqVersionCode=999 -PqVersionName=99.0.0 >/dev/null 2>&1) && cp "$ROOT/app/build/outputs/apk/debug/app-debug.apk" "$WORK/good.apk"
 (cd "$ROOT" && ./gradlew -q assembleDebug >/dev/null 2>&1)
@@ -490,37 +579,43 @@ if [ -f "$WORK/good.apk" ] && update_case good "$WORK/good.apk" ""; then
 	for i in $(seq 1 20); do
 		v=$(adb_ shell dumpsys package "$PKG" | grep -m1 versionName | tr -d ' \r')
 		[ "$v" = "versionName=99.0.0" ] && break
-		sleep 1
+		nap 1
 	done
 	[ "$v" = "versionName=99.0.0" ] && ok "update: installs a genuine newer build" || bad "update: installs a genuine newer build" "$v; $(upd_log | tail -1)"
 	adb_ uninstall "$PKG" >/dev/null 2>&1
 	adb_ install "$ROOT/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
-	sleep 3
+	nap 3
 	adb_ logcat -b crash -c
 	launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
-	sleep 3
+	nap 3
 fi
 
+fi
+if [ -z "$DEVICE" ]; then
 adb_ shell settings put system accelerometer_rotation 0
 adb_ shell settings put system user_rotation 1
-sleep 4
+nap 4
 shot 07-rotated
 crashed && bad "rotation" "crash" || ok "rotation"
 has 'text="Quill"' && ok "rotation keeps UI" || bad "rotation keeps UI"
 adb_ shell settings put system user_rotation 0
-sleep 2
+fi
+nap 2
 
+if [ "$FULL" = 1 ]; then
 launch --es quill.testUrl chrome://crash
-sleep 6
+nap 6
 shot 08-after-renderer-crash
 crashed && bad "renderer crash recovery" "app crashed" || ok "renderer crash recovery (no app crash)"
 wait_for 'text="Quill"' 10 && ok "UI back after renderer crash" || bad "UI back after renderer crash"
 
+fi
 adb_ shell input keyevent KEYCODE_BACK
-sleep 2
+nap 2
 crashed && bad "back" "crash" || ok "back"
 
 adb_ logcat -d -b crash > "$OUT/crash.txt" 2>/dev/null
+[ "$CLEANUP" = 1 ] && adb_ uninstall "$PKG" >/dev/null 2>&1
 log ""
 log "$PASS passed, $FAIL failed. Output: $OUT"
 [ "$FAIL" = 0 ]

@@ -12,6 +12,8 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 *Phone with the tab bar and Quill's folders (left), unfolded foldable with the vertical sidebar (right). Screenshots from the emulator test page.*
 
 ## Features
+- Usage at a glance like Quill's strip: 5-hour and weekly limits, this session's tokens and context, today's total (needs Quill 0.1.8+ on the same network).
+- Folder lists show each session's age, message count and a status dot, like Quill.
 - Tab bar of open sessions and a folder bar with drop-down session lists, as in Quill. On tablets and unfolded foldables, a vertical folder sidebar instead (Tabs: Auto / Horizontal / Vertical in ⚙)
 - Sessions grouped by Quill's folders: Active, your own folders, Inactive, Archive, Created by Claude. Quill publishes its folders and the app picks them up (see "Folders from Quill").
 - Quill's dark theme and accent, readable text: comfortable line spacing, wrapped code blocks, scrollable tables, no zoom jumps when typing.

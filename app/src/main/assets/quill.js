@@ -122,7 +122,7 @@
     found.forEach(function (f) {
       if (f.el.closest('[data-quill-panel]') || f.el.querySelector('[data-quill-panel]')) return;
       f.el.setAttribute('data-quill-panel', f.side);
-      if (f.side === 'left' || stored(f.side)) f.el.setAttribute('data-quill-off', '');
+      f.el.setAttribute('data-quill-off', '');
     });
     tagInput();
     arrows();
@@ -174,9 +174,10 @@
   }
 
   function arrows() {
-    var l = document.getElementById('quill-arrow-left');
-    if (l) l.remove();
-    arrow('right');
+    ['left', 'right'].forEach(function (side) {
+      var el = document.getElementById('quill-arrow-' + side);
+      if (el) el.remove();
+    });
   }
 
   function toggle(side) {
@@ -428,7 +429,8 @@
 
   var shiftDown = false;
   function msgBox(t) {
-    return t && t.closest && t.closest('textarea,[contenteditable=true],[contenteditable=""]') && !t.closest('.quill-ui');
+    var box = t && t.closest ? t.closest('textarea,[contenteditable=true],[contenteditable=""]') : null;
+    return box && !box.closest('.quill-ui') ? box : null;
   }
   function sendFrom(t) {
     var box = msgBox(t);
@@ -445,6 +447,7 @@
         return !b.disabled && /send/.test(label(b)) && b.offsetParent !== null;
       });
     }
+    if (Q.prefs.debugKeys) console.log('quillkey send buttons=' + btns.length);
     if (btns.length) { btns[btns.length - 1].click(); return true; }
     var f = box.closest('form');
     if (f && f.requestSubmit) { f.requestSubmit(); return true; }
@@ -454,6 +457,7 @@
     if (Q.keysOn) return;
     Q.keysOn = true;
     document.addEventListener('keydown', function (e) {
+      if (Q.prefs.debugKeys) console.log('quillkey keydown key=' + e.key + ' code=' + e.keyCode + ' comp=' + e.isComposing + ' box=' + !!msgBox(e.target));
       if (e.key === 'Shift') shiftDown = true;
       if (!msgBox(e.target)) return;
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
@@ -465,6 +469,7 @@
     }, true);
     document.addEventListener('keyup', function (e) { if (e.key === 'Shift') shiftDown = false; }, true);
     document.addEventListener('beforeinput', function (e) {
+      if (Q.prefs.debugKeys) console.log('quillkey beforeinput type=' + e.inputType + ' box=' + !!msgBox(e.target));
       if ((e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') && !shiftDown && msgBox(e.target)) {
         if (sendFrom(e.target)) { e.preventDefault(); e.stopPropagation(); }
       }

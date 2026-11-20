@@ -149,7 +149,7 @@ class FolderSync {
     void unpair() {
         prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
                 .remove("pair.name").remove("pair.fileName").remove("pair.file").remove("folders.cache").remove("folders.source")
-                .remove("folders.at").remove("events.boot").remove("events.since").apply();
+                .remove("folders.at").remove("events.boot").remove("events.since").remove("usage.cache").apply();
         listener.onFolders(new LinkedHashMap<>(), new ArrayList<>());
     }
 
@@ -168,6 +168,15 @@ class FolderSync {
             Data best = parse(prefs.getString("folders.cache", null));
             String source = prefs.getString("folders.source", "");
             Data lan = fetchLan();
+            if (usageListener != null) {
+                String u = lanGet("/usage.json");
+                if (u != null) {
+                    ui.post(() -> {
+                        prefs.edit().putString("usage.cache", u).apply();
+                        usageListener.onUsage(u);
+                    });
+                }
+            }
             if (newer(lan, best)) {
                 best = lan;
                 source = "local network";
@@ -236,7 +245,18 @@ class FolderSync {
         }
     }
 
+    interface UsageListener {
+        void onUsage(String json);
+    }
+
+    UsageListener usageListener;
+    long lastUsage;
+
     Data fetchLan() {
+        return parse(lanGet("/folders.json"));
+    }
+
+    String lanGet(String path) {
         String key = prefs.getString("pair.key", "");
         String fp = prefs.getString("pair.fp", "");
         int port = prefs.getInt("pair.port", -1);
@@ -256,15 +276,15 @@ class FolderSync {
             }
             try {
                 String h = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
-                HttpsURLConnection c = (HttpsURLConnection) new URL("https://" + h + ":" + port + "/folders.json").openConnection();
+                HttpsURLConnection c = (HttpsURLConnection) new URL("https://" + h + ":" + port + path).openConnection();
                 c.setSSLSocketFactory(ctx.getSocketFactory());
                 c.setHostnameVerifier((name, session) -> true);
                 c.setConnectTimeout(2500);
                 c.setReadTimeout(4000);
                 c.setRequestProperty("X-Quill-Key", key);
-                Data d = parse(read(c));
-                if (d != null) {
-                    return d;
+                String body = read(c);
+                if (body != null) {
+                    return body;
                 }
             } catch (IOException ignored) {
             }

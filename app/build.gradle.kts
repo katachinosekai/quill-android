@@ -17,8 +17,9 @@ android {
         applicationId = "io.github.katachinosekai.quillremote"
         minSdk = 30
         targetSdk = 36
-        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 14
-        versionName = (project.findProperty("qVersionName") as String?) ?: "0.8.2"
+        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 15
+        versionName = (project.findProperty("qVersionName") as String?) ?: "0.9.0"
+        manifestPlaceholders["appLabel"] = "Quill"
     }
 
     signingConfigs {
@@ -33,6 +34,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "Quill (debug)"
+        }
         release {
             isMinifyEnabled = false
             if (releaseProps.isNotEmpty()) {
