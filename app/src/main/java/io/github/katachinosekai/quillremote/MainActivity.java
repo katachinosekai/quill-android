@@ -113,6 +113,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("quill", MODE_PRIVATE);
+        debuggable = (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         skin = asset("quill.js");
 
         LinearLayout root = new LinearLayout(this);
@@ -162,7 +163,10 @@ public class MainActivity extends Activity {
         }
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
         boolean pairing = handlePair(getIntent());
-        if (state == null || web.getUrl() == null) {
+        String test = testUrl(getIntent());
+        if (test != null) {
+            web.loadUrl(test);
+        } else if (state == null || web.getUrl() == null) {
             web.loadUrl(pairing ? startUrl(null) : startUrl(getIntent()));
         }
     }
@@ -563,8 +567,29 @@ public class MainActivity extends Activity {
         zoomLabel.setText(prefs.getInt("zoom", 115) + "%");
     }
 
+    static boolean debuggable;
+
+    static boolean testHost(Uri u) {
+        return debuggable && "http".equals(u.getScheme()) && "127.0.0.1".equals(u.getHost());
+    }
+
+    String testUrl(Intent intent) {
+        if (!debuggable || intent == null) {
+            return null;
+        }
+        String t = intent.getStringExtra("quill.testUrl");
+        if (t == null) {
+            return null;
+        }
+        Uri u = Uri.parse(t);
+        return testHost(u) || "chrome://crash".equals(t) ? t : null;
+    }
+
     static boolean inApp(Uri u) {
         String host = u.getHost();
+        if (testHost(u)) {
+            return true;
+        }
         if (host == null || !"https".equals(u.getScheme())) {
             return false;
         }
@@ -630,6 +655,11 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (handlePair(intent)) {
+            return;
+        }
+        String test = testUrl(intent);
+        if (test != null) {
+            web.loadUrl(test);
             return;
         }
         Uri data = intent.getData();

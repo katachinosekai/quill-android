@@ -40,6 +40,15 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - quill.js no longer parses "Folder · Title". It gets `folders` (id → folder) and `order` in `__quillPrefs`. Sessions not in the map go under Other, and titles are shown in full.
 - Tab long-press menu mirrors Quill's tab right-click menu (Close, Close others, Close tabs to the right, Move left/right). Quill's drag-to-reorder becomes Move left/right.
 
+## Emulator tests (scripts/emu-test.sh, 0.6.1)
+`scripts/emu-test.sh [--avd qfold|qphone|qtab] [--keep] [--window]` boots the AVD headless (it creates it from the android-36 google_apis x86_64 image if missing), builds and installs the **debug** APK, and runs adb/uiautomator checks. It writes PASS/FAIL lines, screenshots and logcat to build/emu-test/<time>-<avd>/ and exits non-zero on failure.
+- Emulator flags: `-gpu host -feature -Vulkan`. With swiftshader_indirect, QEMU dumped core as soon as the WebView rendered (2026-11-19).
+- Session links come from a mock page (python http.server on 127.0.0.1:8765, `adb reverse`), so no claude.ai login is needed. Only debug builds honour the `quill.testUrl` extra (http://127.0.0.1 or chrome://crash) and allow cleartext to 127.0.0.1 (src/debug network_security_config). Release builds have neither (checked with aapt2).
+- Pairing uses a real folder server: scripts/testdata/foldersd.go is built as module github.com/katachinosekai/quill/emutest with a replace to ../quill, so it may import internal/folders. The emulator reaches it at 10.0.2.2.
+- Foldables: the outer screen asks "Swipe up to continue" after folding, so the script sets `fold_lock_behavior_setting=stay_awake_on_fold_key`, wakes and dismisses the keyguard, and screenshots whichever display is ON. Native-only checks use `class="android.widget.TextView"` because the page's own drawer text is in the same accessibility dump.
+- Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
+- Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
+
 ## Synced with Quill b5faa86 (earlier: e2724f8, styles compared at b2d351b) (styles last compared at b2d351b)
 Style and formatting are mirrored from Quill's desktop settings. To sync later, look at `git log b2d351b..` in Projects/quill for theme.go, chatview.go and desk.go changes and port what makes sense on a phone.
 - Centring: "Center everything" master plus Chat text / Typing / Status, the same prefs and defaults as Quill (`centerText` on, `centerInput` off, `centerStatus` off). Chat text keeps code, tables and tool details left-aligned and puts list bullets inline (Quill's centred lists). Status = `role=status` / `aria-live` regions.

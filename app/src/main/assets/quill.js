@@ -265,7 +265,10 @@
     try { localStorage.setItem('quill.sessionsOpen', open ? '1' : '0'); } catch (e) {}
     var d = document.getElementById('quill-drawer');
     var b = document.getElementById('quill-drawer-shade');
-    if (d) d.classList.toggle('open', open);
+    if (d) {
+      d.classList.toggle('open', open);
+      d.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
     if (b) b.classList.toggle('open', open);
     drawerArrow();
   }
@@ -366,8 +369,8 @@
 
   var DRAWER_CSS = [
     '#quill-drawer{position:fixed;top:0;bottom:0;left:0;width:min(330px,86vw);z-index:2147483645;background:#1f1f1d;border-right:1px solid #3a3a37;',
-    'overflow-y:auto;padding:12px 10px 24px;box-sizing:border-box;transform:translateX(-102%);transition:transform .22s ease-in-out;color:#eceae3;font-size:15px;line-height:1.35}',
-    '#quill-drawer.open{transform:none}',
+    'overflow-y:auto;padding:12px 10px 24px;box-sizing:border-box;transform:translateX(-102%);visibility:hidden;transition:transform .22s ease-in-out,visibility 0s linear .22s;color:#eceae3;font-size:15px;line-height:1.35}',
+    '#quill-drawer.open{transform:none;visibility:visible;transition:transform .22s ease-in-out,visibility 0s}',
     '#quill-drawer-shade{position:fixed;inset:0;z-index:2147483644;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .22s ease-in-out}',
     '#quill-drawer-shade.open{opacity:1;pointer-events:auto}',
     '#quill-drawer-arrow{top:42vh;left:0;width:26px;height:44px;border-radius:0 8px 8px 0;transition:left .22s ease-in-out}',

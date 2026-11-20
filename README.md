@@ -39,6 +39,8 @@ Requires JDK 21 and the Android SDK (platform 36). Point `local.properties` at y
 ./gradlew assembleRelease
 ```
 
+Emulator tests: `scripts/emu-test.sh --avd qfold` (also `qphone`, `qtab`). It needs the Android emulator and the android-36 x86_64 system image, and for the pairing checks the Quill source next to this repo and Go.
+
 For a signed release, create `~/Android/quill-release.properties` with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. Without it the release build is unsigned (`./gradlew assembleDebug` also works).
 
 ## License
