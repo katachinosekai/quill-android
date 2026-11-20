@@ -252,7 +252,7 @@ for s in A1:Fix-edits B2:Old-server-notes C3:Zomboid-launcher D4:Unsorted-idea; 
 	id=session_${s%%:*}
 	mkdir -p "$WORK/www/code/$id"
 done
-page='<!doctype html><html><head><meta name="viewport" content="width=device-width"></head><body><a href="/code/" style="position:absolute;top:4px;left:8px">Code</a><div role="dialog" id="rcdlg" style="margin-top:40px">Remote Control is on for this session. <a href="https://docs.claude.com/remote-control">Learn more</a> <button onclick="document.getElementById(&quot;rcdlg&quot;).remove()">Dismiss</button></div><nav style="position:relative"><a href="/x/artifacts">Artifacts</a><a href="/x/customize">Customize</a><button>More</button><a href="/x/scheduled">Scheduled</a><button>Edit sidebar</button>'
+page='<!doctype html><html><head><meta name="viewport" content="width=device-width"></head><body><a href="/code/" style="position:absolute;top:4px;left:8px">Code</a><div role="dialog" id="rcdlg" style="margin-top:40px">Remote Control is on for this session. <a href="https://docs.claude.com/remote-control">Learn more</a> <button onclick="document.getElementById(&quot;rcdlg&quot;).remove()">Dismiss</button></div><div class="dframe-root" style="position:relative;--df-sidebar-width:220px"><aside class="dframe-sidebar" style="position:absolute;left:0;top:0;width:220px"><span>Claude Code header</span></aside><div class="dframe-content-inner" style="padding-left:var(--df-sidebar-width)"><span>Pane start</span></div></div><nav style="position:relative"><a href="/x/artifacts">Artifacts</a><a href="/x/customize">Customize</a><button>More</button><a href="/x/scheduled">Scheduled</a><button>Edit sidebar</button>'
 for s in A1:Fix-edits B2:Old-server-notes C3:Zomboid-launcher D4:Unsorted-idea; do
 	page="$page<a href=\"/code/session_${s%%:*}\" style=\"display:block;padding:8px\">$(echo "${s#*:}" | tr '-' ' ')</a>"
 done
@@ -348,6 +348,10 @@ fi
 
 for j in Artifacts Customize More Scheduled "Edit sidebar"; do has "text=\"$j\"" && bad "hidden: $j" || ok "hidden: $j"; done
 has 'text="Code"' && bad "hidden: Code label" || ok "hidden: Code label"
+has 'Claude Code header' && bad "hidden: claude.ai sidebar (dframe)" || ok "hidden: claude.ai sidebar (dframe)"
+wl=$(dump | tr '>' '\n' | grep -F 'class="android.webkit.WebView"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$')
+pl=$(dump | tr '>' '\n' | grep -F 'text="Pane start"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$')
+[ -n "$wl" ] && [ -n "$pl" ] && [ $((pl - wl)) -lt 60 ] && ok "claude.ai pane starts at the left edge" || bad "claude.ai pane starts at the left edge" "webview=$wl pane=$pl"
 has 'Remote Control is on' && bad "Remote Control Learn-more prompt closed" || ok "Remote Control Learn-more prompt closed"
 tap_edit && nap 1
 adb_ shell input text hello
