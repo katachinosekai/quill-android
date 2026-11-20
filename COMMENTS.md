@@ -49,6 +49,9 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## Text size and pinch (0.7.1)
+The Chat width / Message box width sliders were removed (user 2026-11-19). quill.js still understands `chatWidth`/`inputWidth`, but the app no longer sends them, so both are full width. Two-finger pinch on the WebView (ScaleGestureDetector in `setupPinch`, quick-scale off) changes WebSettings.textZoom, the same value as A−/A+: `pinchZoom(start, factor)` rounds to 5 % steps, clamped 80–200 %, live, saved as pref `zoom`. Text reflows, so Quill's CSS rules and layout stay intact. The WebView's own page zoom is off (setSupportZoom/BuiltInZoomControls false). Multi-pointer events are consumed while pinching so the page doesn't scroll. Debug builds accept `--ef quill.testPinch <factor>`, which emu-test uses to check the rounding and clamping (a real two-finger gesture can't be sent through adb).
+
 ## Self-update (0.7.0, Updater.java + InstallStatus.java)
 - Checks `api.github.com/repos/katachinosekai/quill-android/releases/latest` on resume (at most once a day, pref `update.checked`) and from ⚙ "Check for updates". It ignores drafts and prereleases and only offers a strictly higher `vX.Y.Z` than the installed versionName, with the asset named `quill-android-X.Y.Z.apk`.
 - Safety checks before install, each covered by emu-test:

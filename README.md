@@ -16,11 +16,13 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 - Sessions grouped by Quill's folders: Active, your own folders, Inactive, Archive, Created by Claude. Quill publishes its folders and the app picks them up (see "Folders from Quill").
 - Quill's dark theme and accent, readable text: comfortable line spacing, wrapped code blocks, scrollable tables, no zoom jumps when typing.
 - Centering like Quill: Center everything, or Chat text / Typing / Status separately.
-- Text size (A− / A+), chat width and message box width.
+- Text size: pinch with two fingers (or A− / A+). Text reflows to the screen, so formatting and layout stay intact.
 - Arrows to slide side panels away, as in Quill.
 - Email sign-in links open straight in the app.
 
 ## Install
+Quill (desktop) and Quill for Android are released together on [Quill's releases](https://github.com/katachinosekai/quill/releases); this repo's [releases](https://github.com/katachinosekai/quill-android/releases) carry the APK too and feed the in-app updater.
+
 1. Download `quill-android-<version>.apk` from [Releases](https://github.com/katachinosekai/quill-android/releases).
 2. Open it on your phone and allow installs from that source. Android 11 or newer.
 3. Sign in to claude.ai with **email** (your Gmail address works). Google and Apple block their sign-in inside apps; the app explains this if you tap those buttons. If the email has a link, allow Quill to open claude.ai links (⚙ → Open claude.ai links in Quill) or use ⚙ → Paste sign-in link.

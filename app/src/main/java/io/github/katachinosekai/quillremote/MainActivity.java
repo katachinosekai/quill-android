@@ -24,7 +24,6 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.CheckBox;
 import android.widget.ImageView;
-import android.widget.SeekBar;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -219,6 +218,11 @@ public class MainActivity extends Activity {
             }
         }
         boolean pairing = handlePair(getIntent());
+        setupPinch();
+        if (debuggable && getIntent() != null && getIntent().hasExtra("quill.testPinch")) {
+            float f = getIntent().getFloatExtra("quill.testPinch", 1f);
+            setZoom(pinchZoom(prefs.getInt("zoom", 115), f));
+        }
         String test = testUrl(getIntent());
         if (test != null) {
             web.loadUrl(test);
@@ -396,8 +400,6 @@ public class MainActivity extends Activity {
         }
         box.addView(barsRow);
 
-        box.addView(slider("Chat width", "chatWidth", 40));
-        box.addView(slider("Message box width", "inputWidth", 25));
 
         TextView ver = new TextView(this);
         ver.setText("Quill for Android " + updater.current() + " · synced with Quill " + QUILL_SYNCED);
@@ -574,42 +576,6 @@ public class MainActivity extends Activity {
         return c;
     }
 
-    View slider(String label, String key, int lo) {
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(0, dp(12), 0, 0);
-        TextView t = new TextView(this);
-        t.setTextColor(TEXT);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        int cur = prefs.getInt(key, 100);
-        t.setText(label + ": " + cur + "%");
-        SeekBar s = new SeekBar(this);
-        s.setMin(lo);
-        s.setMax(100);
-        s.setProgress(cur);
-        s.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        s.setThumbTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar bar, int v, boolean user) {
-                t.setText(label + ": " + v + "%");
-                prefs.edit().putInt(key, v).apply();
-                inject();
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar bar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar bar) {
-            }
-        });
-        col.addView(t);
-        col.addView(s, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
-        return col;
-    }
-
     TextView button(String label, String desc, View.OnClickListener onTap) {
         TextView b = new TextView(this);
         b.setText(label);
@@ -639,10 +605,56 @@ public class MainActivity extends Activity {
     }
 
     void zoom(int delta) {
-        int z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, prefs.getInt("zoom", 115) + delta));
+        setZoom(prefs.getInt("zoom", 115) + delta);
+    }
+
+    void setZoom(int z) {
+        z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+        if (z == prefs.getInt("zoom", 115) && web.getSettings().getTextZoom() == z) {
+            return;
+        }
         prefs.edit().putInt("zoom", z).apply();
         web.getSettings().setTextZoom(z);
         zoomLabel.setText(z + "%");
+    }
+
+    static int pinchZoom(int start, float factor) {
+        int z = Math.round(start * factor / 5f) * 5;
+        return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    }
+
+    int pinchStart;
+    float pinchFactor = 1f;
+    boolean pinching;
+
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    void setupPinch() {
+        android.view.ScaleGestureDetector det = new android.view.ScaleGestureDetector(this, new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScaleBegin(android.view.ScaleGestureDetector d) {
+                pinching = true;
+                pinchStart = prefs.getInt("zoom", 115);
+                pinchFactor = 1f;
+                return true;
+            }
+
+            @Override
+            public boolean onScale(android.view.ScaleGestureDetector d) {
+                pinchFactor *= d.getScaleFactor();
+                setZoom(pinchZoom(pinchStart, pinchFactor));
+                return true;
+            }
+
+            @Override
+            public void onScaleEnd(android.view.ScaleGestureDetector d) {
+                pinching = false;
+            }
+        });
+        det.setQuickScaleEnabled(false);
+        web.setOnTouchListener((v, e) -> {
+            det.onTouchEvent(e);
+            return pinching || e.getPointerCount() > 1;
+        });
     }
 
     void setupWeb() {
@@ -652,8 +664,8 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setSupportZoom(true);
-        s.setBuiltInZoomControls(true);
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
@@ -778,8 +790,7 @@ public class MainActivity extends Activity {
         String p = "window.__quillPrefs={center:{chat:" + centerOn("centerText")
                 + ",input:" + centerOn("centerInput")
                 + ",status:" + centerOn("centerStatus")
-                + "},chatWidth:" + prefs.getInt("chatWidth", 100)
-                + ",inputWidth:" + prefs.getInt("inputWidth", 100)
+                + "}"
                 + ",drawer:" + (bars == null || !bars.vertical)
                 + ",folders:" + new org.json.JSONObject(folderMap)
                 + ",order:" + new org.json.JSONArray(folderOrder) + "};";

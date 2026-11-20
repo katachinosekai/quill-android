@@ -259,10 +259,22 @@ tap_text "A+" && sleep 1
 has 'text="125%"' && ok "text size A+" || bad "text size A+"
 tap_text "A−" && sleep 1
 has 'text="115%"' && ok "text size A−" || bad "text size A−"
+pinch() {
+	adb_ shell am force-stop "$PKG"
+	launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/ --ef quill.testPinch "$1"
+	sleep 3
+	has "text=\"$2\"" && ok "pinch x$1 -> $2" || bad "pinch x$1 -> $2" "$(dump | grep -o 'text="[0-9]*%"' | head -1)"
+}
+pinch 1.5 175%
+pinch 0.5 90%
+pinch 10 200%
+pinch 0.1 80%
+pinch 1.4375 115%
 
 tap_text "Settings" && sleep 2
 shot 05-settings
 has 'text="Folders from Quill"' && ok "settings dialog" || bad "settings dialog"
+if has 'Chat width' || has 'Message box width'; then bad "width sliders removed"; else ok "width sliders removed"; fi
 has 'text="Not paired. Scan the QR code in Quill → Settings → Pair phone."' && ok "settings: not paired" || bad "settings: not paired"
 tap_scroll "Open claude.ai links in Quill"
 for i in $(seq 1 10); do
