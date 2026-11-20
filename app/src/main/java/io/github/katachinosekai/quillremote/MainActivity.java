@@ -117,7 +117,11 @@ public class MainActivity extends Activity {
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(dp(10), 0, dp(10), 0);
-        title.setOnClickListener(v -> web.loadUrl(HOME));
+        title.setOnClickListener(v -> web.evaluateJavascript("window.__quill&&window.__quill.sessions()", null));
+        title.setOnLongClickListener(v -> {
+            web.loadUrl(HOME);
+            return true;
+        });
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         title.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(title, tp);
