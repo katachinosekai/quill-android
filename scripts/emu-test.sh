@@ -397,6 +397,7 @@ if update_case tamper "$WORK/junk.apk" "0000000000000000000000000000000000000000
 	upd_log | grep -q "checksum does not match" && ok "update: rejects checksum mismatch" || bad "update: rejects checksum mismatch" "$(upd_log | tail -1)"
 fi
 (cd "$ROOT" && ./gradlew -q assembleRelease -PqVersionCode=999 -PqVersionName=99.0.0 >/dev/null 2>&1) && cp "$ROOT/app/build/outputs/apk/release/app-release.apk" "$WORK/otherkey.apk"
+(cd "$ROOT" && ./gradlew -q assembleRelease >/dev/null 2>&1)
 if [ -f "$WORK/otherkey.apk" ] && update_case otherkey "$WORK/otherkey.apk" ""; then
 	upd_log | grep -q "not signed by the Quill for Android key" && ok "update: rejects APK signed with another key" || bad "update: rejects APK signed with another key" "$(upd_log | tail -1)"
 fi
