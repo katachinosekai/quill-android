@@ -18,7 +18,15 @@ Quill names every Remote Control session `<Folder> · <Title>` (rename_session; 
 
 Tested in jsdom against a mock page (/tmp test, not kept): folder order, current marker, toggle, folder collapse, click forwarding, re-injection, and no idle mutations. Layout-dependent parts (panel arrows) need a real device.
 
-## Synced with Quill b2d351b
+## Tab bar and folder bar (0.4.0, mirrors Quill e2724f8)
+Both are native (SessionBars.java) between the top bar and the WebView, so they never cover claude.ai's own header. quill.js sends `{path, items:[{id,folder,title}], order}` to `QuillNative.sessions` (addJavascriptInterface, `SessionBars.Bridge`) whenever the session-list signature changes.
+- Tab bar: like Quill's browser-style tabs. Every session opened is added (max 12, oldest dropped), saved in prefs `tabs`. Chips are #2f2f2c with an 8dp radius, and the active one has a 2dp #eceae3 outline and bold text. × closes a tab; closing the open one switches to its neighbour, or to /code when none are left.
+- Folder bar: like Quill's bookmark bar. One "Folder (n)" button per folder in Quill's order with the folder icon (res/drawable/folder.xml). Tapping it opens a drop-down list (ListPopupWindow) with the open session outlined.
+- Opening from either: `window.__quill.open(id)` clicks claude.ai's own link (SPA), otherwise it loads /code/<id>. Ids are checked against `session_[A-Za-z0-9]+` before they go into JS.
+- ⚙ has "Tab bar" / "Folder bar" toggles (`showTabs`, `showFolders`, default on). Empty bars hide themselves.
+- Not mirrored: split view (too narrow on a phone), "Delete session..." (deletes transcripts on the computer, which the phone can't reach), Format Rules (no sorting rules here).
+
+## Synced with Quill e2724f8 (styles last compared at b2d351b)
 Style and formatting are mirrored from Quill's desktop settings. To sync later, look at `git log b2d351b..` in Projects/quill for theme.go, chatview.go and desk.go changes and port what makes sense on a phone.
 - Centring: "Center everything" master plus Chat text / Typing / Status, the same prefs and defaults as Quill (`centerText` on, `centerInput` off, `centerStatus` off). Chat text keeps code, tables and tool details left-aligned and puts list bullets inline (Quill's centred lists). Status = `role=status` / `aria-live` regions.
 - Width sliders (⚙): "Chat width" (40–100%) pads `main` evenly on both sides, and "Message box width" (25–100%) narrows the input's form/fieldset. Both default to 100% on a phone. Quill's desktop defaults (65% chat, 45% box) would be too narrow on a phone.

@@ -311,6 +311,15 @@
     }
     if (sig === lastSig) return;
     lastSig = sig;
+    if (window.QuillNative && QuillNative.sessions) {
+      try {
+        QuillNative.sessions(JSON.stringify({
+          path: path,
+          items: list.map(function (s) { return { id: s.id, folder: s.folder, title: s.title }; }),
+          order: folderOrder(list)
+        }));
+      } catch (e) {}
+    }
     d.innerHTML = '';
     d.appendChild(el('div', 'quill-drawer-title', 'Sessions'));
     if (!list.length) {
@@ -391,6 +400,12 @@
   };
   Q.toggle = toggle;
   Q.sessions = function () { setDrawer(!drawerOpen()); };
+  Q.open = function (id) {
+    setDrawer(false);
+    var s = sessionLinks().filter(function (x) { return x.id === id; })[0];
+    if (s && s.link && s.link.isConnected) s.link.click();
+    else location.href = '/code/' + id;
+  };
 
   function start() {
     style();

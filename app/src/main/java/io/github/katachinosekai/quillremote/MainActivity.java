@@ -54,6 +54,24 @@ public class MainActivity extends Activity {
     SharedPreferences prefs;
     String skin;
     ValueCallback<Uri[]> pendingFiles;
+    SessionBars bars;
+
+    void openSession(String id) {
+        if (web == null || !SessionBars.SESSION.matcher("/code/" + id).matches()) {
+            return;
+        }
+        web.evaluateJavascript("window.__quill?(window.__quill.open('" + id + "'),1):0", v -> {
+            if (!"1".equals(v) && web != null) {
+                web.loadUrl(HOME + "/" + id);
+            }
+        });
+    }
+
+    void loadHome() {
+        if (web != null) {
+            web.loadUrl(HOME);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -66,6 +84,9 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(BG);
 
         root.addView(bar(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        bars = new SessionBars(this, prefs);
+        root.addView(bars.tabScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+        root.addView(bars.bookScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(false);
@@ -207,6 +228,17 @@ public class MainActivity extends Activity {
         });
         syncAll.run();
 
+        LinearLayout barsRow = new LinearLayout(this);
+        for (String[] b : new String[][]{{"Tab bar", "showTabs"}, {"Folder bar", "showFolders"}}) {
+            CheckBox c = check(b[0], prefs.getBoolean(b[1], true));
+            c.setOnCheckedChangeListener((v, on) -> {
+                prefs.edit().putBoolean(b[1], on).apply();
+                bars.render();
+            });
+            barsRow.addView(c, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        box.addView(barsRow);
+
         box.addView(slider("Chat width", "chatWidth", 40));
         box.addView(slider("Message box width", "inputWidth", 25));
 
@@ -302,6 +334,7 @@ public class MainActivity extends Activity {
     void setupWeb() {
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
+        web.addJavascriptInterface(new SessionBars.Bridge(bars), "QuillNative");
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
