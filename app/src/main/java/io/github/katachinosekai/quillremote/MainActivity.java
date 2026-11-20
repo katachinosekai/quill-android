@@ -155,6 +155,7 @@ public class MainActivity extends Activity {
         super.onConfigurationChanged(c);
         if (bars != null) {
             bars.applyMode(false);
+            inject();
         }
     }
 
@@ -352,8 +353,10 @@ public class MainActivity extends Activity {
     void toggleSessions() {
         if (bars.vertical) {
             bars.toggleSide();
-        } else if (web != null) {
-            web.evaluateJavascript("window.__quill&&window.__quill.sessions()", v -> bars.syncArrow());
+        } else {
+            prefs.edit().putBoolean("barsHidden", !prefs.getBoolean("barsHidden", false)).apply();
+            bars.render();
+            bars.syncArrow();
         }
     }
 
@@ -431,6 +434,9 @@ public class MainActivity extends Activity {
             barsRow.addView(c, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         }
         box.addView(barsRow);
+        CheckBox act = check("Sort folders by activity", prefs.getBoolean("sortActivity", false));
+        act.setOnCheckedChangeListener((v, on) -> prefs.edit().putBoolean("sortActivity", on).apply());
+        box.addView(act);
 
         section(box, "Folders from Quill", true);
         LinearLayout status = new LinearLayout(this);
@@ -926,9 +932,7 @@ public class MainActivity extends Activity {
         if (host == null || !"https".equals(u.getScheme())) {
             return false;
         }
-        return host.equals("claude.ai") || host.endsWith(".claude.ai")
-                || host.equals("claude.com") || host.endsWith(".claude.com")
-                || host.equals("anthropic.com") || host.endsWith(".anthropic.com");
+        return host.equals("claude.ai") || host.endsWith(".claude.ai");
     }
 
     void inject() {
@@ -943,7 +947,8 @@ public class MainActivity extends Activity {
                 + ",input:" + centerOn("centerInput")
                 + ",status:" + centerOn("centerStatus")
                 + "}"
-                + ",drawer:" + (bars == null || !bars.vertical)
+                + ",drawer:false"
+                + ",hwkb:" + hardwareKeyboard()
                 + ",edgeArrow:false"
                 + ",folders:" + new org.json.JSONObject(folderMap)
                 + ",order:" + new org.json.JSONArray(folderOrder) + "};";
@@ -976,11 +981,32 @@ public class MainActivity extends Activity {
     }
 
     void back() {
-        if (web != null && web.canGoBack()) {
+        if (web == null) {
+            moveTaskToBack(true);
+        } else if (web.canGoBack()) {
             web.goBack();
+        } else if (web.getUrl() == null || !claudePage(Uri.parse(web.getUrl()))) {
+            web.loadUrl(HOME);
         } else {
             moveTaskToBack(true);
         }
+    }
+
+    boolean hardwareKeyboard() {
+        android.content.res.Configuration c = getResources().getConfiguration();
+        return c.keyboard == android.content.res.Configuration.KEYBOARD_QWERTY
+                && c.hardKeyboardHidden == android.content.res.Configuration.HARDKEYBOARDHIDDEN_NO;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent e) {
+        if (e.getAction() == android.view.KeyEvent.ACTION_DOWN && e.isCtrlPressed() && bars != null
+                && e.getKeyCode() >= android.view.KeyEvent.KEYCODE_1 && e.getKeyCode() <= android.view.KeyEvent.KEYCODE_9
+                && (hardwareKeyboard() || debuggable)) {
+            bars.switchTab(e.getKeyCode() - android.view.KeyEvent.KEYCODE_0);
+            return true;
+        }
+        return super.dispatchKeyEvent(e);
     }
 
     @Override

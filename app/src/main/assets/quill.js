@@ -27,6 +27,7 @@
     '[data-quill-panel][data-quill-sliding=left]{transform:translateX(-100%)!important;opacity:0!important}',
     '[data-quill-panel][data-quill-sliding=right]{transform:translateX(100%)!important;opacity:0!important}',
     '[data-quill-panel][data-quill-off]{display:none!important}',
+    '[data-quill-hidden]{display:none!important}',
     '.quill-arrow{position:fixed;z-index:2147483646;width:34px;height:34px;border-radius:7px;border:0;padding:0;margin:0;',
     'display:flex;align-items:center;justify-content:center;background:rgba(31,31,29,.85);',
     'box-shadow:inset 0 0 0 100px rgba(217,119,87,.19);color:' + ACCENT + ';touch-action:manipulation}',
@@ -121,7 +122,7 @@
     found.forEach(function (f) {
       if (f.el.closest('[data-quill-panel]') || f.el.querySelector('[data-quill-panel]')) return;
       f.el.setAttribute('data-quill-panel', f.side);
-      if (stored(f.side)) f.el.setAttribute('data-quill-off', '');
+      if (f.side === 'left' || stored(f.side)) f.el.setAttribute('data-quill-off', '');
     });
     tagInput();
     arrows();
@@ -173,7 +174,8 @@
   }
 
   function arrows() {
-    arrow('left');
+    var l = document.getElementById('quill-arrow-left');
+    if (l) l.remove();
     arrow('right');
   }
 
@@ -258,12 +260,13 @@
     return e;
   }
 
+  var drawerIsOpen = false;
   function drawerOpen() {
-    try { return localStorage.getItem('quill.sessionsOpen') === '1'; } catch (e) { return false; }
+    return drawerIsOpen;
   }
 
   function setDrawer(open) {
-    try { localStorage.setItem('quill.sessionsOpen', open ? '1' : '0'); } catch (e) {}
+    drawerIsOpen = open;
     var d = document.getElementById('quill-drawer');
     var b = document.getElementById('quill-drawer-shade');
     if (d) {
@@ -389,6 +392,90 @@
   ].join('\n');
 
   var timer = 0;
+  var JUNK = ['artifacts', 'customize', 'more', 'scheduled', 'edit sidebar'];
+  var CLOSERS = ['close', 'dismiss', 'got it', 'not now', 'no thanks', 'maybe later', 'ok'];
+  function label(el) {
+    return ((el.getAttribute && el.getAttribute('aria-label')) || el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+  function hideEl(el) {
+    if (el && !el.hasAttribute('data-quill-hidden')) el.setAttribute('data-quill-hidden', '');
+  }
+  function tidy() {
+    document.querySelectorAll('a,button,[role=menuitem],[role=link],[role=button],[role=tab]').forEach(function (el) {
+      if (el.closest('.quill-ui,main,form,pre,[data-quill-hidden]')) return;
+      var t = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      if (JUNK.indexOf(t) >= 0) hideEl(el.closest('li') || el);
+    });
+    document.querySelectorAll('a,span,div,h1,h2,button').forEach(function (el) {
+      if (el.children.length > 1 || el.closest('main,form,pre,.quill-ui,[data-quill-hidden]')) return;
+      if ((el.innerText || '').trim() !== 'Code') return;
+      var r = el.getBoundingClientRect();
+      if (r.top < 90 && r.left < 320 && r.height < 80) hideEl(el.closest('a,button') || el);
+    });
+    document.querySelectorAll('a,button').forEach(function (el) {
+      if (label(el) !== 'learn more' || el.closest('[data-quill-hidden]')) return;
+      var box = el.parentElement, n = 0;
+      while (box && n < 6 && !/remote control/i.test(box.innerText || '')) { box = box.parentElement; n++; }
+      if (!box || !/remote control/i.test(box.innerText || '') || box === document.body || box.contains(document.querySelector('main textarea'))) return;
+      var host = el.closest('[role=dialog],[role=alertdialog],[role=alert],[role=status]') || box;
+      var closer = Array.prototype.filter.call(host.querySelectorAll('button,[role=button]'), function (b) {
+        return CLOSERS.indexOf(label(b)) >= 0;
+      })[0];
+      if (closer) closer.click();
+      else hideEl(host);
+    });
+  }
+
+  var shiftDown = false;
+  function msgBox(t) {
+    return t && t.closest && t.closest('textarea,[contenteditable=true],[contenteditable=""]') && !t.closest('.quill-ui');
+  }
+  function sendFrom(t) {
+    var box = msgBox(t);
+    if (!box) return false;
+    var text = box.value !== undefined ? box.value : box.innerText;
+    if (!text || !text.trim()) return true;
+    var scope = box.closest('form,fieldset') || document;
+    var btns = Array.prototype.filter.call(scope.querySelectorAll('button'), function (b) {
+      var l = label(b);
+      return !b.disabled && (b.type === 'submit' || /send|submit/.test(l)) && b.offsetParent !== null;
+    });
+    if (!btns.length && scope !== document) {
+      btns = Array.prototype.filter.call(document.querySelectorAll('button[aria-label]'), function (b) {
+        return !b.disabled && /send/.test(label(b)) && b.offsetParent !== null;
+      });
+    }
+    if (btns.length) { btns[btns.length - 1].click(); return true; }
+    var f = box.closest('form');
+    if (f && f.requestSubmit) { f.requestSubmit(); return true; }
+    return false;
+  }
+  function keys() {
+    if (Q.keysOn) return;
+    Q.keysOn = true;
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Shift') shiftDown = true;
+      if (!msgBox(e.target)) return;
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+        if (sendFrom(e.target)) { e.preventDefault(); e.stopPropagation(); }
+      } else if (e.key === 'Tab' && !e.shiftKey && Q.prefs.hwkb) {
+        var opt = document.querySelector('[role=listbox] [aria-selected=true],[role=option][aria-selected=true]');
+        if (opt) { e.preventDefault(); e.stopPropagation(); opt.click(); }
+      }
+    }, true);
+    document.addEventListener('keyup', function (e) { if (e.key === 'Shift') shiftDown = false; }, true);
+    document.addEventListener('beforeinput', function (e) {
+      if ((e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') && !shiftDown && msgBox(e.target)) {
+        if (sendFrom(e.target)) { e.preventDefault(); e.stopPropagation(); }
+      }
+    }, true);
+  }
+  function hints() {
+    document.querySelectorAll('textarea,[contenteditable=true]').forEach(function (el) {
+      if (!el.closest('.quill-ui') && el.getAttribute('enterkeyhint') !== 'send') el.setAttribute('enterkeyhint', 'send');
+    });
+  }
+
   function soon(records) {
     if (records && records.length && records.every(function (r) {
       var t = r.target.nodeType === 1 ? r.target : r.target.parentElement;
@@ -400,6 +487,8 @@
       style();
       scan();
       sessions();
+      tidy();
+      hints();
     }, 250);
   }
 
@@ -418,6 +507,7 @@
   };
 
   function start() {
+    keys();
     style();
     scan();
     sessions();

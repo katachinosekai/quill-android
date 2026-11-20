@@ -130,15 +130,75 @@ class SessionBars {
     }
 
     void syncArrow() {
-        if (a.sideArrow == null || a.web == null) {
+        if (a.sideArrow == null) {
             return;
         }
         if (vertical) {
             a.sideArrow.setText(prefs.getBoolean("sideOpen", true) ? "‹" : "›");
         } else {
-            a.web.evaluateJavascript("(function(){try{return localStorage.getItem('quill.sessionsOpen')==='1'}catch(e){return false}})()",
-                    v -> a.sideArrow.setText("true".equals(v) ? "‹" : "›"));
+            a.sideArrow.setText(prefs.getBoolean("barsHidden", false) ? "▾" : "▴");
         }
+    }
+
+    void switchTab(int n) {
+        if (tabs.isEmpty()) {
+            return;
+        }
+        int i = n >= 9 || n > tabs.size() ? tabs.size() - 1 : n - 1;
+        a.openSession(tabs.get(i)[0]);
+    }
+
+    List<String> remembered(String key) {
+        List<String> out = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(prefs.getString(key, "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                out.add(arr.getString(i));
+            }
+        } catch (JSONException ignored) {
+        }
+        return out;
+    }
+
+    void stableOrder() {
+        if (prefs.getBoolean("sortActivity", false)) {
+            return;
+        }
+        List<String> fo = remembered("order.folders");
+        for (String f : order) {
+            if (!fo.contains(f)) {
+                fo.add(f);
+            }
+        }
+        for (Item it : items) {
+            if (!fo.contains(it.folder)) {
+                fo.add(it.folder);
+            }
+        }
+        List<String> so = remembered("order.sessions");
+        for (Item it : items) {
+            if (!so.contains(it.id)) {
+                so.add(it.id);
+            }
+        }
+        while (so.size() > 2000) {
+            so.remove(0);
+        }
+        List<String> fo2 = fo;
+        List<String> so2 = so;
+        order.sort((x, y) -> Integer.compare(fo2.indexOf(x), fo2.indexOf(y)));
+        items.sort((x, y) -> Integer.compare(so2.indexOf(x.id), so2.indexOf(y.id)));
+        List<String> show = new ArrayList<>(fo);
+        show.retainAll(new java.util.HashSet<>(order));
+        for (Item it : items) {
+            if (!show.contains(it.folder)) {
+                show.add(it.folder);
+            }
+        }
+        show.sort((x, y) -> Integer.compare(fo2.indexOf(x), fo2.indexOf(y)));
+        order.clear();
+        order.addAll(show);
+        prefs.edit().putString("order.folders", new JSONArray(fo).toString()).putString("order.sessions", new JSONArray(so).toString()).apply();
     }
 
     boolean folderOpen(String name) {
@@ -274,6 +334,9 @@ class SessionBars {
             Matcher m = SESSION.matcher(o.optString("path"));
             current = m.find() ? m.group(1) : null;
             Notifier.foregroundRc = current;
+            if (current != null) {
+                prefs.edit().putString("last", MainActivity.HOME + "/" + current).apply();
+            }
         } catch (JSONException e) {
             return;
         }
@@ -289,6 +352,7 @@ class SessionBars {
                 t[1] = it.title;
             }
         }
+        stableOrder();
         saveTabs();
         render();
     }
@@ -359,7 +423,8 @@ class SessionBars {
             }
             tabRow.addView(chip);
         }
-        tabScroll.setVisibility(!vertical && prefs.getBoolean("showTabs", true) && !tabs.isEmpty() ? View.VISIBLE : View.GONE);
+        boolean barsOn = !prefs.getBoolean("barsHidden", false);
+        tabScroll.setVisibility(!vertical && barsOn && prefs.getBoolean("showTabs", true) && !tabs.isEmpty() ? View.VISIBLE : View.GONE);
         if (active != null) {
             View v = active;
             tabScroll.post(() -> tabScroll.smoothScrollTo(Math.max(0, v.getLeft() - a.dp(24)), 0));
@@ -383,7 +448,7 @@ class SessionBars {
                 bookRow.addView(bookmark(e.getKey(), e.getValue()));
             }
         }
-        bookScroll.setVisibility(!vertical && prefs.getBoolean("showFolders", true) && bookRow.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+        bookScroll.setVisibility(!vertical && barsOn && prefs.getBoolean("showFolders", true) && bookRow.getChildCount() > 0 ? View.VISIBLE : View.GONE);
         if (vertical) {
             renderSide(groups);
         }

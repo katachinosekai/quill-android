@@ -113,7 +113,14 @@ tap_scroll() {
 	done
 	return 1
 }
-crashed() { adb_ logcat -d -b crash 2>/dev/null | grep -q -E "$PKG|FATAL"; }
+crashed() { adb_ logcat -d -b crash 2>/dev/null | grep -A2 "FATAL EXCEPTION" | grep -q "Process: $PKG"; }
+tap_edit() {
+	local b
+	b=$(dump | tr '>' '\n' | grep -F 'class="android.widget.EditText"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	[ -z "$b" ] && return 1
+	set -- $b
+	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
+}
 width_dp() {
 	local size dens w h
 	size=$(adb_ shell wm size | tail -1 | awk '{print $3}')
@@ -171,14 +178,14 @@ for s in A1:Fix-edits B2:Old-server-notes C3:Zomboid-launcher D4:Unsorted-idea; 
 	id=session_${s%%:*}
 	mkdir -p "$WORK/www/code/$id"
 done
-page='<!doctype html><html><head><meta name="viewport" content="width=device-width"></head><body><nav style="position:relative">'
+page='<!doctype html><html><head><meta name="viewport" content="width=device-width"></head><body><a href="/code/" style="position:absolute;top:4px;left:8px">Code</a><div role="dialog" id="rcdlg" style="margin-top:40px">Remote Control is on for this session. <a href="https://docs.claude.com/remote-control">Learn more</a> <button onclick="document.getElementById(&quot;rcdlg&quot;).remove()">Dismiss</button></div><nav style="position:relative"><a href="/x/artifacts">Artifacts</a><a href="/x/customize">Customize</a><button>More</button><a href="/x/scheduled">Scheduled</a><button>Edit sidebar</button>'
 for s in A1:Fix-edits B2:Old-server-notes C3:Zomboid-launcher D4:Unsorted-idea; do
 	page="$page<a href=\"/code/session_${s%%:*}\" style=\"display:block;padding:8px\">$(echo "${s#*:}" | tr '-' ' ')</a>"
 done
 page="$page<a href=\"https://accounts.google.com/o/oauth2/v2/auth?client_id=test\" style=\"display:block;padding:8px\">Continue with Google test</a>"
 page="$page<a href=\"https://github.com/login/oauth/authorize?client_id=quilltest\" style=\"display:block;padding:8px\">GitHub connect test</a>"
 page="$page<a href=\"https://github.com/katachinosekai/quill\" style=\"display:block;padding:8px\">GitHub repo test</a>"
-page="$page</nav><main><p>Mock session page for emulator tests.</p><form><textarea></textarea></form></main></body></html>"
+page="$page</nav><main><p>Mock session page for emulator tests.</p><p id=\"sent\"></p><form onsubmit=\"event.preventDefault();var t=this.querySelector('textarea');document.getElementById('sent').textContent='sent:'+t.value.replace(/\\n/g,'|');t.value=''\"><textarea aria-label=\"Message box\"></textarea><button type=\"submit\" aria-label=\"Send message\">Send</button></form></main></body></html>"
 echo "$page" > "$WORK/www/code/index.html"
 for d in "$WORK"/www/code/session_*; do cp "$WORK/www/code/index.html" "$d/index.html"; done
 mkdir -p "$WORK/www/login"
@@ -231,8 +238,9 @@ fi
 if [ "$(width_dp)" -lt 600 ]; then
 	has 'content-desc="Sidebar"' && ok "top-left arrow on phone" || bad "top-left arrow on phone"
 	tap_text "Sidebar" && sleep 2
-	shot 03b-drawer-open
-	wait_for 'text="Sessions"' 5 && ok "arrow opens session drawer" || bad "arrow opens session drawer"
+	shot 03b-bars-hidden
+	gone 'text="Other (4)"' 5 && ok "arrow hides tab and folder bars" || bad "arrow hides tab and folder bars"
+	has 'text="Sessions"' && bad "no vertical list in horizontal mode" || ok "no vertical list in horizontal mode"
 	tap_text "Sidebar" && sleep 2
 	wait_for 'text="Other (4)"' 15 && ok "folder bar" || bad "folder bar"
 	b=$(dump | tr '>' '\n' | grep -F 'text="Other (4)"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
@@ -257,6 +265,31 @@ if [ "$(width_dp)" -lt 600 ]; then
 	adb_ shell input tap 10 10 >/dev/null
 fi
 
+for j in Artifacts Customize More Scheduled "Edit sidebar"; do has "text=\"$j\"" && bad "hidden: $j" || ok "hidden: $j"; done
+has 'text="Code"' && bad "hidden: Code label" || ok "hidden: Code label"
+has 'Remote Control is on' && bad "Remote Control Learn-more prompt closed" || ok "Remote Control Learn-more prompt closed"
+tap_edit && sleep 1
+adb_ shell input text hello
+adb_ shell input keyevent KEYCODE_ENTER
+sleep 2
+has 'text="sent:hello"' && ok "Enter sends" || bad "Enter sends" "$(dump | grep -o 'sent:[^"]*' | head -1)"
+tap_edit && sleep 1
+adb_ shell input text one
+adb_ shell input keycombination KEYCODE_SHIFT_LEFT KEYCODE_ENTER
+adb_ shell input text two
+sleep 1
+has 'text="sent:hello"' && ok "Shift+Enter makes a line break (not sent)" || bad "Shift+Enter makes a line break (not sent)"
+adb_ shell input keyevent KEYCODE_ENTER
+sleep 2
+has 'sent:one|two' && ok "multi-line message sent with Enter" || bad "multi-line message sent with Enter" "$(dump | grep -o 'sent:[^"]*' | head -1)"
+first=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o '\[\[&quot;session_[A-Za-z0-9]*' | head -1 | grep -o 'session_[A-Za-z0-9]*')
+adb_ shell input keycombination KEYCODE_CTRL_LEFT KEYCODE_1
+sleep 3
+if [ -n "$first" ]; then
+	adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "name=\"last\">https://claude.ai/code/$first<" && ok "Ctrl+1 opens the first tab ($first)" || bad "Ctrl+1 opens the first tab" "$first"
+fi
+launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
+sleep 3
 tap_text "Continue with Google test" && sleep 2
 shot 04b-google-intercept
 has 'text="Sign in with email"' && ok "Google sign-in intercepted with help dialog" || bad "Google sign-in intercepted with help dialog"
