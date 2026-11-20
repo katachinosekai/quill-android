@@ -95,6 +95,9 @@ class Notifier {
             return false;
         }
         long since = prefs.getLong("events.since", 0);
+        if (prefs.getString("events.boot", "").isEmpty()) {
+            waitSeconds = 0;
+        }
         for (String host : prefs.getString("pair.hosts", "").split(",")) {
             if (host.isEmpty() || !running) {
                 continue;

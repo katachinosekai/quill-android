@@ -94,7 +94,11 @@ public class MainActivity extends Activity {
 
     boolean trustedPage() {
         String u = web == null ? null : web.getUrl();
-        return u != null && inApp(Uri.parse(u));
+        return u != null && claudePage(Uri.parse(u));
+    }
+
+    static boolean claudePage(Uri u) {
+        return inApp(u) && !githubAuth(u);
     }
 
     void toast(String m) {
@@ -643,7 +647,7 @@ public class MainActivity extends Activity {
         CharSequence t = cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0
                 ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
         Uri u = t == null ? null : Uri.parse(t.toString().trim());
-        if (u == null || !inApp(u)) {
+        if (u == null || !claudePage(u)) {
             android.widget.Toast.makeText(this, "Copy the claude.ai sign-in link from the email first", android.widget.Toast.LENGTH_LONG).show();
             return;
         }
@@ -826,12 +830,12 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                inject();
+                inject(url);
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                inject();
+                inject(url);
                 syncSignInBanner(url);
                 if (url != null && url.startsWith("https://claude.ai/")) {
                     prefs.edit().putString("last", url).apply();
@@ -896,9 +900,27 @@ public class MainActivity extends Activity {
         return testHost(u) || "chrome://crash".equals(t) ? t : null;
     }
 
+    static final String[] GITHUB_AUTH = {"/login", "/session", "/sessions/", "/apps/", "/settings/installations", "/settings/connections/applications"};
+
+    static boolean githubAuth(Uri u) {
+        if (!"https".equals(u.getScheme()) || !"github.com".equals(u.getHost())) {
+            return false;
+        }
+        String path = u.getPath() == null ? "" : u.getPath();
+        for (String pre : GITHUB_AUTH) {
+            if (path.equals(pre) || path.startsWith(pre.endsWith("/") ? pre : pre + "/") || (pre.equals("/login") && path.equals("/login"))) {
+                if (pre.equals("/apps/") && !path.contains("/installations")) {
+                    continue;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
     static boolean inApp(Uri u) {
         String host = u.getHost();
-        if (testHost(u)) {
+        if (testHost(u) || githubAuth(u)) {
             return true;
         }
         if (host == null || !"https".equals(u.getScheme())) {
@@ -910,7 +932,11 @@ public class MainActivity extends Activity {
     }
 
     void inject() {
-        if (skin == null || web == null) {
+        inject(web == null ? null : web.getUrl());
+    }
+
+    void inject(String url) {
+        if (skin == null || web == null || url == null || !claudePage(Uri.parse(url))) {
             return;
         }
         String p = "window.__quillPrefs={center:{chat:" + centerOn("centerText")
@@ -921,7 +947,9 @@ public class MainActivity extends Activity {
                 + ",edgeArrow:false"
                 + ",folders:" + new org.json.JSONObject(folderMap)
                 + ",order:" + new org.json.JSONArray(folderOrder) + "};";
-        web.evaluateJavascript(p + skin, null);
+        String guard = "(function(){var h=location.hostname;if(!(location.protocol==='https:'&&(h==='claude.ai'||/\\.claude\\.ai$/.test(h)||h==='claude.com'||/\\.claude\\.com$/.test(h)||h==='anthropic.com'||/\\.anthropic\\.com$/.test(h)))"
+                + (debuggable ? "&&!(location.protocol==='http:'&&h==='127.0.0.1')" : "") + ")return;";
+        web.evaluateJavascript(guard + p + skin + "})()", null);
     }
 
     String startUrl(Intent intent) {

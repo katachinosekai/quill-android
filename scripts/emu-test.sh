@@ -176,6 +176,8 @@ for s in A1:Fix-edits B2:Old-server-notes C3:Zomboid-launcher D4:Unsorted-idea; 
 	page="$page<a href=\"/code/session_${s%%:*}\" style=\"display:block;padding:8px\">$(echo "${s#*:}" | tr '-' ' ')</a>"
 done
 page="$page<a href=\"https://accounts.google.com/o/oauth2/v2/auth?client_id=test\" style=\"display:block;padding:8px\">Continue with Google test</a>"
+page="$page<a href=\"https://github.com/login/oauth/authorize?client_id=quilltest\" style=\"display:block;padding:8px\">GitHub connect test</a>"
+page="$page<a href=\"https://github.com/katachinosekai/quill\" style=\"display:block;padding:8px\">GitHub repo test</a>"
 page="$page</nav><main><p>Mock session page for emulator tests.</p><form><textarea></textarea></form></main></body></html>"
 echo "$page" > "$WORK/www/code/index.html"
 for d in "$WORK"/www/code/session_*; do cp "$WORK/www/code/index.html" "$d/index.html"; done
@@ -261,6 +263,14 @@ has 'text="Sign in with email"' && ok "Google sign-in intercepted with help dial
 adb_ shell dumpsys activity top | grep -q "ACTIVITY $PKG" && ok "Google link stays in app" || bad "Google link stays in app"
 tap_text "OK" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 sleep 1
+tap_text "GitHub connect test" && sleep 5
+adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q "$PKG" && ok "GitHub sign-in stays in Quill" || bad "GitHub sign-in stays in Quill" "$(adb_ shell dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity')"
+has 'Mock session page' && bad "GitHub page replaced the mock (skin check skipped)" || ok "GitHub page loaded in the app"
+launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
+sleep 3
+tap_text "GitHub repo test" && sleep 4
+adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q "$PKG" && bad "GitHub repo link opens outside" || ok "GitHub repo link opens outside"
+adb_ shell am force-stop com.android.chrome >/dev/null 2>&1
 launch --es quill.testUrl http://127.0.0.1:8765/login/
 sleep 3
 wait_for 'content-desc="Sign-in tip"' 8 && ok "sign-in tip on login page" || bad "sign-in tip on login page"
