@@ -45,6 +45,8 @@ public class MainActivity extends Activity {
     static final int ZOOM_MAX = 200;
     static final int FILE_PICK = 7;
     static final int SYNC_PICK = 8;
+    static final int PAIR_SCAN = 10;
+    Runnable pairStatus;
     static final String QUILL_SYNCED = "0.1.8";
 
     WebView web;
@@ -175,6 +177,9 @@ public class MainActivity extends Activity {
             sync.refresh();
             askNotifyPermission();
             syncNotifier();
+        }
+        if (pairStatus != null) {
+            pairStatus.run();
         }
     }
     TextView sideArrow;
@@ -487,12 +492,18 @@ public class MainActivity extends Activity {
         };
         syncStatus.run();
         box.addView(status);
+        pairStatus = syncStatus;
+        box.addView(textButton("Scan pairing QR code", v -> {
+            try {
+                startActivityForResult(new Intent(this, PairScan.class), PAIR_SCAN);
+            } catch (ActivityNotFoundException ignored) {
+            }
+        }));
         box.addView(textButton("Paste pairing link", v -> {
             android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
             CharSequence t = cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0
                     ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
             acceptPair(t == null ? null : Uri.parse(t.toString().trim()));
-            syncStatus.run();
         }));
         box.addView(textButton("Choose synced file", v -> {
             Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -1078,6 +1089,12 @@ public class MainActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int req, int res, Intent data) {
+        if (req == PAIR_SCAN) {
+            if (res == RESULT_OK && data != null && data.getData() != null) {
+                acceptPair(data.getData());
+            }
+            return;
+        }
         if (req == SYNC_PICK) {
             if (res == RESULT_OK && data != null && data.getData() != null) {
                 Uri u = data.getData();

@@ -38,7 +38,7 @@ On your computer, run Quill (0.1.0 or newer) with "Remote Control for every sess
 
 ## Folders from Quill
 In Quill (0.1.1 or newer), open Settings → Phone:
-1. **Pair phone...** shows a QR code. Scan it with your phone's camera and open the link in Quill for Android (or copy the link and use ⚙ → "Paste pairing link"). Folders then update whenever your phone is on the same network as your computer. Away from home, the app keeps the last folders it got.
+1. **Pair phone...** shows a QR code. In Quill for Android, tap ⚙ → "Scan pairing QR code" and point the camera at it (or copy the link and use ⚙ → "Paste pairing link"). Some phone camera apps can't open the pairing link themselves, so scan from inside the app. Folders then update whenever your phone is on the same network as your computer. Away from home, the app keeps the last folders it got.
 2. Optional, to get updates anywhere:
    - **Write folders file to...**: pick a folder you already sync to your phone (Syncthing, Nextcloud, Dropbox, ...), then in the app ⚙ → "Choose synced file" and pick `quill-folders.json`.
    - **Publish to a secret gist** (needs the GitHub CLI `gh` logged in on the computer): pair again afterwards so the link includes the gist. The gist is unlisted but readable by anyone with its link. It contains only claude.ai session ids and folder names.
@@ -65,4 +65,4 @@ Emulator tests: `scripts/emu-test.sh --avd qfold` (also `qphone`, `qtab`). It ne
 For a signed release, create `~/Android/quill-release.properties` with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. Without it the release build is unsigned (`./gradlew assembleDebug` also works).
 
 ## License
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). QR codes are decoded with [ZXing](https://github.com/zxing/zxing) core (Apache-2.0).

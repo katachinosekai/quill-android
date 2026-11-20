@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.katachinosekai.quillremote"
         minSdk = 30
         targetSdk = 36
-        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 17
-        versionName = (project.findProperty("qVersionName") as String?) ?: "0.9.2"
+        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 18
+        versionName = (project.findProperty("qVersionName") as String?) ?: "0.9.3"
         manifestPlaceholders["appLabel"] = "Quill"
     }
 
@@ -45,4 +45,8 @@ android {
             }
         }
     }
+}
+
+dependencies {
+    implementation("com.google.zxing:core:3.5.4")
 }
