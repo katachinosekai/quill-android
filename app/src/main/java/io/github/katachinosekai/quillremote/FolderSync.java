@@ -388,7 +388,7 @@ class FolderSync {
 
     String describe() {
         if (!paired()) {
-            return "Not paired  ·  pair from the Phone button in the Quill Desktop top bar";
+            return "Not paired  ·  pair from the Devices button in the Quill Desktop top bar";
         }
         long at = prefs.getLong("folders.at", 0);
         String src = prefs.getString("folders.source", "");

@@ -114,7 +114,7 @@ final class Remote implements ChatView.Actions {
                     control = h.body.optBoolean("control", true);
                     deskVersion = h.body.optString("quill", "");
                 } else if (h.code == 403 && "forbidden".equals(h.error())) {
-                    connection("This phone was removed in Quill Desktop. Pair it again from the Phone button in the Quill Desktop top bar.");
+                    connection("This phone was removed in Quill Desktop. Pair it again from the Devices button in the Quill Desktop top bar.");
                     sleep(15000);
                     continue;
                 }
@@ -389,7 +389,7 @@ final class Remote implements ChatView.Actions {
             sb.append("  ·  ").append(s.optInt("background")).append(" background");
         }
         if (!control) {
-            sb.append("  ·  read only (Quill Desktop → Settings → Sessions → Phone)");
+            sb.append("  ·  read only (Quill Desktop → Settings → Sessions → Devices)");
         }
         chat.setBusy(s.optBoolean("busy"), sb.toString());
     }
@@ -474,7 +474,7 @@ final class Remote implements ChatView.Actions {
             String msg;
             switch (code) {
                 case "control_off":
-                    msg = "Quill Desktop doesn't let this phone control sessions. Turn it on in Quill Desktop → Settings → Sessions → Phone.";
+                    msg = "Quill Desktop doesn't let paired devices control sessions. Turn on \"Let paired devices control sessions\" in Quill Desktop → Settings → Sessions → Devices.";
                     break;
                 case "stale":
                     msg = "Already answered on another device.";

@@ -116,6 +116,11 @@ final class ChatView extends LinearLayout {
     List<Item> items = new ArrayList<>();
     boolean busy;
     boolean follow = true;
+    float scale = 1f;
+    boolean centerChat;
+    boolean centerInput;
+    boolean centerStatus;
+    android.view.ScaleGestureDetector pinch;
     boolean touching;
     long touchEnd;
 
@@ -131,6 +136,12 @@ final class ChatView extends LinearLayout {
         scroll.addView(list);
         addView(scroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         scroll.setOnTouchListener((v, e) -> {
+            if (pinch != null) {
+                pinch.onTouchEvent(e);
+                if (e.getPointerCount() > 1) {
+                    return true;
+                }
+            }
             int a = e.getActionMasked();
             if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_MOVE) {
                 touching = true;
@@ -286,7 +297,7 @@ final class ChatView extends LinearLayout {
         }
         readOnly = ro;
         box.setEnabled(!ro);
-        box.setHint(ro ? "Read only  ·  turn on phone control in Quill Desktop" : "Message Quill");
+        box.setHint(ro ? "Read only  ·  turn on device control in Quill Desktop" : "Message Quill");
         box.setAlpha(ro ? 0.6f : 1f);
         send.setEnabled(!ro);
         send.setAlpha(ro ? 0.35f : 1f);
@@ -458,11 +469,13 @@ final class ChatView extends LinearLayout {
                 return rotate(it);
             case "error": {
                 TextView t = label(it.text, RED, 13);
+                t.setGravity(centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START);
                 t.setTextIsSelectable(true);
                 return spaced(t, 8);
             }
             default:
                 TextView t = label(it.text, MainActivity.MUTED, 13);
+                t.setGravity(centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START);
                 return spaced(t, 8);
         }
     }
@@ -471,20 +484,43 @@ final class ChatView extends LinearLayout {
         TextView t = new TextView(getContext());
         t.setText(s);
         t.setTextColor(color);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, size * scale);
         return t;
+    }
+
+    void setStyle(float s, boolean chat, boolean input, boolean st) {
+        if (s == scale && chat == centerChat && input == centerInput && st == centerStatus) {
+            return;
+        }
+        scale = s;
+        sp = 15f * s;
+        centerChat = chat;
+        centerInput = input;
+        centerStatus = st;
+        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13 * s);
+        status.setGravity(st ? Gravity.CENTER_HORIZONTAL : Gravity.START);
+        conn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13 * s);
+        conn.setGravity(st ? Gravity.CENTER_HORIZONTAL : Gravity.START);
+        box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16 * s);
+        box.setGravity((input ? Gravity.CENTER_HORIZONTAL : Gravity.START) | Gravity.CENTER_VERTICAL);
+        sigs.clear();
+        setItems(items);
     }
 
     View user(Item it) {
         LinearLayout row = new LinearLayout(getContext());
-        row.setGravity(Gravity.END);
-        TextView t = label(it.text, MainActivity.TEXT, sp);
+        row.setGravity(centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.END);
+        TextView t = label(it.text, MainActivity.TEXT, 15);
+        t.setGravity(centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START);
         t.setTextIsSelectable(true);
         t.setLineSpacing(0, 1.3f);
         t.setPadding(dp(14), dp(10), dp(14), dp(10));
         t.setBackground(round(USER_BG, 14));
         LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
         lp.leftMargin = dp(48);
+        if (centerChat) {
+            lp.rightMargin = dp(48);
+        }
         row.addView(t, lp);
         return spaced(row, 16);
     }
@@ -494,6 +530,7 @@ final class ChatView extends LinearLayout {
         col.setOrientation(VERTICAL);
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp;
+        md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
         md.setMarkdown(it.text);
         col.addView(md);
         String[] opts = null;
@@ -667,7 +704,8 @@ final class ChatView extends LinearLayout {
     View plan(Item it) {
         LinearLayout c = card(pending(it) ? planTitle(it.text) : "Plan: " + stateLabel(it.state), pending(it) ? MainActivity.ACCENT : 0xFF444440);
         MarkdownView md = new MarkdownView(getContext());
-        md.sp = sp - 1;
+        md.sp = sp - scale;
+        md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
         md.setMarkdown(it.text);
         md.setPadding(0, dp(8), 0, 0);
         c.addView(md);

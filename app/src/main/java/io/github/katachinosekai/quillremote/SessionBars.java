@@ -248,6 +248,7 @@ class SessionBars {
         setSideWidth(vertical && prefs.getBoolean("sideOpen", true) ? a.dp(SIDE_W) + a.dp(1) : 0);
         a.sideArrow.setVisibility(View.VISIBLE);
         syncArrow();
+        a.syncLayoutBtn();
         render();
         if (changed) {
             a.inject();
@@ -500,6 +501,9 @@ class SessionBars {
             while (tabs.size() > MAX_TABS) {
                 tabs.remove(0);
             }
+        }
+        if (remote && !items.isEmpty()) {
+            tabs.removeIf(t -> item(t[0]) == null && !t[0].equals(current));
         }
         for (String[] t : tabs) {
             Item it = item(t[0]);

@@ -457,7 +457,7 @@ tap_text "Settings" && nap 2
 shot 05-settings
 has 'text="Folders from Quill"' && ok "settings dialog" || bad "settings dialog"
 if has 'Chat width' || has 'Message box width'; then bad "width sliders removed"; else ok "width sliders removed"; fi
-has 'text="Not paired  ·  pair from the Phone button in the Quill Desktop top bar"' && ok "settings: not paired" || bad "settings: not paired"
+has 'text="Not paired  ·  pair from the Devices button in the Quill Desktop top bar"' && ok "settings: not paired" || bad "settings: not paired"
 for sec in Text Tabs "Folders from Quill"; do has "text=\"$sec\"" && ok "settings section: $sec" || bad "settings section: $sec"; done
 has 'Text size  115%' && ok "settings: text size row" || bad "settings: text size row"
 tap_scroll "Open claude.ai links in Quill Android"
@@ -723,7 +723,7 @@ if [ -n "${PPORT:-}" ]; then
 	tap_text "Resume now" && nap 1
 	gone 'text="Resume now"' 8 && plog | grep -q 'usage/resume' && ok "remote: Resume now" || bad "remote: Resume now"
 	pcurl "/debug/control?on=0" >/dev/null
-	wait_for 'Read only  ·  turn on phone control in Quill Desktop' 10 && ok "remote: read-only hint in the message box" || bad "remote: read-only hint in the message box"
+	wait_for 'Read only  ·  turn on device control in Quill Desktop' 10 && ok "remote: read-only hint in the message box" || bad "remote: read-only hint in the message box"
 	dump | grep -o '<node[^>]*class="android.widget.EditText"[^>]*>' | grep -q 'enabled="false"' && ok "remote: message box disabled while read only" || bad "remote: message box disabled while read only"
 	pcurl "/debug/control?on=1" >/dev/null
 	wait_for 'Message Quill' 10 && ok "remote: message box back after control on" || bad "remote: message box back after control on"
@@ -731,6 +731,12 @@ if [ -n "${PPORT:-}" ]; then
 	has '·  Quill Desktop 9.9.9' && ok "remote: About shows the desktop Quill version" || bad "remote: About shows the desktop Quill version" "$(dump | grep -o 'Quill Android[^"]*' | head -1)"
 	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 	nap 1
+	L0=$(dump | grep -o 'text="\(Landscape\|Portrait\)"' | head -1)
+	tap_text "Switch tab layout" && nap 2
+	DIRTY=1
+	L1=$(dump | grep -o 'text="\(Landscape\|Portrait\)"' | head -1)
+	[ -n "$L0" ] && [ -n "$L1" ] && [ "$L0" != "$L1" ] && ok "remote: Landscape/Portrait button switches the tab layout" || bad "remote: Landscape/Portrait button switches the tab layout" "$L0 -> $L1"
+	tap_text "Switch tab layout" && nap 2
 	popen session_C3
 	wait_for 'text="Allow Bash?"' 15 && ok "remote: permission card" || bad "remote: permission card"
 	tap_text "Allow" && nap 1

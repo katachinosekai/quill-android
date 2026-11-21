@@ -60,6 +60,7 @@ public class MainActivity extends Activity {
     PhoneApi phoneApi;
     Remote remote;
     ChatView chat;
+    TextView layoutBtn;
     Notifier fgNotifier;
 
     void askNotifyPermission() {
@@ -507,7 +508,7 @@ public class MainActivity extends Activity {
         ChatView chat = new ChatView(this);
         java.util.List<ChatView.Item> items = new java.util.ArrayList<>();
         try (java.io.InputStream in = getAssets().open("chat-sample.json")) {
-            org.json.JSONArray arr = new org.json.JSONArray(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+            org.json.JSONArray arr = new org.json.JSONArray(PhoneApi.read(in));
             for (int i = 0; i < arr.length(); i++) {
                 items.add(ChatView.Item.from(arr.getJSONObject(i)));
             }
@@ -589,6 +590,14 @@ public class MainActivity extends Activity {
             inject();
         });
         left.addView(centerBtn);
+        layoutBtn = button("Landscape", "Switch tab layout", v -> {
+            prefs.edit().putString("tabMode", bars.vertical ? "horizontal" : "vertical").apply();
+            bars.applyMode(true);
+        });
+        layoutBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        layoutBtn.setPadding(dp(10), 0, dp(10), 0);
+        layoutBtn.getLayoutParams().width = LinearLayout.LayoutParams.WRAP_CONTENT;
+        left.addView(layoutBtn);
         bar.addView(left, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.CENTER_VERTICAL));
 
         LinearLayout mid = new LinearLayout(this);
@@ -1020,7 +1029,20 @@ public class MainActivity extends Activity {
         return b;
     }
 
+    void chatStyle() {
+        if (chat != null) {
+            chat.setStyle(prefs.getInt("zoom", 115) / 115f, centerOn("centerText"), centerOn("centerInput"), centerOn("centerStatus"));
+        }
+    }
+
+    void syncLayoutBtn() {
+        if (layoutBtn != null) {
+            layoutBtn.setText(bars.vertical ? "Portrait" : "Landscape");
+        }
+    }
+
     void syncCenter() {
+        chatStyle();
         int n = centerCount();
         centerBtn.setTextColor(n == CENTER_KEYS.length ? TEXT : ACCENT);
         int fill = n == CENTER_KEYS.length ? 0x80D97757 : n > 0 ? 0x55D97757 : 0x30D97757;
@@ -1034,6 +1056,7 @@ public class MainActivity extends Activity {
         }
         prefs.edit().putInt("zoom", z).apply();
         web.getSettings().setTextZoom(z);
+        chatStyle();
         zoomLabel.setText(z + "%");
         zoomLabel.animate().cancel();
         zoomLabel.setAlpha(1f);
@@ -1077,6 +1100,10 @@ public class MainActivity extends Activity {
             det.onTouchEvent(e);
             return pinching || e.getPointerCount() > 1;
         });
+        if (chat != null) {
+            chat.pinch = det;
+            chatStyle();
+        }
     }
 
     void setupWeb() {
