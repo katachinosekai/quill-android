@@ -293,7 +293,7 @@ launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
 nap 4
 shot 01-start
 crashed && bad "launch" "crash in logcat" || ok "launch"
-has 'text="Quill"' && ok "top bar" || bad "top bar"
+has 'content-desc="Settings"' && ok "top bar" || bad "top bar"
 adb_ shell am force-stop "$PKG"
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/ --es quill.testUpdateBlocked INSTALL_FAILED_BLOCKED
 wait_for 'Update blocked by your phone' 8 && ok "blocked-update help dialog" || bad "blocked-update help dialog"
@@ -494,7 +494,7 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 		if [ "$(width_dp)" -lt 600 ]; then
 			wait_for 'text="Active (1)"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
 			has 'text="Zomboid (1)"' && has 'text="Archive (1)"' && has 'text="Other (1)"' && ok "pairing: grouping" || bad "pairing: grouping"
-			wait_for '5-hour 64%' 40 && ok "usage strip from Quill" || bad "usage strip from Quill"
+			wait_for 'text="64%' 40 && has 'text="5-hour session"' && ok "usage strip from Quill" || bad "usage strip from Quill"
 			tap_text "Zomboid (1)" && nap 2
 			shot 06d-two-line
 			has '12 msgs' && ok "two-line folder rows (age · msgs)" || bad "two-line folder rows (age · msgs)"
@@ -646,7 +646,7 @@ adb_ shell settings put system user_rotation 1
 nap 4
 shot 07-rotated
 crashed && bad "rotation" "crash" || ok "rotation"
-has 'text="Quill"' && ok "rotation keeps UI" || bad "rotation keeps UI"
+has 'content-desc="Settings"' && ok "rotation keeps UI" || bad "rotation keeps UI"
 adb_ shell settings put system user_rotation 0
 fi
 nap 2
@@ -656,7 +656,7 @@ launch --es quill.testUrl chrome://crash
 nap 6
 shot 08-after-renderer-crash
 crashed && bad "renderer crash recovery" "app crashed" || ok "renderer crash recovery (no app crash)"
-wait_for 'text="Quill"' 10 && ok "UI back after renderer crash" || bad "UI back after renderer crash"
+wait_for 'content-desc="Settings"' 10 && ok "UI back after renderer crash" || bad "UI back after renderer crash"
 
 fi
 adb_ shell input keyevent KEYCODE_BACK
@@ -685,6 +685,17 @@ if [ -n "${PPORT:-}" ]; then
 	adb_ shell am start -W -a android.intent.action.VIEW -d "\"$PLINK\"" "$PKG" >/dev/null 2>&1
 	wait_for 'text="Rename the greeting"' 30 && ok "remote: Quill chat shown natively after a v2 pairing" || bad "remote: Quill chat shown natively after a v2 pairing"
 	shot 09-remote
+	U_SEEN=""
+	for i in 1 2 3; do
+		DIRTY=1
+		U_SEEN="$U_SEEN $(dump | grep -o 'text="1.2M tok · ctx 23%"\|text="Today 5.6M · 7d 42.0M"\|text="available"' | tr '\n' ' ')"
+		ub=$(dump | tr '>' '\n' | grep -F 'content-desc="Usage"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+		[ -z "$ub" ] && break
+		read -r x1 y1 x2 y2 <<< "$ub"
+		adb_ shell input swipe $((x1 + (x2 - x1) * 4 / 5)) $(((y1 + y2) / 2)) $((x1 + (x2 - x1) / 5)) $(((y1 + y2) / 2)) 300
+		nap 1
+	done
+	echo "$U_SEEN" | grep -q 'tok · ctx 23%' && echo "$U_SEEN" | grep -q 'Today 5.6M · 7d 42.0M' && echo "$U_SEEN" | grep -q '"available"' && ok "remote: usage shows This session, All sessions, credits" || bad "remote: usage shows This session, All sessions, credits" "$U_SEEN"
 	has 'content-desc="New session"' && ok "remote: + New session in the top bar" || bad "remote: + New session in the top bar"
 	has 'Edit main.go' && ok "remote: tool row" || bad "remote: tool row"
 	adb_ shell cmd statusbar collapse >/dev/null 2>&1
@@ -728,6 +739,15 @@ if [ -n "${PPORT:-}" ]; then
 	pcurl "/debug/control?on=1" >/dev/null
 	wait_for 'Message Quill' 10 && ok "remote: message box back after control on" || bad "remote: message box back after control on"
 	tap_text "Settings" && nap 2
+	for i in 1 2 3 4 5 6; do
+		DIRTY=1
+		has '·  Quill Desktop 9.9.9' && break
+		b=$(dump | tr '>' '\n' | grep -F 'scrollable="true"' | grep -v -F 'android.webkit.WebView' | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+		[ -z "$b" ] && break
+		read -r x1 y1 x2 y2 <<< "$b"
+		adb_ shell input swipe $(((x1 + x2) / 2)) $((y1 + (y2 - y1) * 3 / 4)) $(((x1 + x2) / 2)) $((y1 + (y2 - y1) / 4)) 400
+		nap 1
+	done
 	has '·  Quill Desktop 9.9.9' && ok "remote: About shows the desktop Quill version" || bad "remote: About shows the desktop Quill version" "$(dump | grep -o 'Quill Android[^"]*' | head -1)"
 	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 	nap 1

@@ -58,7 +58,8 @@ class SessionBars {
     String current;
     JSONObject usage;
     JSONObject meta = new JSONObject();
-    final TextView usageStrip;
+    final HorizontalScrollView usageStrip;
+    final LinearLayout usageRow;
 
     void setUsage(String json) {
         try {
@@ -100,25 +101,123 @@ class SessionBars {
         return " · resets " + new java.text.SimpleDateFormat(f, java.util.Locale.getDefault()).format(new java.util.Date(t * 1000));
     }
 
-    String[] usageParts() {
+    static final class UsageItem {
+        final String title;
+        final String value;
+        final double bar;
+
+        UsageItem(String title, String value, double bar) {
+            this.title = title;
+            this.value = value;
+            this.bar = bar;
+        }
+    }
+
+    static String window(JSONObject w, boolean paused) {
+        if (w == null) {
+            return "no data yet";
+        }
+        return pct(w) + resets(w) + (paused ? " · paused" : "");
+    }
+
+    List<UsageItem> usageItems() {
         if (usage == null) {
             return null;
         }
         JSONObject five = usage.optJSONObject("fiveHour"), week = usage.optJSONObject("weekly");
+        boolean paused = usage.optBoolean("paused");
         JSONObject m = current == null ? null : meta.optJSONObject(current);
-        String sess = m == null ? "–" : tok(m.optLong("tokens")) + (m.optLong("contextMax") > 0 ? " · ctx " + Math.round(100.0 * m.optLong("context") / m.optLong("contextMax")) + "%" : "");
-        String credits = usage.optString("credits");
-        if (remote) {
-            String ctx = m != null && m.optLong("contextMax") > 0 ? "Context " + Math.round(100.0 * m.optLong("context") / m.optLong("contextMax")) + "%" : null;
-            String five5 = "5-hour " + pct(five) + resets(five) + ("paused".equals(credits) ? " · paused" : "");
-            String wk = "Weekly " + pct(week) + resets(week);
-            return ctx == null ? new String[]{five5, wk} : new String[]{five5, ctx, wk};
+        List<String> sess = new ArrayList<>();
+        if (m != null && m.has("tokens")) {
+            sess.add(tok(m.optLong("tokens")) + " tok");
         }
-        return new String[]{
-                "5-hour " + pct(five) + resets(five),
-                "Session " + sess,
-                "All sessions " + tok(usage.optLong("today")) + " today",
-                "Weekly " + pct(week) + (credits.isEmpty() || credits.equals("not reported") ? "" : " · credits " + credits)};
+        if (m != null && m.optLong("contextMax") > 0) {
+            sess.add("ctx " + Math.round(100.0 * m.optLong("context") / m.optLong("contextMax")) + "%");
+        }
+        String all = usage.has("today") ? "Today " + tok(usage.optLong("today")) + (usage.has("week") ? " · 7d " + tok(usage.optLong("week")) : "") : "–";
+        String credits = usage.optString("credits");
+        List<UsageItem> out = new ArrayList<>();
+        out.add(new UsageItem("5-hour session", window(five, paused), five == null ? -1 : five.optDouble("utilization")));
+        out.add(new UsageItem("This session", current == null ? "No session open" : sess.isEmpty() ? "–" : String.join(" · ", sess), -1));
+        out.add(new UsageItem("All sessions", all, -1));
+        out.add(new UsageItem("Usage credits", credits.isEmpty() ? "not reported" : credits, -1));
+        out.add(new UsageItem("Weekly", window(week, false), week == null ? -1 : week.optDouble("utilization")));
+        return out;
+    }
+
+    View usageBar(double v, int w, int h) {
+        LinearLayout track = new LinearLayout(a);
+        GradientDrawable t = new GradientDrawable();
+        t.setColor(0x33FFFFFF);
+        t.setCornerRadius(h / 2f);
+        track.setBackground(t);
+        float p = (float) Math.max(0, Math.min(1, v));
+        View fill = new View(a);
+        GradientDrawable f = new GradientDrawable();
+        f.setColor(MainActivity.ACCENT);
+        f.setCornerRadius(h / 2f);
+        fill.setBackground(f);
+        track.addView(fill, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, p));
+        track.addView(new View(a), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1 - p));
+        track.setLayoutParams(new LinearLayout.LayoutParams(w, h));
+        return track;
+    }
+
+    TextView usageText(String s, boolean bold) {
+        TextView t = new TextView(a);
+        t.setText(s);
+        t.setTextColor(MainActivity.MUTED);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        if (bold) {
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        return t;
+    }
+
+    void fillStrip(List<UsageItem> list) {
+        usageRow.removeAllViews();
+        for (int i = 0; i < list.size(); i++) {
+            UsageItem it = list.get(i);
+            if (i > 0) {
+                TextView sep = usageText("│", false);
+                sep.setPadding(a.dp(10), 0, a.dp(10), 0);
+                usageRow.addView(sep);
+            }
+            usageRow.addView(usageText(it.title, true));
+            if (it.bar >= 0) {
+                View b = usageBar(it.bar, a.dp(56), a.dp(6));
+                ((LinearLayout.LayoutParams) b.getLayoutParams()).setMargins(a.dp(6), 0, 0, 0);
+                ((LinearLayout.LayoutParams) b.getLayoutParams()).gravity = Gravity.CENTER_VERTICAL;
+                usageRow.addView(b);
+            }
+            TextView v = usageText(it.value, false);
+            v.setPadding(a.dp(6), 0, 0, 0);
+            usageRow.addView(v);
+        }
+    }
+
+    void fillSide(List<UsageItem> list) {
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(a.dp(8), 0, a.dp(8), a.dp(6));
+        box.setContentDescription("Usage");
+        for (UsageItem it : list) {
+            LinearLayout row = new LinearLayout(a);
+            row.setPadding(0, a.dp(2), 0, 0);
+            row.addView(usageText(it.title, true));
+            TextView v = usageText(it.value, false);
+            v.setPadding(a.dp(6), 0, 0, 0);
+            row.addView(v, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            box.addView(row);
+            if (it.bar >= 0) {
+                View b = usageBar(it.bar, LinearLayout.LayoutParams.MATCH_PARENT, a.dp(5));
+                ((LinearLayout.LayoutParams) b.getLayoutParams()).setMargins(0, a.dp(3), 0, a.dp(3));
+                box.addView(b);
+            }
+        }
+        sideList.addView(box);
     }
 
     static int statusColor(String s) {
@@ -206,14 +305,11 @@ class SessionBars {
         tabRow = row();
         bookRow = row();
         tabScroll = scroller(tabRow);
-        usageStrip = new TextView(a);
-        usageStrip.setTextColor(MainActivity.MUTED);
-        usageStrip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        usageStrip.setSingleLine(true);
-        usageStrip.setEllipsize(TextUtils.TruncateAt.END);
-        usageStrip.setGravity(Gravity.CENTER);
-        usageStrip.setBackgroundColor(MainActivity.SIDE);
-        usageStrip.setPadding(a.dp(8), 0, a.dp(8), a.dp(2));
+        usageRow = new LinearLayout(a);
+        usageRow.setGravity(Gravity.CENTER);
+        usageRow.setPadding(a.dp(8), 0, a.dp(8), a.dp(2));
+        usageStrip = scroller(usageRow);
+        usageStrip.setFillViewport(true);
         usageStrip.setContentDescription("Usage");
         usageStrip.setVisibility(View.GONE);
         bookScroll = scroller(bookRow);
@@ -369,18 +465,9 @@ class SessionBars {
         head.setTypeface(Typeface.DEFAULT_BOLD);
         head.setPadding(a.dp(8), a.dp(4), a.dp(8), a.dp(8));
         sideList.addView(head);
-        String[] parts = usageParts();
+        List<UsageItem> parts = usageItems();
         if (parts != null) {
-            for (String p : parts) {
-                TextView u = new TextView(a);
-                u.setText(p);
-                u.setTextColor(MainActivity.MUTED);
-                u.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                u.setSingleLine(true);
-                u.setEllipsize(TextUtils.TruncateAt.END);
-                u.setPadding(a.dp(8), 0, a.dp(8), a.dp(2));
-                sideList.addView(u);
-            }
+            fillSide(parts);
         }
         if (items.isEmpty()) {
             TextView empty = new TextView(a);
@@ -583,9 +670,9 @@ class SessionBars {
             tabRow.addView(chip);
         }
         boolean barsOn = !prefs.getBoolean("barsHidden", false);
-        String[] up = usageParts();
+        List<UsageItem> up = usageItems();
         if (up != null) {
-            usageStrip.setText(String.join("   |   ", up));
+            fillStrip(up);
         }
         usageStrip.setVisibility(!vertical && barsOn && up != null ? View.VISIBLE : View.GONE);
         tabScroll.setVisibility(!vertical && barsOn && prefs.getBoolean("showTabs", true) && !tabs.isEmpty() ? View.VISIBLE : View.GONE);

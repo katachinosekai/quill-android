@@ -313,6 +313,9 @@ final class Remote implements ChatView.Actions {
                 if (ctx != null) {
                     m.put("context", ctx.optLong("used")).put("contextMax", ctx.optLong("max"));
                 }
+                if (s.has("tokens")) {
+                    m.put("tokens", s.optLong("tokens"));
+                }
                 meta.put(s.optString("id"), m);
             }
             bars.put("items", its).put("order", order).put("current", current == null ? "" : current);
@@ -346,8 +349,14 @@ final class Remote implements ChatView.Actions {
     String usageJson(JSONObject meta) {
         JSONObject u = new JSONObject();
         try {
-            JSONObject out = new JSONObject().put("credits", "");
+            JSONObject out = new JSONObject().put("credits", usage == null ? "" : usage.optString("credits"));
             if (usage != null) {
+                if (usage.has("todayTokens")) {
+                    out.put("today", usage.optLong("todayTokens"));
+                }
+                if (usage.has("weekTokens")) {
+                    out.put("week", usage.optLong("weekTokens"));
+                }
                 JSONObject five = usage.optJSONObject("fiveHour"), week = usage.optJSONObject("week");
                 if (five != null) {
                     out.put("fiveHour", new JSONObject().put("utilization", five.optDouble("pct") / 100.0).put("resetsAt", five.optLong("resetsAtMs") / 1000));
@@ -356,7 +365,7 @@ final class Remote implements ChatView.Actions {
                     out.put("weekly", new JSONObject().put("utilization", week.optDouble("pct") / 100.0).put("resetsAt", week.optLong("resetsAtMs") / 1000));
                 }
                 if (usage.optBoolean("paused")) {
-                    out.put("credits", "paused");
+                    out.put("paused", true);
                 }
             }
             u.put("version", 1).put("usage", out).put("meta", meta);

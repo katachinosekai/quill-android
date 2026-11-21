@@ -83,7 +83,7 @@ func (s *server) sessionJSON(x *session) map[string]any {
 	m := map[string]any{"id": x.ID, "title": x.Title, "folder": "/home/user/Projects/" + x.Folder, "folderName": x.Folder,
 		"group": x.Group, "status": x.Status, "busy": x.Status == "running", "model": "opus", "mode": "default", "backend": "online",
 		"context": map[string]int{"used": 45000, "max": 200000}, "pending": pending, "queue": len(x.Queue), "background": 0,
-		"epoch": x.Epoch, "rev": x.Rev, "updatedMs": time.Now().UnixMilli(), "focused": x == s.sessions[0]}
+		"epoch": x.Epoch, "rev": x.Rev, "updatedMs": time.Now().UnixMilli(), "focused": x == s.sessions[0], "tokens": 1234000}
 	if x.Kmem != "" {
 		m["kmem"] = x.Kmem
 	}
@@ -122,7 +122,7 @@ func (s *server) usage() map[string]any {
 		until = now + 1800000
 	}
 	return map[string]any{"paused": s.paused, "pausedUntilMs": until, "fiveHour": map[string]any{"pct": 64, "resetsAtMs": now + 3600000},
-		"week": map[string]any{"pct": 14, "resetsAtMs": now + 86400000}}
+		"week": map[string]any{"pct": 14, "resetsAtMs": now + 86400000}, "credits": "available", "todayTokens": 5600000, "weekTokens": 42000000}
 }
 
 func reply(w http.ResponseWriter, code int, body map[string]any) {

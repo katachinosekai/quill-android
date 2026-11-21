@@ -10,11 +10,21 @@ public class ChoicesTest {
     public void sameCasesAsDesktop() {
         assertArrayEquals(new String[]{"Push 4bc346e now", "Wait until you've seen it rotate a session"},
                 Choices.parse("**Push `4bc346e` now, or wait until you've seen it rotate a session?**"));
-        assertArrayEquals(new String[]{"Should I reload now", "Wait until you've sent the queued messages"},
+        assertArrayEquals(new String[]{"Reload now", "Wait until you've sent the queued messages"},
                 Choices.parse("Should I reload now or wait until you've sent the queued messages?"));
         assertNull(Choices.parse("**Approve A–E, and which of 3–12 should I include?**"));
         assertNull(Choices.parse("Done. The suite passes."));
         assertArrayEquals(new String[]{"Ship it", "Hold"}, Choices.parse("## ship it or hold?"));
+    }
+
+    @Test
+    public void listsAndLeadIns() {
+        assertArrayEquals(new String[]{"Wide adoption", "Keeping it open", "Controlling commercial use"},
+                Choices.parse("**Which matters most to you for kmem: wide adoption, keeping it open, or controlling commercial use?**"));
+        assertArrayEquals(new String[]{"Red", "Green", "Blue"}, Choices.parse("Pick a color: red, green, or blue?"));
+        assertArrayEquals(new String[]{"Merge now", "Wait for review"}, Choices.parse("Do you want me to merge now, or wait for review?"));
+        assertNull(Choices.parse("One, two, three, four, or five?"));
+        assertNull(Choices.parse("Should I rewrite the whole module from scratch using the new framework and also add tests for every edge case, or stop?"));
     }
 
     @Test

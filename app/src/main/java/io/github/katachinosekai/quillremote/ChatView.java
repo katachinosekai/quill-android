@@ -116,6 +116,10 @@ final class ChatView extends LinearLayout {
     List<Item> items = new ArrayList<>();
     boolean busy;
     boolean follow = true;
+    static final int PAGE = 50;
+    int shownLimit = PAGE;
+    final TextView earlier;
+    final LinearLayout col;
     float scale = 1f;
     boolean centerChat;
     boolean centerInput;
@@ -133,7 +137,25 @@ final class ChatView extends LinearLayout {
         list = new LinearLayout(c);
         list.setOrientation(VERTICAL);
         list.setPadding(dp(14), dp(10), dp(14), dp(16));
-        scroll.addView(list);
+        col = new LinearLayout(c);
+        col.setOrientation(VERTICAL);
+        earlier = new TextView(c);
+        earlier.setTextColor(MainActivity.ACCENT);
+        earlier.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        earlier.setGravity(Gravity.CENTER);
+        earlier.setPadding(dp(14), dp(12), dp(14), dp(4));
+        earlier.setVisibility(GONE);
+        earlier.setOnClickListener(v -> {
+            int before = col.getHeight();
+            int y = scroll.getScrollY();
+            follow = false;
+            shownLimit += PAGE;
+            setItems(items);
+            col.post(() -> scroll.scrollTo(0, y + col.getHeight() - before));
+        });
+        col.addView(earlier, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        col.addView(list, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        scroll.addView(col);
         addView(scroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         scroll.setOnTouchListener((v, e) -> {
             if (pinch != null) {
@@ -264,7 +286,7 @@ final class ChatView extends LinearLayout {
 
     void toBottom() {
         if (follow) {
-            scroll.scrollTo(0, Math.max(0, list.getHeight() - scroll.getHeight()));
+            scroll.scrollTo(0, Math.max(0, col.getHeight() - scroll.getHeight()));
         }
     }
 
@@ -382,10 +404,15 @@ final class ChatView extends LinearLayout {
         expanded.clear();
         items = new ArrayList<>();
         follow = true;
+        shownLimit = PAGE;
         setQueue(null);
     }
 
-    void setItems(List<Item> next) {
+    void setItems(List<Item> all) {
+        int hidden = Math.max(0, all.size() - shownLimit);
+        List<Item> next = hidden == 0 ? all : all.subList(hidden, all.size());
+        earlier.setText("Show earlier messages (" + hidden + ")");
+        earlier.setVisibility(hidden > 0 ? VISIBLE : GONE);
         boolean typing = box.hasFocus();
         Map<Integer, Item> bySeq = new HashMap<>();
         for (Item it : next) {
@@ -420,7 +447,7 @@ final class ChatView extends LinearLayout {
             views.put(it.seq, v);
             sigs.put(it.seq, sig);
         }
-        items = next;
+        items = all;
         if (typing && !box.hasFocus()) {
             box.requestFocus();
         }

@@ -358,7 +358,7 @@ public class MainActivity extends Activity {
         body.addView(column, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
         column.addView(bars.tabScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
         column.addView(bars.bookScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
-        column.addView(bars.usageStrip, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
+        column.addView(bars.usageStrip, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(22)));
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(false);
@@ -634,6 +634,16 @@ public class MainActivity extends Activity {
             right.addView(button("⟳", "Reload", v -> web.reload()));
         }
         bar.addView(right, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END | Gravity.CENTER_VERTICAL));
+        bar.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int need = mid.getMeasuredWidth();
+            int room = right.getLeft() - left.getRight();
+            int center = (bar.getWidth() - need) / 2;
+            boolean fits = center >= left.getRight() && center + need <= right.getLeft() && room > need;
+            int vis = fits ? View.VISIBLE : View.INVISIBLE;
+            if (mid.getVisibility() != vis) {
+                mid.post(() -> mid.setVisibility(vis));
+            }
+        });
         syncCenter();
         return bar;
     }
