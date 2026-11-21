@@ -21,7 +21,7 @@ func main() {
 		panic(err)
 	}
 	port, _ := strconv.Atoi(os.Args[2])
-	s, err := folders.Listen(cert, port, os.Args[3])
+	s, err := folders.Listen(cert, port, []folders.Phone{{ID: "a1b2c3d4", Name: "emu-test", KeyHash: folders.HashKey(os.Args[3])}})
 	if err != nil {
 		panic(err)
 	}

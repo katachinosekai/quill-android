@@ -43,6 +43,7 @@ SERIAL=""
 EMU_PID=""
 WEB_PID=""
 FOLD_PID=""
+PHONE_PID=""
 
 log() { echo "$*" | tee -a "$OUT/results.txt"; }
 ok() { PASS=$((PASS + 1)); log "PASS  $1"; }
@@ -74,6 +75,7 @@ cleanup() {
 	restore_anim
 	[ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null
 	[ -n "$FOLD_PID" ] && kill -INT "$FOLD_PID" 2>/dev/null
+	[ -n "$PHONE_PID" ] && kill "$PHONE_PID" 2>/dev/null
 	if [ -n "$SERIAL" ]; then
 		adb_ logcat -d > "$OUT/logcat.txt" 2>/dev/null
 		adb_ reverse --remove-all 2>/dev/null
@@ -660,6 +662,99 @@ fi
 adb_ shell input keyevent KEYCODE_BACK
 nap 2
 crashed && bad "back" "crash" || ok "back"
+
+if command -v go >/dev/null; then
+	mkdir -p "$WORK/ph"
+	cp "$ROOT/scripts/testdata/phoned.go" "$WORK/ph/main.go"
+	printf 'module phoned\n\ngo 1.26\n' > "$WORK/ph/go.mod"
+	(cd "$WORK/ph" && go build -o phoned . 2> "$OUT/phoned-build.log")
+	PKEY=phonetest_0123456789abcdef
+	"$WORK/ph/phoned" 0 "$PKEY" > "$WORK/ph/out" 2> "$OUT/phoned.log" &
+	PHONE_PID=$!
+	for i in $(seq 1 20); do [ -s "$WORK/ph/out" ] && break; sleep 0.5; done
+	read -r PPORT PFP < "$WORK/ph/out"
+fi
+if [ -n "${PPORT:-}" ]; then
+	pcurl() { curl -sk -H "X-Quill-Key: $PKEY" "https://127.0.0.1:$PPORT$1"; }
+	plog() { pcurl /debug/log; }
+	popen() { adb_ shell am start -W -f 0x24000000 -n "$PKG/$ACT" --es quill.openQuill "$1" >/dev/null 2>&1; }
+	pnotif() { adb_ shell dumpsys notification --noredact 2>/dev/null | grep -c -F "$1"; }
+	pref_has() { adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "$1"; }
+	adb_ shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
+	PLINK="quillpair://pair?h=$HOSTIP&p=$PPORT&k=$PKEY&fp=$PFP&n=emu-phone&i=a1b2c3d4&v=2"
+	adb_ shell am start -W -a android.intent.action.VIEW -d "\"$PLINK\"" "$PKG" >/dev/null 2>&1
+	wait_for 'text="Rename the greeting"' 30 && ok "remote: Quill chat shown natively after a v2 pairing" || bad "remote: Quill chat shown natively after a v2 pairing"
+	shot 09-remote
+	has 'content-desc="New session"' && ok "remote: + New session in the top bar" || bad "remote: + New session in the top bar"
+	has 'Edit main.go' && ok "remote: tool row" || bad "remote: tool row"
+	adb_ shell cmd statusbar collapse >/dev/null 2>&1
+	tap_edit && nap 1
+	adb_ shell input text remote_hello
+	adb_ shell input keyevent KEYCODE_ENTER
+	wait_for 'text="Push now"' 15 && ok "remote: send, streamed reply with choices" || bad "remote: send, streamed reply with choices"
+	adb_ shell input keyevent KEYCODE_BACK
+	nap 1
+	DIRTY=1
+	tap_text "Push now"
+	for i in $(seq 1 20); do plog | grep -q 'choice' && break; sleep 0.25; done
+	plog | grep -q 'choice' && ok "remote: choice button answers by seq/index" || bad "remote: choice button answers by seq/index" "$(plog | tail -c 300)"
+	pcurl "/debug/busy?id=session_A1&on=1" >/dev/null
+	nap 2
+	tap_edit && nap 1
+	adb_ shell input text queued_one
+	adb_ shell input keyevent KEYCODE_ENTER
+	nap 1
+	adb_ shell input text queued_two
+	adb_ shell input keyevent KEYCODE_ENTER
+	nap 1
+	adb_ shell input keyevent KEYCODE_BACK
+	wait_for 'text="2 queued messages"' 10 && ok "remote: busy session queues both messages" || bad "remote: busy session queues both messages" "$(dump | grep -o 'queued[^"]*' | head -2 | tr '\n' ' ')"
+	shot 09b-queue
+	tap_text "Send now"
+	for i in $(seq 1 20); do plog | grep -q 'queue/send-now' && break; sleep 0.25; done
+	wait_for 'text="1 queued message"' 8
+	tap_text "Remove from queue"
+	for i in $(seq 1 20); do plog | grep -q 'queue/delete' && break; sleep 0.25; done
+	plog | grep -q 'queue/send-now' && plog | grep -q 'queue/delete' && ok "remote: queue Send now and remove" || bad "remote: queue Send now and remove"
+	gone 'queued message' 8 && ok "remote: queue empty afterwards" || bad "remote: queue empty afterwards"
+	pcurl "/debug/busy?id=session_A1&on=0" >/dev/null
+	pcurl "/debug/pause?on=1" >/dev/null
+	wait_for 'text="Resume now"' 10 && ok "remote: usage pause banner" || bad "remote: usage pause banner"
+	tap_text "Resume now" && nap 1
+	gone 'text="Resume now"' 8 && plog | grep -q 'usage/resume' && ok "remote: Resume now" || bad "remote: Resume now"
+	popen session_C3
+	wait_for 'text="Allow Bash?"' 15 && ok "remote: permission card" || bad "remote: permission card"
+	tap_text "Allow" && nap 1
+	wait_for 'text="Bash: allowed"' 10 && ok "remote: Allow answers and the card resolves" || bad "remote: Allow answers and the card resolves"
+	tap_text "New session" && nap 2
+	tap_text "START" >/dev/null 2>&1 || tap_text "Start" >/dev/null 2>&1
+	wait_for 'Started with online · opus · default' 15 && ok "remote: new session started and opened" || bad "remote: new session started and opened"
+	popen session_A1
+	wait_for 'text="Rename the greeting"' 10
+	nap 2
+	pcurl "/debug/event?id=session_C3&type=approval" >/dev/null
+	pcurl "/debug/event?id=session_A1&type=finished" >/dev/null
+	for i in $(seq 1 40); do [ "$(pnotif 'Approval needed: Zomboid launcher')" -ge 1 ] && break; sleep 0.5; done
+	[ "$(pnotif 'Approval needed: Zomboid launcher')" -ge 1 ] && ok "remote: notification for another session" || bad "remote: notification for another session"
+	[ "$(pnotif 'Finished: Fix edits')" = 0 ] && ok "remote: silent for the session on screen" || bad "remote: silent for the session on screen"
+	pcurl "/debug/noapi?on=1" >/dev/null
+	adb_ shell cmd statusbar collapse >/dev/null 2>&1
+	sleep 4
+	DIRTY=1
+	tap_text "Reconnect" >/dev/null 2>&1
+	for i in $(seq 1 40); do pref_has 'phone.unsupported" value="true"' && break; sleep 0.5; done
+	pref_has 'phone.unsupported" value="true"' && ok "remote: falls back to claude.ai without a phone API" || bad "remote: falls back to claude.ai without a phone API"
+	pcurl "/debug/noapi?on=0" >/dev/null
+	adb_ shell input keyevent KEYCODE_HOME
+	nap 1
+	launch
+	wait_for 'text="Rename the greeting"' 30 && ok "remote: switches back once the API answers" || bad "remote: switches back once the API answers"
+	crashed && bad "remote: no crash" "$(adb_ logcat -d -b crash | grep -m1 -A2 'FATAL')" || ok "remote: no crash"
+	kill "$PHONE_PID" 2>/dev/null
+	PHONE_PID=""
+else
+	log "SKIP  remote mode (go or the mock phone server unavailable)"
+fi
 
 adb_ logcat -d -b crash > "$OUT/crash.txt" 2>/dev/null
 [ "$CLEANUP" = 1 ] && adb_ uninstall "$PKG" >/dev/null 2>&1
