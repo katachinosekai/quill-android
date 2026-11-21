@@ -42,6 +42,7 @@ class FolderSync {
     static final Pattern HOST = Pattern.compile("[A-Za-z0-9.:\\-\\[\\]]{1,255}");
     static final Pattern GIST = Pattern.compile("[A-Za-z0-9-]{1,39}/[0-9a-f]{20,40}");
     static final Pattern FILE = Pattern.compile("[A-Za-z0-9._-]{1,100}");
+    static final Pattern PHONE_ID = Pattern.compile("[0-9a-f]{8}");
 
     interface Listener {
         void onFolders(Map<String, String> sessions, List<String> order);
@@ -111,8 +112,9 @@ class FolderSync {
         }
         String h = u.getQueryParameter("h"), p = u.getQueryParameter("p"), k = u.getQueryParameter("k");
         String fp = u.getQueryParameter("fp"), f = u.getQueryParameter("f"), g = u.getQueryParameter("g");
-        String n = u.getQueryParameter("n");
-        SharedPreferences.Editor e = prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist");
+        String n = u.getQueryParameter("n"), id = u.getQueryParameter("i"), v = u.getQueryParameter("v");
+        SharedPreferences.Editor e = prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
+                .remove("pair.id").remove("pair.v").remove("pair.lastHost");
         boolean any = false;
         if (h != null && p != null && k != null && fp != null) {
             List<String> hosts = new ArrayList<>();
@@ -130,6 +132,9 @@ class FolderSync {
             fp = fp.toLowerCase(Locale.ROOT);
             if (!hosts.isEmpty() && port > 1024 && port < 65536 && KEY.matcher(k).matches() && HEX64.matcher(fp).matches()) {
                 e.putString("pair.hosts", String.join(",", hosts)).putInt("pair.port", port).putString("pair.key", k).putString("pair.fp", fp);
+                if (id != null && PHONE_ID.matcher(id).matches() && "2".equals(v)) {
+                    e.putString("pair.id", id).putInt("pair.v", 2);
+                }
                 any = true;
             }
         }
@@ -148,7 +153,7 @@ class FolderSync {
 
     void unpair() {
         prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
-                .remove("pair.name").remove("pair.fileName").remove("pair.file").remove("folders.cache").remove("folders.source")
+                .remove("pair.id").remove("pair.v").remove("pair.lastHost").remove("pair.name").remove("pair.fileName").remove("pair.file").remove("folders.cache").remove("folders.source")
                 .remove("folders.at").remove("events.boot").remove("events.since").remove("usage.cache").apply();
         listener.onFolders(new LinkedHashMap<>(), new ArrayList<>());
     }

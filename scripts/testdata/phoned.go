@@ -1,0 +1,423 @@
+package main
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+type item map[string]any
+
+type session struct {
+	ID, Title, Folder, Group, Status string
+	Kmem                             string
+	Epoch                            int
+	Rev                              int64
+	Items                            []item
+	Queue                            []string
+}
+
+type change struct {
+	cursor int64
+	body   map[string]any
+}
+
+type server struct {
+	mu       sync.Mutex
+	wake     *sync.Cond
+	key      string
+	boot     string
+	cursor   int64
+	changes  []change
+	sessions []*session
+	control  bool
+	idem     map[string][2]string
+	log      []string
+}
+
+func (s *server) find(id string) *session {
+	for _, x := range s.sessions {
+		if x.ID == id {
+			return x
+		}
+	}
+	return nil
+}
+
+func (s *server) sessionJSON(x *session) map[string]any {
+	pending := map[string]int{"permissions": 0, "questions": 0, "plans": 0}
+	for _, it := range x.Items {
+		if r, ok := it["request"].(map[string]any); ok && r["state"] == "pending" {
+			switch it["kind"] {
+			case "permission":
+				pending["permissions"]++
+			case "question":
+				pending["questions"]++
+			case "plan":
+				pending["plans"]++
+			}
+		}
+	}
+	m := map[string]any{"id": x.ID, "title": x.Title, "folder": "/home/user/Projects/" + x.Folder, "folderName": x.Folder,
+		"group": x.Group, "status": x.Status, "busy": x.Status == "running", "model": "opus", "mode": "default", "backend": "online",
+		"context": map[string]int{"used": 45000, "max": 200000}, "pending": pending, "queue": len(x.Queue), "background": 0,
+		"epoch": x.Epoch, "rev": x.Rev, "updatedMs": time.Now().UnixMilli(), "focused": x == s.sessions[0]}
+	if x.Kmem != "" {
+		m["kmem"] = x.Kmem
+	}
+	return m
+}
+
+func (s *server) touch(x *session, it item) {
+	x.Rev++
+	if it != nil {
+		it["rev"] = x.Rev
+	}
+	s.emit(map[string]any{"type": "session", "session": s.sessionJSON(x)})
+}
+
+func (s *server) emit(body map[string]any) {
+	s.cursor++
+	s.changes = append(s.changes, change{s.cursor, body})
+	s.wake.Broadcast()
+}
+
+func (s *server) add(x *session, it item) item {
+	seq := 1
+	if n := len(x.Items); n > 0 {
+		seq = x.Items[n-1]["seq"].(int) + 1
+	}
+	it["seq"] = seq
+	x.Items = append(x.Items, it)
+	s.touch(x, it)
+	return it
+}
+
+func (s *server) usage() map[string]any {
+	now := time.Now().UnixMilli()
+	return map[string]any{"paused": false, "pausedUntilMs": 0, "fiveHour": map[string]any{"pct": 64, "resetsAtMs": now + 3600000},
+		"week": map[string]any{"pct": 14, "resetsAtMs": now + 86400000}}
+}
+
+func reply(w http.ResponseWriter, code int, body map[string]any) {
+	body["v"] = 1
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(body)
+}
+
+func fail(w http.ResponseWriter, code int, c string) {
+	reply(w, code, map[string]any{"error": map[string]any{"code": c, "message": c}})
+}
+
+func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Quill-Key")), []byte(s.key)) != 1 {
+		fail(w, 403, "forbidden")
+		return
+	}
+	var body map[string]any
+	raw := []byte{}
+	if r.Method == http.MethodPost {
+		raw, _ = io.ReadAll(io.LimitReader(r.Body, 65537))
+		if len(raw) > 65536 {
+			fail(w, 413, "too_large")
+			return
+		}
+		if json.Unmarshal(raw, &body) != nil {
+			fail(w, 400, "bad_request")
+			return
+		}
+		k := r.Header.Get("Idempotency-Key")
+		if k == "" {
+			fail(w, 400, "idempotency_key_missing")
+			return
+		}
+		sum := sha256.Sum256(append([]byte(r.Method+" "+r.URL.Path+" "), raw...))
+		s.mu.Lock()
+		if prev, ok := s.idem[k]; ok {
+			s.mu.Unlock()
+			if prev[0] != hex.EncodeToString(sum[:]) {
+				fail(w, 422, "idempotency_mismatch")
+				return
+			}
+			w.Header().Set("Idempotent-Replay", "true")
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, prev[1])
+			return
+		}
+		s.mu.Unlock()
+		rec := &recorder{ResponseWriter: w}
+		s.post(rec, r, body)
+		s.mu.Lock()
+		s.idem[k] = [2]string{hex.EncodeToString(sum[:]), rec.buf.String()}
+		s.log = append(s.log, r.URL.Path+" "+string(raw))
+		s.mu.Unlock()
+		return
+	}
+	s.get(w, r)
+}
+
+type recorder struct {
+	http.ResponseWriter
+	buf strings.Builder
+}
+
+func (r *recorder) Write(b []byte) (int, error) {
+	r.buf.Write(b)
+	return r.ResponseWriter.Write(b)
+}
+
+func (s *server) get(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Path
+	q := r.URL.Query()
+	switch {
+	case p == "/phone/sessions":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		var list []any
+		for _, x := range s.sessions {
+			list = append(list, s.sessionJSON(x))
+		}
+		reply(w, 200, map[string]any{"boot": s.boot, "cursor": s.cursor, "control": s.control, "usage": s.usage(),
+			"models": map[string]any{"online": []string{"opus", "sonnet"}, "local": []string{}},
+			"modes":  map[string]any{"online": []string{"default", "acceptEdits", "plan", "auto"}, "local": []string{"default"}},
+			"sessions": list})
+	case p == "/phone/folders":
+		reply(w, 200, map[string]any{"folders": []any{map[string]string{"path": "/home/user/Projects/demo", "name": "demo"}}})
+	case p == "/phone/stream":
+		cur, _ := strconv.ParseInt(q.Get("cursor"), 10, 64)
+		wait, _ := strconv.Atoi(q.Get("wait"))
+		if wait <= 0 || wait > 25 {
+			wait = 25
+		}
+		deadline := time.Now().Add(time.Duration(wait) * time.Second)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		go func() { time.Sleep(time.Until(deadline)); s.mu.Lock(); s.wake.Broadcast(); s.mu.Unlock() }()
+		for s.cursor <= cur && time.Now().Before(deadline) {
+			s.wake.Wait()
+		}
+		var out []any
+		for _, c := range s.changes {
+			if c.cursor > cur {
+				out = append(out, c.body)
+			}
+		}
+		if out == nil {
+			out = []any{}
+		}
+		reply(w, 200, map[string]any{"boot": s.boot, "cursor": s.cursor, "reset": cur > s.cursor, "changes": out})
+	case strings.HasPrefix(p, "/phone/session/") && strings.HasSuffix(p, "/items"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/phone/session/"), "/items")
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(id)
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		items := []item{}
+		reset := false
+		if q.Has("epoch") {
+			ep, _ := strconv.Atoi(q.Get("epoch"))
+			since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
+			if ep != x.Epoch {
+				reset = true
+				items = x.Items
+			} else {
+				for _, it := range x.Items {
+					if it["rev"].(int64) > since {
+						items = append(items, it)
+					}
+				}
+			}
+		} else {
+			items = x.Items
+		}
+		queue := []any{}
+		for i, t := range x.Queue {
+			queue = append(queue, map[string]any{"index": i, "text": t})
+		}
+		reply(w, 200, map[string]any{"id": x.ID, "epoch": x.Epoch, "rev": x.Rev, "reset": reset, "hasMore": false, "items": items, "queue": queue})
+	case p == "/debug/log":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		reply(w, 200, map[string]any{"log": s.log})
+	default:
+		fail(w, 404, "not_found")
+	}
+}
+
+func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]any) {
+	p := r.URL.Path
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p == "/phone/hello" {
+		reply(w, 200, map[string]any{"phoneId": "a1b2c3d4", "control": s.control, "boot": s.boot})
+		return
+	}
+	if !s.control {
+		fail(w, 403, "control_off")
+		return
+	}
+	if p == "/debug/control" {
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(p, "/phone/session/"), "/")
+	if len(parts) < 2 || !strings.HasPrefix(p, "/phone/session/") {
+		fail(w, 404, "not_found")
+		return
+	}
+	x := s.find(parts[0])
+	if x == nil {
+		fail(w, 404, "not_found")
+		return
+	}
+	switch parts[1] {
+	case "send":
+		text, _ := body["text"].(string)
+		if strings.TrimSpace(text) == "" {
+			fail(w, 400, "bad_request")
+			return
+		}
+		if x.Status == "running" {
+			x.Queue = append(x.Queue, text)
+			s.touch(x, nil)
+			reply(w, 200, map[string]any{"queued": true})
+			return
+		}
+		s.add(x, item{"kind": "user", "text": text})
+		x.Status = "running"
+		s.touch(x, nil)
+		go s.answerLater(x, text)
+		reply(w, 200, map[string]any{"queued": false})
+	case "answer":
+		action, _ := body["action"].(string)
+		if action == "choice" {
+			seq := int(body["seq"].(float64))
+			idx := int(body["index"].(float64))
+			for _, it := range x.Items {
+				if it["seq"] == seq && it["choicesOpen"] == true {
+					it["choicesOpen"] = false
+					s.touch(x, it)
+					opt := it["choices"].([]string)[idx]
+					s.add(x, item{"kind": "user", "text": opt})
+					reply(w, 200, map[string]any{"item": it})
+					return
+				}
+			}
+			fail(w, 409, "stale")
+			return
+		}
+		id, _ := body["requestId"].(string)
+		for _, it := range x.Items {
+			req, ok := it["request"].(map[string]any)
+			if !ok || req["id"] != id {
+				continue
+			}
+			if req["state"] != "pending" {
+				fail(w, 409, "stale")
+				return
+			}
+			states := map[string]string{"allow": "allowed", "allowAlways": "allowedAlways", "deny": "denied", "approvePlan": "allowed",
+				"rejectPlan": "denied", "answer": "allowed", "rotate": "allowed", "dismiss": "denied"}
+			req["state"] = states[action]
+			s.touch(x, it)
+			if x.Status == "waiting" {
+				x.Status = "idle"
+				s.touch(x, nil)
+			}
+			reply(w, 200, map[string]any{"item": it})
+			return
+		}
+		fail(w, 404, "not_found")
+	case "interrupt":
+		was := x.Status == "running"
+		x.Status = "idle"
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{"wasBusy": was})
+	default:
+		fail(w, 404, "not_found")
+	}
+}
+
+func (s *server) answerLater(x *session, text string) {
+	time.Sleep(400 * time.Millisecond)
+	s.mu.Lock()
+	it := s.add(x, item{"kind": "assistant", "text": "Working on: " + text, "streaming": true})
+	s.mu.Unlock()
+	time.Sleep(400 * time.Millisecond)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it["text"] = "Done: **" + text + "**.\n\nPush now, or wait for the release?"
+	it["streaming"] = false
+	it["choices"] = []string{"Push now", "Wait for the release"}
+	it["choicesOpen"] = true
+	s.touch(x, it)
+	x.Status = "idle"
+	s.touch(x, nil)
+	if len(x.Queue) > 0 {
+		next := x.Queue[0]
+		x.Queue = x.Queue[1:]
+		s.add(x, item{"kind": "user", "text": next})
+	}
+}
+
+func cert() (tls.Certificate, string) {
+	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "phoned"}, NotBefore: time.Now().Add(-time.Hour),
+		NotAfter: time.Now().Add(24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &k.PublicKey, k)
+	sum := sha256.Sum256(der)
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: k}, hex.EncodeToString(sum[:])
+}
+
+func main() {
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: phoned <port> <key>")
+		os.Exit(2)
+	}
+	port, _ := strconv.Atoi(os.Args[1])
+	s := &server{key: os.Args[2], boot: strconv.FormatInt(time.Now().UnixNano(), 36), control: true, idem: map[string][2]string{}}
+	s.wake = sync.NewCond(&s.mu)
+	a := &session{ID: "session_A1", Title: "Fix edits", Folder: "demo", Group: "Active", Status: "idle", Kmem: "Quill Tester", Epoch: 1}
+	b := &session{ID: "session_C3", Title: "Zomboid launcher", Folder: "zomboid", Group: "Zomboid", Status: "waiting", Epoch: 1}
+	c := &session{ID: "session_B2", Title: "Old server notes", Folder: "server", Group: "Archive", Status: "stopped", Epoch: 1}
+	s.sessions = []*session{a, b, c}
+	s.add(a, item{"kind": "user", "text": "Rename the greeting"})
+	s.add(a, item{"kind": "assistant", "text": "I'll update `main.go`."})
+	s.add(a, item{"kind": "tool", "tool": map[string]any{"name": "Edit", "id": "t1", "summary": "Edit main.go", "done": true, "isError": false, "result": "updated", "resultTruncated": false},
+		"diff": map[string]any{"path": "main.go", "lines": []map[string]string{{"op": "-", "text": "hi"}, {"op": "+", "text": "hello"}}, "truncated": false}})
+	s.add(b, item{"kind": "user", "text": "Push the launcher"})
+	s.add(b, item{"kind": "permission", "request": map[string]any{"id": "req_push", "state": "pending", "tool": "Bash", "detail": "git push origin master", "canAllowAlways": true}})
+	s.add(c, item{"kind": "notice", "text": "Session stopped"})
+	cr, fp := cert()
+	ln, err := tls.Listen("tcp", ":"+strconv.Itoa(port), &tls.Config{Certificates: []tls.Certificate{cr}})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(ln.Addr().(*net.TCPAddr).Port, fp)
+	go http.Serve(ln, s)
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt)
+	<-ch
+}
