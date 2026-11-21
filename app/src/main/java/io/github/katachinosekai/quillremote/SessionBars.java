@@ -334,20 +334,31 @@ class SessionBars {
     }
 
     void applyMode(boolean animate) {
-        String mode = prefs.getString("tabMode", "auto");
-        boolean v = mode.equals("vertical") || (mode.equals("auto") && wide());
+        boolean v = true;
         boolean changed = v != vertical;
         vertical = v;
         if (sideAnim != null) {
             sideAnim.cancel();
         }
-        setSideWidth(vertical && prefs.getBoolean("sideOpen", true) ? a.dp(SIDE_W) + a.dp(1) : 0);
+        setSideWidth(vertical && prefs.getBoolean("sideOpen", true) ? sideFull() : 0);
         a.sideArrow.setVisibility(View.VISIBLE);
         syncArrow();
-        a.syncLayoutBtn();
         render();
         if (changed) {
             a.inject();
+        }
+    }
+
+    /** The folder list: a 300 dp sidebar on wide screens, the whole width on phones (it covers the chat until a session is picked). */
+    int sideFull() {
+        return wide() ? a.dp(SIDE_W) + a.dp(1) : a.getResources().getDisplayMetrics().widthPixels;
+    }
+
+    /** On phones the folder list closes once a session is picked. */
+    void picked(String id) {
+        a.openSession(id);
+        if (!wide() && prefs.getBoolean("sideOpen", true)) {
+            toggleSide();
         }
     }
 
@@ -368,7 +379,7 @@ class SessionBars {
         boolean open = !prefs.getBoolean("sideOpen", true);
         prefs.edit().putBoolean("sideOpen", open).apply();
         syncArrow();
-        int full = a.dp(SIDE_W) + a.dp(1);
+        int full = sideFull();
         int from = side.getVisibility() == View.VISIBLE ? side.getWidth() : 0;
         if (sideAnim != null) {
             sideAnim.cancel();
@@ -397,59 +408,6 @@ class SessionBars {
         }
         int i = n >= 9 || n > tabs.size() ? tabs.size() - 1 : n - 1;
         a.openSession(tabs.get(i)[0]);
-    }
-
-    List<String> remembered(String key) {
-        List<String> out = new ArrayList<>();
-        try {
-            JSONArray arr = new JSONArray(prefs.getString(key, "[]"));
-            for (int i = 0; i < arr.length(); i++) {
-                out.add(arr.getString(i));
-            }
-        } catch (JSONException ignored) {
-        }
-        return out;
-    }
-
-    void stableOrder() {
-        if (prefs.getBoolean("sortActivity", false)) {
-            return;
-        }
-        List<String> fo = remembered("order.folders");
-        for (String f : order) {
-            if (!fo.contains(f)) {
-                fo.add(f);
-            }
-        }
-        for (Item it : items) {
-            if (!fo.contains(it.folder)) {
-                fo.add(it.folder);
-            }
-        }
-        List<String> so = remembered("order.sessions");
-        for (Item it : items) {
-            if (!so.contains(it.id)) {
-                so.add(it.id);
-            }
-        }
-        while (so.size() > 2000) {
-            so.remove(0);
-        }
-        List<String> fo2 = fo;
-        List<String> so2 = so;
-        order.sort((x, y) -> Integer.compare(fo2.indexOf(x), fo2.indexOf(y)));
-        items.sort((x, y) -> Integer.compare(so2.indexOf(x.id), so2.indexOf(y.id)));
-        List<String> show = new ArrayList<>(fo);
-        show.retainAll(new java.util.HashSet<>(order));
-        for (Item it : items) {
-            if (!show.contains(it.folder)) {
-                show.add(it.folder);
-            }
-        }
-        show.sort((x, y) -> Integer.compare(fo2.indexOf(x), fo2.indexOf(y)));
-        order.clear();
-        order.addAll(show);
-        prefs.edit().putString("order.folders", new JSONArray(fo).toString()).putString("order.sessions", new JSONArray(so).toString()).apply();
     }
 
     boolean folderOpen(String name) {
@@ -511,7 +469,7 @@ class SessionBars {
             }
             for (Item it : list) {
                 View r = twoLine(it, a.dp(34), 14);
-                r.setOnClickListener(v -> a.openSession(it.id));
+                r.setOnClickListener(v -> picked(it.id));
                 r.setOnLongClickListener(v -> {
                     sessionMenu(it.id);
                     return true;
@@ -558,6 +516,7 @@ class SessionBars {
     }
 
     void update(String json) {
+        String before = current;
         try {
             JSONObject o = new JSONObject(json);
             items.clear();
@@ -602,9 +561,11 @@ class SessionBars {
                 t[1] = it.title;
             }
         }
-        stableOrder();
         saveTabs();
         render();
+        if (before != null && current != null && !before.equals(current) && !wide() && prefs.getBoolean("sideOpen", true)) {
+            toggleSide();
+        }
     }
 
     Item item(String id) {
@@ -769,14 +730,8 @@ class SessionBars {
 
     void folderMenu(View anchor, String folder, List<Item> list) {
         Menu m = new Menu();
-        m.add("Open all in tabs", () -> openAll(list));
-        if (vertical) {
-            m.add("Expand all folders", () -> setAllFolders(true));
-            m.add("Collapse all folders", () -> setAllFolders(false));
-            m.add("Switch to horizontal tabs", () -> setLayout(false));
-        } else {
-            m.add("Switch to vertical sidebar", () -> setLayout(true));
-        }
+        m.add("Expand all folders", () -> setAllFolders(true));
+        m.add("Collapse all folders", () -> setAllFolders(false));
         showMenu(folder, m);
     }
 
@@ -790,11 +745,6 @@ class SessionBars {
         }
         e.apply();
         render();
-    }
-
-    void setLayout(boolean vert) {
-        prefs.edit().putString("tabMode", vert ? "vertical" : "horizontal").apply();
-        applyMode(true);
     }
 
     void sessionMenu(String id) {
@@ -821,28 +771,6 @@ class SessionBars {
                     .setPositiveButton("Delete", (d, w) -> r.sessionAction("delete", id, "delete", null))
                     .setNegativeButton("Cancel", null)
                     .show());
-        }
-        if (ti < 0) {
-            m.add("Open in new tab", () -> {
-                if (tabIndex(id) < 0) {
-                    tabs.add(new String[]{id, title});
-                    while (tabs.size() > MAX_TABS) {
-                        tabs.remove(0);
-                    }
-                    saveTabs();
-                    render();
-                }
-            });
-        } else {
-            m.add("Close tab", () -> closeTab(id));
-            m.add("Close other tabs", () -> editTabs(id, 2));
-            m.add("Close tabs to the right", () -> editTabs(id, 3));
-            if (ti > 0) {
-                m.add("Move left", () -> editTabs(id, 4));
-            }
-            if (ti < tabs.size() - 1) {
-                m.add("Move right", () -> editTabs(id, 5));
-            }
         }
         if (s != null && r.can("project")) {
             m.add("Project...", () -> projectMenu(r, id, s.optString("project")));
@@ -896,52 +824,6 @@ class SessionBars {
         d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
         d.show();
         e.requestFocus();
-    }
-
-    void editTabs(String id, int op) {
-        int at = tabIndex(id);
-        if (at < 0) {
-            return;
-        }
-        switch (op) {
-            case 2:
-                String[] keep = tabs.get(at);
-                tabs.clear();
-                tabs.add(keep);
-                break;
-            case 3:
-                while (tabs.size() > at + 1) {
-                    tabs.remove(tabs.size() - 1);
-                }
-                break;
-            case 4:
-                tabs.add(at - 1, tabs.remove(at));
-                break;
-            case 5:
-                tabs.add(at + 1, tabs.remove(at));
-                break;
-        }
-        saveTabs();
-        render();
-        if (current != null && tabIndex(current) < 0) {
-            a.openSession(id);
-        }
-    }
-
-    void openAll(List<Item> list) {
-        for (Item it : list) {
-            if (tabIndex(it.id) < 0) {
-                tabs.add(new String[]{it.id, it.title});
-            }
-        }
-        while (tabs.size() > MAX_TABS) {
-            tabs.remove(0);
-        }
-        saveTabs();
-        render();
-        if (!list.isEmpty()) {
-            a.openSession(list.get(0).id);
-        }
     }
 
     View bookmark(String folder, List<Item> list) {

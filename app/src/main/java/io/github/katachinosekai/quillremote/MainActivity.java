@@ -60,7 +60,6 @@ public class MainActivity extends Activity {
     PhoneApi phoneApi;
     Remote remote;
     ChatView chat;
-    TextView layoutBtn;
     Notifier fgNotifier;
 
     void askNotifyPermission() {
@@ -143,6 +142,63 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Later", null)
                 .show());
+    }
+
+    TextView notifyBanner;
+
+    /** Banner when Android blocks Quill Android's notifications while paired: replies and approvals would go unseen (seen on a Galaxy A37, 2026-11-21). */
+    View notifyBanner() {
+        notifyBanner = new TextView(this);
+        notifyBanner.setTextColor(TEXT);
+        notifyBanner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        notifyBanner.setBackgroundColor(0xFF5A2E22);
+        notifyBanner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        notifyBanner.setText("Notifications are off for Quill Android, so you won't see when a session finishes or needs you. Tap to turn them on. Long-press to hide this.");
+        notifyBanner.setContentDescription("Notifications off banner");
+        notifyBanner.setVisibility(View.GONE);
+        notifyBanner.setOnClickListener(v -> {
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    && !prefs.getBoolean("notifyHint.asked", false)) {
+                prefs.edit().putBoolean("notifyHint.asked", true).apply();
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 9);
+                return;
+            }
+            startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName()));
+        });
+        notifyBanner.setOnLongClickListener(v -> {
+            prefs.edit().putBoolean("notifyHint.hidden", true).apply();
+            notifyBanner.setVisibility(View.GONE);
+            toast("Hidden. Turn notifications on any time in Android Settings → Apps → Quill.");
+            return true;
+        });
+        return notifyBanner;
+    }
+
+    static boolean notificationsBlocked(android.content.Context c) {
+        android.app.NotificationManager nm = c.getSystemService(android.app.NotificationManager.class);
+        if (nm == null) {
+            return false;
+        }
+        if (!nm.areNotificationsEnabled()) {
+            return true;
+        }
+        android.app.NotificationChannel ch = nm.getNotificationChannel(Notifier.CHANNEL);
+        return ch != null && ch.getImportance() == android.app.NotificationManager.IMPORTANCE_NONE;
+    }
+
+    void syncNotifyBanner() {
+        if (notifyBanner == null) {
+            return;
+        }
+        boolean paired = !prefs.getString("pair.key", "").isEmpty();
+        boolean show = paired && !prefs.getBoolean("notifyHint.hidden", false) && notificationsBlocked(this);
+        notifyBanner.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        syncNotifyBanner();
     }
 
     View updateBanner() {
@@ -496,6 +552,7 @@ public class MainActivity extends Activity {
         progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(SIDE));
         column.addView(progress, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
         column.addView(updateBanner(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        column.addView(notifyBanner(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         column.addView(signInBanner(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         web = new WebView(this);
@@ -719,14 +776,6 @@ public class MainActivity extends Activity {
             inject();
         });
         left.addView(centerBtn);
-        layoutBtn = button("Landscape", "Switch tab layout", v -> {
-            prefs.edit().putString("tabMode", bars.vertical ? "horizontal" : "vertical").apply();
-            bars.applyMode(true);
-        });
-        layoutBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        layoutBtn.setPadding(dp(10), 0, dp(10), 0);
-        layoutBtn.getLayoutParams().width = LinearLayout.LayoutParams.WRAP_CONTENT;
-        left.addView(layoutBtn);
         bar.addView(left, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.CENTER_VERTICAL));
 
         LinearLayout mid = new LinearLayout(this);
@@ -848,22 +897,6 @@ public class MainActivity extends Activity {
             syncSize.run();
         });
         box.addView(row(size, reset));
-
-        section(box, "Tabs", true);
-        box.addView(segmented(new String[][]{{"Auto", "auto"}, {"Horizontal", "horizontal"}, {"Vertical", "vertical"}}));
-        LinearLayout barsRow = new LinearLayout(this);
-        for (String[] b : new String[][]{{"Tab bar", "showTabs"}, {"Folder bar", "showFolders"}}) {
-            CheckBox c = check(b[0], prefs.getBoolean(b[1], true));
-            c.setOnCheckedChangeListener((v, on) -> {
-                prefs.edit().putBoolean(b[1], on).apply();
-                bars.render();
-            });
-            barsRow.addView(c, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        }
-        box.addView(barsRow);
-        CheckBox act = check("Sort folders by activity", prefs.getBoolean("sortActivity", false));
-        act.setOnCheckedChangeListener((v, on) -> prefs.edit().putBoolean("sortActivity", on).apply());
-        box.addView(act);
 
         section(box, "Folders from Quill", true);
         LinearLayout status = new LinearLayout(this);
@@ -990,47 +1023,6 @@ public class MainActivity extends Activity {
         l.setGravity(Gravity.CENTER_VERTICAL);
         l.addView(main, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         l.addView(end, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        return l;
-    }
-
-    View segmented(String[][] opts) {
-        LinearLayout l = new LinearLayout(this);
-        l.setPadding(0, dp(4), 0, dp(4));
-        TextView[] items = new TextView[opts.length];
-        Runnable sync = () -> {
-            String cur = prefs.getString("tabMode", "auto");
-            for (int i = 0; i < opts.length; i++) {
-                boolean on = opts[i][1].equals(cur);
-                GradientDrawable g = new GradientDrawable();
-                g.setCornerRadius(dp(8));
-                g.setColor(on ? 0x55D97757 : 0x00000000);
-                g.setStroke(dp(1), on ? ACCENT : 0xFF444440);
-                items[i].setBackground(g);
-                items[i].setTextColor(on ? TEXT : MUTED);
-                items[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-                items[i].setSelected(on);
-            }
-        };
-        for (int i = 0; i < opts.length; i++) {
-            TextView t = new TextView(this);
-            t.setText(opts[i][0]);
-            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-            t.setSingleLine(true);
-            t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            t.setGravity(Gravity.CENTER);
-            t.setMinHeight(dp(40));
-            String val = opts[i][1];
-            t.setOnClickListener(v -> {
-                prefs.edit().putString("tabMode", val).apply();
-                sync.run();
-                bars.applyMode(true);
-            });
-            items[i] = t;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            lp.setMargins(i == 0 ? 0 : dp(3), 0, i == opts.length - 1 ? 0 : dp(3), 0);
-            l.addView(t, lp);
-        }
-        sync.run();
         return l;
     }
 
@@ -1175,12 +1167,6 @@ public class MainActivity extends Activity {
     void chatStyle() {
         if (chat != null) {
             chat.setStyle(prefs.getInt("zoom", 115) / 115f, centerOn("centerText"), centerOn("centerInput"), centerOn("centerStatus"));
-        }
-    }
-
-    void syncLayoutBtn() {
-        if (layoutBtn != null) {
-            layoutBtn.setText(bars.vertical ? "Portrait" : "Landscape");
         }
     }
 
@@ -1582,6 +1568,7 @@ public class MainActivity extends Activity {
         }
         updateCheck.run();
         showUpdateBlocked();
+        syncNotifyBanner();
         Notifier.appVisible = true;
         if (fgNotifier != null) {
             syncNotifier();

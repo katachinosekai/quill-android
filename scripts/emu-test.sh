@@ -172,6 +172,8 @@ tap_edit() {
 	set -- $b
 	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
 }
+side_on() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' && return 0; tap_text "Sidebar"; nap 2; }
+side_off() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' || return 0; tap_text "Sidebar"; nap 2; }
 bounds_of() { dump | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' '; }
 lpress() {
 	local b
@@ -334,7 +336,7 @@ if [ "$wide" -ge 600 ]; then
 	tap_text "Zomboid launcher" && nap 3
 	adb_ shell dumpsys activity top | grep -q "$PKG" && ok "open session from sidebar" || bad "open session from sidebar"
 	lpress "Fix edits" && nap 2
-	centered "Open" && { has 'text="Open in new tab"' || has 'text="Close tab"'; } && ok "sidebar long-press: centered session menu" || bad "sidebar long-press: centered session menu"
+	centered "Open" && ! has 'text="Open in new tab"' && ! has 'text="Close tab"' && ok "sidebar long-press: centered session menu, no tab options" || bad "sidebar long-press: centered session menu, no tab options"
 	adb_ shell input keyevent KEYCODE_BACK
 	nap 1
 	tap_text "Sidebar" && nap 2
@@ -351,9 +353,7 @@ if [ "$AVD" = qfold ] && [ -z "$DEVICE" ]; then
 	shot 03-folded
 	log "folded width $(width_dp)dp"
 	crashed && bad "fold" "crash" || ok "fold without crash"
-	native_gone 'text="Sessions"' 8 && ok "folded: sidebar gone" || bad "folded: sidebar gone"
-	wait_for 'text="Other (4)"' 15 && ok "folded: folder bar" || bad "folded: folder bar"
-	wait_for 'Close tab' 10 && ok "folded: tab bar" || bad "folded: tab bar"
+	has 'Close tab' && bad "folded: no tabs" || ok "folded: no tabs"
 	adb_ emu unfold >/dev/null
 	nap 4
 	awake
@@ -365,47 +365,21 @@ fi
 
 if [ "$(width_dp)" -lt 600 ]; then
 	has 'content-desc="Sidebar"' && ok "top-left arrow on phone" || bad "top-left arrow on phone"
-	tap_text "Sidebar" && nap 2
-	shot 03b-bars-hidden
-	gone 'text="Other (4)"' 5 && ok "arrow hides tab and folder bars" || bad "arrow hides tab and folder bars"
-	has 'text="Sessions"' && bad "no vertical list in horizontal mode" || ok "no vertical list in horizontal mode"
-	tap_text "Sidebar" && nap 2
-	wait_for 'text="Other (4)"' 15 && ok "folder bar" || bad "folder bar"
-	b=$(dump | tr '>' '\n' | grep -F 'text="Other (4)"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
-	if [ -n "$b" ]; then
-		set -- $b
-		adb_ shell input swipe $((($1 + $3) / 2)) $((($2 + $4) / 2)) $((($1 + $3) / 2)) $((($2 + $4) / 2)) 900
-		nap 2
-		centered "Open all in tabs" && ok "folder long-press: centered menu" || bad "folder long-press: centered menu" "$(bounds_of 'Open all in tabs')"
-		has 'text="Collapse all folders"' && bad "folder menu: no expand/collapse in horizontal mode" || ok "folder menu: no expand/collapse in horizontal mode"
-		has 'text="Switch to vertical sidebar"' && ok "folder menu: layout switch like Quill Desktop" || bad "folder menu: layout switch like Quill Desktop"
-		tap_text "Open all in tabs" && nap 3
-		n=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o 'session_[A-Za-z0-9]*' | sort -u | wc -l)
-		[ "$n" -ge 4 ] && ok "folder long-press: open all in tabs ($n)" || bad "folder long-press: open all in tabs" "$n tabs"
-		b=$(dump | tr '>' '\n' | grep -F 'content-desc="Close tab"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
-		if [ -n "$b" ]; then
-			set -- $b
-			adb_ shell input swipe $(($1 - 40)) $((($2 + $4) / 2)) $(($1 - 40)) $((($2 + $4) / 2)) 900
-			nap 2
-		fi
-		if wait_for 'text="Close other tabs"' 5; then
-			centered "Close other tabs" && has 'text="Close tabs to the right"' && has 'text="Open"' && ok "tab long-press: centered session menu" || bad "tab long-press: centered session menu"
-			adb_ shell input keyevent KEYCODE_BACK
-			nap 1
-		else
-			bad "tab long-press: centered session menu" "no menu"
-		fi
-	fi
-	tap_text "Other (4)" && nap 2
-	shot 04-dropdown
-	has 'text="Unsorted idea"' && ok "folder drop-down" || bad "folder drop-down"
+	native 'text="Sessions"' || { tap_text "Sidebar"; nap 2; }
+	wait_for 'text="Unsorted idea"' 15 && ok "phone: folder list with its sessions" || bad "phone: folder list with its sessions"
+	shot 04-folder-list
+	has 'Close tab' && bad "phone: no tabs" || ok "phone: no tabs"
+	has 'text="Landscape"' && bad "phone: no Landscape/Portrait button" || ok "phone: no Landscape/Portrait button"
+	lpress "Unsorted idea" && nap 2
+	centered "Open" && ! has 'text="Open in new tab"' && ok "phone: long-press opens a centered session menu" || bad "phone: long-press opens a centered session menu"
 	adb_ shell input keyevent KEYCODE_BACK
 	nap 1
-	tap_text "Unsorted idea" >/dev/null 2>&1
-	launch --es quill.testUrl http://127.0.0.1:8765/code/session_D4/
-	nap 3
-	b=$(dump | tr '>' '\n' | grep -F 'content-desc="Close tab"' | wc -l)
-	[ "$b" -ge 1 ] && ok "tabs recorded ($b)" || bad "tabs recorded"
+	lpress "$(dump | tr '>' '\n' | grep -o 'text="Other  [0-9]*"' | head -1 | sed 's/^text="//; s/"$//')" && nap 2
+	centered "Collapse all folders" && ! has 'text="Open all in tabs"' && ok "phone: folder menu (expand/collapse only)" || bad "phone: folder menu (expand/collapse only)"
+	adb_ shell input keyevent KEYCODE_BACK
+	nap 1
+	tap_text "Unsorted idea" && nap 2
+	native_gone 'text="Sessions"' 8 && ok "phone: picking a session closes the list" || bad "phone: picking a session closes the list"
 	adb_ shell input tap 10 10 >/dev/null
 fi
 
@@ -430,12 +404,6 @@ dump | grep -q -i 'text="sent:hello"' && ok "Shift+Enter makes a line break (not
 adb_ shell input keyevent KEYCODE_ENTER
 nap 2
 dump | grep -q -i 'sent:one|two' && ok "multi-line message sent with Enter" || bad "multi-line message sent with Enter" "$(dump | grep -o 'sent:[^"]*' | head -1)"
-first=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o '\[\[&quot;session_[A-Za-z0-9]*' | head -1 | grep -o 'session_[A-Za-z0-9]*')
-adb_ shell input keycombination KEYCODE_CTRL_LEFT KEYCODE_1
-nap 3
-if [ -n "$first" ]; then
-	adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "name=\"last\">https://claude.ai/code/$first<" && ok "Ctrl+1 opens the first tab ($first)" || bad "Ctrl+1 opens the first tab" "$first"
-fi
 adb_ shell am force-stop "$PKG"
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
 nap 4
@@ -502,7 +470,7 @@ shot 05-settings
 has 'text="Folders from Quill"' && ok "settings dialog" || bad "settings dialog"
 if has 'Chat width' || has 'Message box width'; then bad "width sliders removed"; else ok "width sliders removed"; fi
 has 'text="Not paired  ·  pair from the Devices button in the Quill Desktop top bar"' && ok "settings: not paired" || bad "settings: not paired"
-for sec in Text Tabs "Folders from Quill"; do has "text=\"$sec\"" && ok "settings section: $sec" || bad "settings section: $sec"; done
+for sec in Text "Folders from Quill"; do has "text=\"$sec\"" && ok "settings section: $sec" || bad "settings section: $sec"; done
 has 'Text size  115%' && ok "settings: text size row" || bad "settings: text size row"
 tap_scroll "Open claude.ai links in Quill Android"
 for i in $(seq 1 10); do
@@ -535,21 +503,11 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 		adb_ shell am start -W -a android.intent.action.VIEW -d "\"$LINK\"" "$PKG" >/dev/null 2>&1
 		nap 6
 		shot 06-paired
-		if [ "$(width_dp)" -lt 600 ]; then
-			wait_for 'text="Active (1)"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
-			has 'text="Zomboid (1)"' && has 'text="Archive (1)"' && has 'text="Other (1)"' && ok "pairing: grouping" || bad "pairing: grouping"
-			wait_for 'text="64%' 40 && has 'text="5-hour session"' && ok "usage strip from Quill" || bad "usage strip from Quill"
-			tap_text "Zomboid (1)" && nap 2
-			shot 06d-two-line
-			has '12 msgs' && ok "two-line folder rows (age · msgs)" || bad "two-line folder rows (age · msgs)"
-			has '12 msgs  ·  Zomboid Tester' && ok "session row shows the kmem name" || bad "session row shows the kmem name"
-			adb_ shell input keyevent KEYCODE_BACK
-			nap 1
-		else
-			wait_for 'text="Active  1"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
-			has 'text="Zomboid  1"' && ok "pairing: grouping" || bad "pairing: grouping"
-			wait_for '12 msgs  ·  Zomboid Tester' 10 && ok "session row shows the kmem name" || bad "session row shows the kmem name"
-		fi
+		side_on
+		wait_for 'text="Active  1"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
+		has 'text="Zomboid  1"' && has 'text="Archive  1"' && ok "pairing: grouping" || bad "pairing: grouping"
+		wait_for '64%' 40 && has '5-hour session' && ok "usage from Quill" || bad "usage from Quill"
+		wait_for '12 msgs  ·  Zomboid Tester' 10 && ok "session row shows the kmem name (age · msgs · kmem)" || bad "session row shows the kmem name (age · msgs · kmem)"
 		notif() { adb_ shell dumpsys notification --noredact 2>/dev/null | grep -c -F "$1"; }
 		now() { echo $(( $(date +%s) * 1000 )); }
 		nap 4
@@ -605,21 +563,15 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 		adb_ shell am force-stop "$PKG"
 		launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
 		nap 5
-		if [ "$(width_dp)" -lt 600 ]; then
-			wait_for 'text="Active (1)"' 15 && ok "cached folders after restart (Quill offline)" || bad "cached folders after restart"
-		else
-			wait_for 'text="Active  1"' 15 && ok "cached folders after restart (Quill offline)" || bad "cached folders after restart"
-		fi
+		side_on
+		wait_for 'text="Active  1"' 15 && ok "cached folders after restart (Quill offline)" || bad "cached folders after restart"
 		tap_text "Settings" && nap 2
 		has 'Paired with emu-test' && ok "settings: paired status" || bad "settings: paired status"
 		tap_scroll "Unpair" && nap 1
 		tap_text "Done" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 		nap 3
-		if [ "$(width_dp)" -lt 600 ]; then
-			wait_for 'text="Other (4)"' 10 && ok "unpair clears folders" || bad "unpair clears folders"
-		else
-			wait_for 'text="Other  4"' 10 && ok "unpair clears folders" || bad "unpair clears folders"
-		fi
+		side_on
+		wait_for 'text="Other  4"' 10 && ok "unpair clears folders" || bad "unpair clears folders"
 		adb_ shell am start -W -a android.intent.action.VIEW -d '"quillpair://pair?h=bad%20host&p=1&k=x&fp=zz"' "$PKG" >/dev/null 2>&1
 		nap 2
 		crashed && bad "invalid pairing link" "crash" || ok "invalid pairing link rejected without crash"
@@ -721,14 +673,17 @@ fi
 if [ -n "${PPORT:-}" ]; then
 	pcurl() { curl -sk -H "X-Quill-Key: $PKEY" "https://127.0.0.1:$PPORT$1"; }
 	plog() { pcurl /debug/log; }
+	wait_log() { local i; for i in $(seq 1 40); do plog | grep -q "$1" && return 0; sleep 0.25; done; return 1; }
 	popen() { adb_ shell am start -W -f 0x24000000 -n "$PKG/$ACT" --es quill.openQuill "$1" >/dev/null 2>&1; }
 	pnotif() { adb_ shell dumpsys notification --noredact 2>/dev/null | grep -c -F "$1"; }
 	pref_has() { adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "$1"; }
 	adb_ shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
 	PLINK="quillpair://pair?h=$HOSTIP&p=$PPORT&k=$PKEY&fp=$PFP&n=emu-phone&i=a1b2c3d4&v=2"
 	adb_ shell am start -W -a android.intent.action.VIEW -d "\"$PLINK\"" "$PKG" >/dev/null 2>&1
+	wait_for 'text="Sessions"' 20 && side_off
 	wait_for 'text="Rename the greeting"' 30 && ok "remote: Quill chat shown natively after a v2 pairing" || bad "remote: Quill chat shown natively after a v2 pairing"
 	shot 09-remote
+	side_on
 	U_SEEN=""
 	for i in 1 2 3; do
 		DIRTY=1
@@ -740,6 +695,7 @@ if [ -n "${PPORT:-}" ]; then
 		nap 1
 	done
 	echo "$U_SEEN" | grep -q 'tok · ctx 23%' && echo "$U_SEEN" | grep -q 'Today 5.6M · 7d 42.0M' && echo "$U_SEEN" | grep -q '"available"' && ok "remote: usage shows This session, All sessions, credits" || bad "remote: usage shows This session, All sessions, credits" "$U_SEEN"
+	side_off
 	has 'content-desc="New session"' && ok "remote: + New session in the top bar" || bad "remote: + New session in the top bar"
 	has 'Edit main.go' && ok "remote: tool row" || bad "remote: tool row"
 	adb_ shell cmd statusbar collapse >/dev/null 2>&1
@@ -795,12 +751,6 @@ if [ -n "${PPORT:-}" ]; then
 	has '·  Quill Desktop 9.9.9' && ok "remote: About shows the desktop Quill version" || bad "remote: About shows the desktop Quill version" "$(dump | grep -o 'Quill Android[^"]*' | head -1)"
 	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 	nap 1
-	L0=$(dump | grep -o 'text="\(Landscape\|Portrait\)"' | head -1)
-	tap_text "Switch tab layout" && nap 2
-	DIRTY=1
-	L1=$(dump | grep -o 'text="\(Landscape\|Portrait\)"' | head -1)
-	[ -n "$L0" ] && [ -n "$L1" ] && [ "$L0" != "$L1" ] && ok "remote: Landscape/Portrait button switches the tab layout" || bad "remote: Landscape/Portrait button switches the tab layout" "$L0 -> $L1"
-	tap_text "Switch tab layout" && nap 2
 	popen session_C3
 	wait_for 'text="Allow Bash?"' 15 && ok "remote: permission card" || bad "remote: permission card"
 	tap_text "Allow" && nap 1
@@ -832,7 +782,7 @@ if [ -n "${PPORT:-}" ]; then
 	wait_for 'kmem name: my-test' 10 && ok "remote: name shows the kmem name preview" || bad "remote: name shows the kmem name preview"
 	adb_ shell dumpsys input_method | grep -q 'mInputShown=true' && adb_ shell input keyevent KEYCODE_BACK && nap 1
 	pstart
-	wait_for 'text="kmem name: my-test"' 15 && wait_for 'My Test' 5 && ok "remote: named session starts with that kmem name" || bad "remote: named session starts with that kmem name"
+	wait_for 'text="kmem name: my-test"' 15 && wait_log 'My Test' && ok "remote: named session starts with that kmem name" || bad "remote: named session starts with that kmem name"
 	tap_desc "New session" && nap 2
 	tap_part "zomboid-fps · saved" && nap 1
 	pstart
@@ -847,8 +797,8 @@ if [ -n "${PPORT:-}" ]; then
 	nap 1
 	pcurl "/debug/nohandoffs?on=0" >/dev/null
 	tap_any() { tap_text "$(echo "$1" | tr '[:lower:]' '[:upper:]')" >/dev/null 2>&1 || tap_text "$1" >/dev/null 2>&1; }
-	wait_log() { local i; for i in $(seq 1 40); do plog | grep -q "$1" && return 0; sleep 0.25; done; return 1; }
 	ime_off() { adb_ shell dumpsys input_method | grep -q 'mInputShown=true' && adb_ shell input keyevent KEYCODE_BACK && nap 1; }
+	side_on
 	lpress "Zomboid launcher" && nap 2
 	wait_for 'text="Rename..."' 5 && has 'text="End session"' && has 'text="Delete session..."' && ! has 'text="Set archive"' && ! has 'text="Move to folder..."' && ! has 'kmem name...' \
 		&& ok "remote: long-press menu has Quill Desktop's session actions" || bad "remote: long-press menu has Quill Desktop's session actions"
@@ -861,6 +811,7 @@ if [ -n "${PPORT:-}" ]; then
 	ime_off
 	tap_any "Save" && nap 2
 	wait_for 'text="Launcher 2"' 10 && ok "remote: rename from the menu" || bad "remote: rename from the menu" "$(plog | grep -o '/rename [^"]*' | tail -1)"
+	side_on
 	lpress "Launcher 2" && nap 2
 	if wait_for 'text="Restore original name"' 5; then
 		tap_text "Restore original name" && nap 2
@@ -869,10 +820,12 @@ if [ -n "${PPORT:-}" ]; then
 		bad "remote: Restore original name" "not in the menu"
 		adb_ shell input keyevent KEYCODE_BACK
 	fi
+	side_on
 	lpress "My Test" && nap 2
 	tap_text "Delete session..." && nap 2
 	tap_any "Delete" && nap 2
 	gone 'text="My Test"' 10 && ok "remote: Delete session after confirming" || bad "remote: Delete session after confirming"
+	side_on
 	lpress "Zomboid launcher" && nap 2
 	tap_text "Project..." && nap 2
 	tap_text "New project..." && nap 2
@@ -881,6 +834,7 @@ if [ -n "${PPORT:-}" ]; then
 	ime_off
 	tap_any "Save" && nap 2
 	wait_log 'session_C3/project.*Games' && wait_for 'Games' 10 && ok "remote: Project... moves the session to a new project" || bad "remote: Project... moves the session to a new project"
+	side_on
 	lpress "zomboid-fps" && nap 2
 	tap_text "End session" && nap 2
 	wait_log '/end ' && ok "remote: End session" || bad "remote: End session"
@@ -920,6 +874,17 @@ if [ -n "${PPORT:-}" ]; then
 	for i in $(seq 1 40); do [ "$(pnotif 'Approval needed: Zomboid launcher')" -ge 1 ] && break; sleep 0.5; done
 	[ "$(pnotif 'Approval needed: Zomboid launcher')" -ge 1 ] && ok "remote: notification for another session" || bad "remote: notification for another session"
 	[ "$(pnotif 'Finished: Fix edits')" = 0 ] && ok "remote: silent for the session on screen" || bad "remote: silent for the session on screen"
+	adb_ shell pm revoke "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
+	adb_ shell cmd appops set "$PKG" POST_NOTIFICATION ignore >/dev/null 2>&1
+	nap 1
+	launch
+	wait_for 'content-desc="Notifications off banner"' 20 && ok "remote: banner when notifications are off" || bad "remote: banner when notifications are off"
+	adb_ shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
+	adb_ shell cmd appops set "$PKG" POST_NOTIFICATION allow >/dev/null 2>&1
+	adb_ shell input keyevent KEYCODE_HOME
+	nap 1
+	launch
+	gone 'content-desc="Notifications off banner"' 20 && ok "remote: banner goes away once notifications are on" || bad "remote: banner goes away once notifications are on"
 	pcurl "/debug/noapi?on=1" >/dev/null
 	adb_ shell cmd statusbar collapse >/dev/null 2>&1
 	sleep 4
