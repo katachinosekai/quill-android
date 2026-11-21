@@ -507,6 +507,36 @@ final class ChatView extends LinearLayout {
         setItems(items);
     }
 
+    static final int FOLD_LINES = 200;
+    static final int FOLD_CHARS = 20000;
+    static final int FOLD_KEEP_LINES = 60;
+    static final int FOLD_KEEP_CHARS = 6000;
+
+    static int lineCount(String s) {
+        int n = 1;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '\n') {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    static String fold(String s) {
+        if (s.length() <= FOLD_CHARS && lineCount(s) <= FOLD_LINES) {
+            return s;
+        }
+        int end = Math.min(s.length(), FOLD_KEEP_CHARS);
+        int n = 0;
+        for (int i = 0; i < end; i++) {
+            if (s.charAt(i) == '\n' && ++n == FOLD_KEEP_LINES) {
+                end = i;
+                break;
+            }
+        }
+        return s.substring(0, end);
+    }
+
     View user(Item it) {
         LinearLayout row = new LinearLayout(getContext());
         row.setGravity(centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.END);
@@ -531,8 +561,21 @@ final class ChatView extends LinearLayout {
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp;
         md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
-        md.setMarkdown(it.text);
+        String shown = expanded.contains(it.seq) ? it.text : fold(it.text);
+        md.setMarkdown(shown);
         col.addView(md);
+        if (shown.length() < it.text.length()) {
+            int lines = lineCount(it.text);
+            TextView more = button("Show all " + lines + " lines", MainActivity.ACCENT);
+            more.setOnClickListener(v -> {
+                expanded.add(it.seq);
+                setItems(items);
+            });
+            LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+            ml.topMargin = dp(8);
+            ml.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
+            col.addView(more, ml);
+        }
         String[] opts = null;
         if (it.choices != null) {
             if (it.choicesOpen) {

@@ -84,7 +84,17 @@ final class PhoneApi {
         if (out.remove(last)) {
             out.add(0, last);
         }
-        return out;
+        List<String> ips = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        for (String h : out) {
+            (ipLiteral(h) ? ips : names).add(h);
+        }
+        ips.addAll(names);
+        return ips;
+    }
+
+    static boolean ipLiteral(String h) {
+        return h.matches("[0-9.]+") || (h.contains(":") && h.matches("[\\[\\]0-9a-fA-F:.%]+"));
     }
 
     synchronized SSLContext ssl(String fp) throws IOException {
