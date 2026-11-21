@@ -51,6 +51,8 @@ type server struct {
 	control  bool
 	paused   bool
 	noAPI    bool
+	events   []map[string]any
+	nextID   int64
 	idem     map[string][2]string
 	log      []string
 }
@@ -299,6 +301,40 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		s.paused = q.Get("on") == "1"
 		s.emit(map[string]any{"type": "usage", "usage": s.usage()})
 		reply(w, 200, map[string]any{})
+	case p == "/debug/event":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		s.nextID++
+		s.events = append(s.events, map[string]any{"id": s.nextID, "time": time.Now().UnixMilli(), "type": q.Get("type"),
+			"rc": "", "quill": x.ID, "title": x.Title, "folder": x.Group})
+		s.wake.Broadcast()
+		reply(w, 200, map[string]any{})
+	case p == "/events":
+		since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
+		wait, _ := strconv.Atoi(q.Get("wait"))
+		if wait < 0 || wait > 25 {
+			wait = 25
+		}
+		deadline := time.Now().Add(time.Duration(wait) * time.Second)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		go func() { time.Sleep(time.Until(deadline)); s.mu.Lock(); s.wake.Broadcast(); s.mu.Unlock() }()
+		for s.nextID < since && time.Now().Before(deadline) {
+			s.wake.Wait()
+		}
+		out := []any{}
+		for _, e := range s.events {
+			if e["id"].(int64) >= since {
+				out = append(out, e)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"version": 1, "boot": s.boot, "next": s.nextID + 1, "events": out})
 	case p == "/debug/log":
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -325,6 +361,19 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 		u := s.usage()
 		s.emit(map[string]any{"type": "usage", "usage": u})
 		reply(w, 200, map[string]any{"usage": u})
+		return
+	}
+	if p == "/phone/sessions/new" {
+		folder, _ := body["folder"].(string)
+		if !strings.HasPrefix(folder, "/home/user/Projects/") {
+			fail(w, 400, "bad_request")
+			return
+		}
+		x := &session{ID: fmt.Sprintf("session_N%d", len(s.sessions)+1), Title: "New session", Folder: strings.TrimPrefix(folder, "/home/user/Projects/"),
+			Group: "Active", Status: "idle", Epoch: 1}
+		s.sessions = append([]*session{x}, s.sessions...)
+		s.add(x, item{"kind": "notice", "text": fmt.Sprintf("Started with %v · %v · %v", body["backend"], body["model"], body["mode"])})
+		reply(w, 200, map[string]any{"session": s.sessionJSON(x)})
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(p, "/phone/session/"), "/")

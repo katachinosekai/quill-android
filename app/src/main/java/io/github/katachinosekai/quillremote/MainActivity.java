@@ -85,6 +85,12 @@ public class MainActivity extends Activity {
     }
 
     boolean handleOpen(Intent intent) {
+        String q = intent == null ? null : intent.getStringExtra(Notifier.EXTRA_OPEN_QUILL);
+        if (q != null && remote != null && SessionBars.REMOTE_ID.matcher(q).matches()) {
+            android.util.Log.w("QuillOpen", q);
+            remote.open(q);
+            return true;
+        }
         String id = intent == null ? null : intent.getStringExtra(Notifier.EXTRA_OPEN);
         if (id == null || !SessionBars.SESSION.matcher("/code/" + id).matches()) {
             return false;
@@ -219,6 +225,102 @@ public class MainActivity extends Activity {
         });
     }
 
+    String openTarget(Intent i) {
+        String q = i == null ? null : i.getStringExtra(Notifier.EXTRA_OPEN_QUILL);
+        return q != null && SessionBars.REMOTE_ID.matcher(q).matches() ? q : prefs.getString("remote.last", null);
+    }
+
+    void newSessionDialog() {
+        if (remote == null) {
+            return;
+        }
+        remote.folders(folders -> {
+            if (folders.length() == 0) {
+                toast("Quill has no folders to start a session in.");
+                return;
+            }
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setPadding(dp(20), dp(8), dp(20), 0);
+            android.widget.Spinner folder = spinner(col, "Folder", names(folders, "name"));
+            android.widget.RadioGroup backend = new android.widget.RadioGroup(this);
+            backend.setOrientation(LinearLayout.HORIZONTAL);
+            for (String b : new String[]{"online", "local"}) {
+                android.widget.RadioButton rb = new android.widget.RadioButton(this);
+                rb.setText(b.equals("online") ? "Online" : "Local");
+                rb.setTag(b);
+                rb.setId(View.generateViewId());
+                rb.setEnabled(b.equals("online") || remote.models.optJSONArray("local") != null && remote.models.optJSONArray("local").length() > 0);
+                backend.addView(rb);
+                if (b.equals("online")) {
+                    backend.check(rb.getId());
+                }
+            }
+            col.addView(label("Backend"));
+            col.addView(backend);
+            android.widget.Spinner model = spinner(col, "Model", list(remote.models.optJSONArray("online")));
+            android.widget.Spinner mode = spinner(col, "Mode", list(remote.modes.optJSONArray("online")));
+            backend.setOnCheckedChangeListener((g, id) -> {
+                String b = String.valueOf(g.findViewById(id).getTag());
+                fill(model, list(remote.models.optJSONArray(b)));
+                fill(mode, list(remote.modes.optJSONArray(b)));
+            });
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("New session")
+                    .setView(col)
+                    .setPositiveButton("Start", (d, w) -> {
+                        String b = String.valueOf(backend.findViewById(backend.getCheckedRadioButtonId()).getTag());
+                        org.json.JSONObject f = folders.optJSONObject(folder.getSelectedItemPosition());
+                        if (f == null || model.getSelectedItem() == null || mode.getSelectedItem() == null) {
+                            return;
+                        }
+                        remote.newSession(f.optString("path"), b, String.valueOf(model.getSelectedItem()), String.valueOf(mode.getSelectedItem()));
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
+    }
+
+    TextView label(String t) {
+        TextView v = new TextView(this);
+        v.setText(t);
+        v.setTextColor(MUTED);
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        v.setPadding(0, dp(12), 0, dp(2));
+        return v;
+    }
+
+    android.widget.Spinner spinner(LinearLayout col, String title, java.util.List<String> items) {
+        col.addView(label(title));
+        android.widget.Spinner sp = new android.widget.Spinner(this);
+        fill(sp, items);
+        col.addView(sp);
+        return sp;
+    }
+
+    void fill(android.widget.Spinner sp, java.util.List<String> items) {
+        android.widget.ArrayAdapter<String> ad = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_item, items);
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        sp.setAdapter(ad);
+    }
+
+    static java.util.List<String> list(org.json.JSONArray a) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (int i = 0; a != null && i < a.length(); i++) {
+            out.add(a.optString(i));
+        }
+        return out;
+    }
+
+    static java.util.List<String> names(org.json.JSONArray a, String key) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (int i = 0; a != null && i < a.length(); i++) {
+            org.json.JSONObject o = a.optJSONObject(i);
+            out.add(o == null ? "" : o.optString(key));
+        }
+        return out;
+    }
+
     String appVersion() {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -244,8 +346,8 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
 
-        root.addView(bar(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
         phoneApi = new PhoneApi(prefs);
+        root.addView(bar(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
         bars = new SessionBars(this, prefs);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.HORIZONTAL);
@@ -345,7 +447,7 @@ public class MainActivity extends Activity {
                     prefs.edit().putBoolean("phone.unsupported", true).apply();
                     recreate();
                 }
-            }, appVersion(), prefs.getString("remote.last", null));
+            }, appVersion(), openTarget(getIntent()));
         } else {
             sync.usageListener = json -> bars.setUsage(json);
             String cachedUsage = prefs.getString("usage.cache", null);
@@ -513,7 +615,16 @@ public class MainActivity extends Activity {
         LinearLayout right = new LinearLayout(this);
         right.setGravity(Gravity.CENTER_VERTICAL);
         right.addView(button("⚙", "Settings", v -> settings()));
-        right.addView(button("⟳", "Reload", v -> web.reload()));
+        if (phoneApi != null && phoneApi.available()) {
+            right.addView(button("+", "New session", v -> newSessionDialog()));
+            right.addView(button("⟳", "Reconnect", v -> {
+                if (remote != null) {
+                    remote.restart();
+                }
+            }));
+        } else {
+            right.addView(button("⟳", "Reload", v -> web.reload()));
+        }
         bar.addView(right, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END | Gravity.CENTER_VERTICAL));
         syncCenter();
         return bar;

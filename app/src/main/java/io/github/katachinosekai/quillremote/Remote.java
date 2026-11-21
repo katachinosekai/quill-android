@@ -39,6 +39,8 @@ final class Remote implements ChatView.Actions {
     long cursor;
     final List<JSONObject> sessions = new ArrayList<>();
     JSONObject usage;
+    JSONObject models = new JSONObject();
+    JSONObject modes = new JSONObject();
     volatile String current;
     int epoch = -1;
     long rev;
@@ -154,6 +156,12 @@ final class Remote implements ChatView.Actions {
         cursor = o.optLong("cursor");
         control = o.optBoolean("control", control);
         usage = o.optJSONObject("usage");
+        if (o.optJSONObject("models") != null) {
+            models = o.optJSONObject("models");
+        }
+        if (o.optJSONObject("modes") != null) {
+            modes = o.optJSONObject("modes");
+        }
         sessions.clear();
         JSONArray arr = o.optJSONArray("sessions");
         for (int i = 0; arr != null && i < arr.length(); i++) {
@@ -163,6 +171,7 @@ final class Remote implements ChatView.Actions {
             current = sessions.isEmpty() ? null : sessions.get(0).optString("id");
             newBoot = true;
         }
+        Notifier.foregroundQuill = current;
         publish();
         if (current != null) {
             String id = current;
@@ -411,6 +420,7 @@ final class Remote implements ChatView.Actions {
             return;
         }
         current = id;
+        Notifier.foregroundQuill = id;
         epoch = -1;
         rev = 0;
         items.clear();
@@ -529,6 +539,34 @@ final class Remote implements ChatView.Actions {
                     usage = r.body.optJSONObject("usage");
                 }
                 publish();
+            }
+            return r;
+        });
+    }
+
+    interface Created {
+        void onCreated(String id);
+    }
+
+    void folders(java.util.function.Consumer<JSONArray> done) {
+        work.execute(() -> {
+            PhoneApi.Reply r = api.folders();
+            JSONArray f = r.ok() ? r.body.optJSONArray("folders") : null;
+            ui.post(() -> done.accept(f == null ? new JSONArray() : f));
+        });
+    }
+
+    void newSession(String folder, String backend, String model, String mode) {
+        write("new session", () -> {
+            PhoneApi.Reply r = api.newSession(folder, backend, model, mode);
+            JSONObject s = r.ok() ? r.body.optJSONObject("session") : null;
+            if (s != null) {
+                synchronized (Remote.this) {
+                    replace(s);
+                }
+                publish();
+                String id = s.optString("id");
+                ui.post(() -> open(id));
             }
             return r;
         });

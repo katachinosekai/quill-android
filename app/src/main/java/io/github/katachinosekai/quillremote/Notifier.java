@@ -26,6 +26,8 @@ class Notifier {
     static final String[] LABELS = {"Approval needed", "Question", "Plan to approve", "Finished", "Error"};
     static final long STALE_MS = 10 * 60 * 1000;
     static volatile String foregroundRc;
+    static volatile String foregroundQuill;
+    static final String EXTRA_OPEN_QUILL = "quill.openQuill";
     static volatile boolean appVisible;
 
     final Context c;
@@ -155,7 +157,12 @@ class Notifier {
         if (!rc.isEmpty() && !SessionBars.SESSION.matcher("/code/" + rc).matches()) {
             rc = "";
         }
-        if (appVisible && !rc.isEmpty() && rc.equals(foregroundRc)) {
+        String quill = e.optString("quill");
+        if (!SessionBars.REMOTE_ID.matcher(quill).matches()) {
+            quill = "";
+        }
+        boolean remote = new PhoneApi(prefs).available();
+        if (appVisible && (remote ? !quill.isEmpty() && quill.equals(foregroundQuill) : !rc.isEmpty() && rc.equals(foregroundRc))) {
             return;
         }
         String title = clip(e.optString("title"), 80);
@@ -163,7 +170,9 @@ class Notifier {
         String label = LABELS[TYPES.indexOf(type)];
         channel(c);
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        if (!rc.isEmpty()) {
+        if (remote && !quill.isEmpty()) {
+            open.putExtra(EXTRA_OPEN_QUILL, quill);
+        } else if (!rc.isEmpty()) {
             open.putExtra(EXTRA_OPEN, rc);
         }
         int id = (rc.isEmpty() ? e.optString("quill") : rc).hashCode();
