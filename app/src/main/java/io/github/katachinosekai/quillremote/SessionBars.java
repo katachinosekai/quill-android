@@ -345,6 +345,7 @@ class SessionBars {
     static final int HANDLE_W = 10;
     static final int MIN_SIDE_DP = 160;
     static final int MIN_CHAT_DP = 160;
+    static final int SNAP_DP = 100;
     View handle;
 
     boolean portrait() {
@@ -393,7 +394,8 @@ class SessionBars {
                     if (armed[0]) {
                         int[] at = new int[2];
                         side.getLocationOnScreen(at);
-                        setSideWidth(clampSide((int) e.getRawX() - at[0] + a.dp(HANDLE_W) / 2));
+                        int w = (int) e.getRawX() - at[0] + a.dp(HANDLE_W) / 2;
+                        setSideWidth(Math.max(0, Math.min(w, screenW())));
                     }
                     return true;
                 case android.view.MotionEvent.ACTION_UP:
@@ -403,7 +405,23 @@ class SessionBars {
                         armed[0] = false;
                         v.setBackgroundColor(MainActivity.SIDE);
                         int w = side.getWidth();
-                        prefs.edit().putInt("sideW.portrait", Math.round(w / a.getResources().getDisplayMetrics().density)).apply();
+                        float d = a.getResources().getDisplayMetrics().density;
+                        SharedPreferences.Editor ed = prefs.edit();
+                        if (w < a.dp(SNAP_DP)) {
+                            // Dragged to the left edge: closed (the last width is kept for the next open).
+                            ed.putBoolean("sideOpen", false);
+                            setSideWidth(0);
+                        } else if (w > screenW() - a.dp(SNAP_DP)) {
+                            // Dragged to the right edge: the list fills the screen.
+                            ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(screenW() / d));
+                            setSideWidth(screenW());
+                        } else {
+                            int c = clampSide(w);
+                            ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(c / d));
+                            setSideWidth(c);
+                        }
+                        ed.apply();
+                        syncArrow();
                     }
                     return true;
                 default:
@@ -436,7 +454,7 @@ class SessionBars {
     int sideFull() {
         int pw = portraitW();
         if (pw > 0) {
-            return clampSide(a.dp(pw));
+            return a.dp(pw) >= screenW() - a.dp(SNAP_DP) ? screenW() : clampSide(a.dp(pw));
         }
         return wide() ? a.dp(SIDE_W) + a.dp(HANDLE_W) : screenW();
     }
@@ -453,6 +471,10 @@ class SessionBars {
         ViewGroup.LayoutParams lp = side.getLayoutParams();
         if (lp == null) {
             return;
+        }
+        // In portrait a closed list keeps its edge strip, so it can be dragged open again.
+        if (portrait() && vertical && w < a.dp(HANDLE_W)) {
+            w = a.dp(HANDLE_W);
         }
         lp.width = w;
         side.setLayoutParams(lp);

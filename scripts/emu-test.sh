@@ -349,7 +349,17 @@ if [ "$wide" -ge 600 ]; then
 		DIRTY=1
 		nb=$(dump | tr '>' '\n' | grep -F 'content-desc="Resize session list"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$')
 		[ -n "$nb" ] && [ "$nb" -lt $((hx1 - 100)) ] && pref_has_any 'sideW.portrait' && ok "portrait: hold and drag the edge resizes the session list" || bad "portrait: hold and drag the edge resizes the session list" "$hx1 -> $nb"
-		adb_ shell input swipe $((nb + 5)) $hy $((nb + 205)) $hy 2500
+		hpos() { DIRTY=1; dump | tr '>' '\n' | grep -F 'content-desc="Resize session list"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$'; }
+		adb_ shell input swipe $((nb + 5)) $hy 2 $hy 2500
+		nap 2
+		cb=$(hpos)
+		[ -n "$cb" ] && [ "$cb" -lt 40 ] && pref_has_any 'name="sideOpen" value="false"' && ok "portrait: drag to the left edge closes the list (edge stays)" || bad "portrait: drag to the left edge closes the list (edge stays)" "edge at $cb"
+		sw=$(adb_ shell wm size | tail -1 | awk '{print $3}'); sw=${sw%x*}
+		adb_ shell input swipe $((cb + 10)) $hy $((sw - 2)) $hy 2500
+		nap 2
+		fb=$(hpos)
+		[ -n "$fb" ] && [ "$fb" -gt $((sw - 80)) ] && pref_has_any 'name="sideOpen" value="true"' && ok "portrait: drag to the right edge opens the list fully" || bad "portrait: drag to the right edge opens the list fully" "edge at $fb of $sw"
+		adb_ shell input swipe $((fb + 5)) $hy $hx $hy 2500
 		nap 2
 	else
 		bad "portrait: hold and drag the edge resizes the session list" "no handle"
