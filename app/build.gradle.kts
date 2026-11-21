@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.katachinosekai.quillremote"
         minSdk = 30
         targetSdk = 36
-        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 27
-        versionName = (project.findProperty("qVersionName") as String?) ?: "0.9.12"
+        versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 28
+        versionName = (project.findProperty("qVersionName") as String?) ?: "0.9.13"
         manifestPlaceholders["appLabel"] = "Quill"
         manifestPlaceholders["linkHost"] = "claude.ai"
     }
