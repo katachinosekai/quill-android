@@ -141,13 +141,22 @@ tap_text() {
 	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
 }
 tap_scroll() {
-	local i size w h
-	for i in 1 2 3 4; do
+	local i b size w h
+	for i in 1 2 3 4 5 6; do
 		tap_text "$1" && return 0
-		size=$(adb_ shell wm size | tail -1 | awk '{print $3}')
-		w=${size%x*}
-		h=${size#*x}
-		adb_ shell input swipe $((w / 2)) $((h * 3 / 5)) $((w / 2)) $((h * 2 / 5)) 400
+		b=$(dump | tr '>' '\n' | grep -F 'scrollable="true"' | grep -v -F 'android.webkit.WebView' | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+		if [ -n "$b" ]; then
+			set -- "$1" $b
+			adb_ shell input swipe $((($2 + $4) / 2)) $(($3 + ($5 - $3) * 3 / 4)) $((($2 + $4) / 2)) $(($3 + ($5 - $3) / 4)) 400
+		else
+			size=$(adb_ shell wm size | tail -1 | awk '{print $3}')
+			w=${size%x*}
+			h=${size#*x}
+			case "$(adb_ shell dumpsys window displays | grep -m1 -o 'mCurrentRotation=ROTATION_[0-9]*')" in
+			*_90|*_270) set -- "$1" "$h"; h=$w; w=$2 ;;
+			esac
+			adb_ shell input swipe $((w / 2)) $((h * 3 / 5)) $((w / 2)) $((h * 2 / 5)) 400
+		fi
 		sleep 0.7
 		DIRTY=1
 	done
@@ -244,6 +253,7 @@ if [ -n "$DEVICE" ]; then
 	HOSTIP=$(ip -4 route get "${DEVIP:-${DEVICE%%:*}}" 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
 	log "device ip $DEVIP, this PC $HOSTIP"
 fi
+LOGQUIET=$(adb_ shell getprop log.tag | tr -d '\r' | grep -x -E '[EWAFS].*')
 adb_ logcat -c
 adb_ logcat -b crash -c
 
@@ -387,7 +397,9 @@ nap 3
 tap_text "Continue with Google test" && nap 2
 shot 04b-google-intercept
 has 'text="Sign in with email"' && ok "Google sign-in intercepted with help dialog" || bad "Google sign-in intercepted with help dialog"
-adb_ shell dumpsys activity top | grep -q "ACTIVITY $PKG" && ok "Google link stays in app" || bad "Google link stays in app"
+top_resumed() { adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity"; }
+for i in $(seq 1 20); do top_resumed | grep -q "$PKG/" && break; sleep 0.25; done
+top_resumed | grep -q "$PKG/" && ok "Google link stays in app" || bad "Google link stays in app" "$(top_resumed)"
 tap_text "OK" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 nap 1
 tap_text "GitHub connect test" && nap 5
@@ -518,8 +530,14 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 		shot 06c-notifications
 		adb_ logcat -c
 		adb_ shell am start -W -n "$PKG/$ACT" --es quill.openSession session_C3 >/dev/null 2>&1
-		nap 4
-		adb_ logcat -d -s QuillOpen:I | grep -q session_C3 && ok "notification opens its session" || bad "notification opens its session"
+		for i in $(seq 1 40); do adb_ logcat -d -s QuillOpen:I | grep -q session_C3 && break; sleep 0.25; done
+		if adb_ logcat -d -s QuillOpen:I | grep -q session_C3; then
+			ok "notification opens its session"
+		elif [ -n "$LOGQUIET" ]; then
+			log "SKIP  notification opens its session  (device hides info logs: log.tag=$LOGQUIET)"
+		else
+			bad "notification opens its session"
+		fi
 		launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
 		nap 3
 		tap_text "Settings" && wait_for 'text="Notifications"' 8
