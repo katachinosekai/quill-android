@@ -872,6 +872,9 @@ if [ -n "${PPORT:-}" ]; then
 	tap_edit && nap 1
 	adb_ shell input text "wrong-pass"
 	ime_off
+	DIRTY=1
+	has 'wrong-pass' && bad "remote: password hidden while typing" || ok "remote: password hidden while typing"
+	has 'text="Show password"' && ok "remote: Show password toggle" || bad "remote: Show password toggle"
 	tap_any "Unlock" && nap 1
 	wait_for 'Wrong password (1 of 5 tries)' 10 && ok "remote: wrong password says how many tries" || bad "remote: wrong password says how many tries"
 	tap_edit && nap 1

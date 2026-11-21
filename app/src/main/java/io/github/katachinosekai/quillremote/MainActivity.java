@@ -209,16 +209,26 @@ public class MainActivity extends Activity {
             return;
         }
         android.widget.EditText pw = new android.widget.EditText(this);
+        // setSingleLine swaps the transformation method, so it must come before the password input type (else the text shows in plain).
+        pw.setSingleLine(true);
         pw.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        pw.setTransformationMethod(android.text.method.PasswordTransformationMethod.getInstance());
+        pw.setTypeface(Typeface.DEFAULT);
         pw.setHint("Device password");
         pw.setContentDescription("Device password");
-        pw.setSingleLine(true);
+        CheckBox show = check("Show password", false);
+        show.setOnCheckedChangeListener((v, on) -> {
+            int at = pw.getSelectionEnd();
+            pw.setTransformationMethod(on ? null : android.text.method.PasswordTransformationMethod.getInstance());
+            pw.setSelection(Math.max(0, Math.min(at, pw.length())));
+        });
         TextView msg = label("");
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(20), dp(8), dp(20), 0);
         col.addView(label("Quill Desktop asks for its device password before it shows sessions here."));
         col.addView(pw);
+        col.addView(show);
         col.addView(msg);
         unlockDlg = new android.app.AlertDialog.Builder(this)
                 .setTitle("Unlock Quill Desktop")
