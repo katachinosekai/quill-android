@@ -20,6 +20,7 @@ android {
         versionCode = (project.findProperty("qVersionCode") as String?)?.toInt() ?: 19
         versionName = (project.findProperty("qVersionName") as String?) ?: "0.9.4"
         manifestPlaceholders["appLabel"] = "Quill"
+        manifestPlaceholders["linkHost"] = "claude.ai"
     }
 
     signingConfigs {
@@ -37,6 +38,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             manifestPlaceholders["appLabel"] = "Quill (debug)"
+            manifestPlaceholders["linkHost"] = "debug.quill.invalid"
         }
         release {
             isMinifyEnabled = false
