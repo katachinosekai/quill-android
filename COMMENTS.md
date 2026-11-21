@@ -49,6 +49,9 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## 0.9.4 (hardware-keyboard focus, 2026-11-20)
+- The WebView takes key focus at start and after page loads, so Enter on a hardware keyboard no longer clicks the top-left arrow (details under "Key focus" below). emu-test: qp90 64/64; on the landscape P90, 5 settings/background checks fail because the script does not scroll the shorter settings dialog.
+
 ## 0.9.3 (pair by scanning, 2026-11-20)
 - The P90's camera app (com.android.camera2, QrScanResultActivity) decodes Quill's `quillpair://pair?...` QR but "Go to link" fails with "Uri can't resolve": it resolves the link itself, and on Android 11+ package visibility hides our handler from it. Other camera apps may behave the same, so the app scans the code itself.
 - `PairScan` (non-exported activity): asks for CAMERA, opens the back camera with Camera2, previews on a SurfaceView fitted to the sensor's aspect, and feeds the Y plane of a YUV_420_888 ImageReader (largest size up to 1280×960) to ZXing `QRCodeReader` (QR only, TRY_HARDER). A `quillpair:` result goes back to MainActivity (`PAIR_SCAN`) → `acceptPair`; any other QR shows a hint. `uses-feature camera.any required=false`.
