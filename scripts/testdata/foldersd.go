@@ -33,7 +33,7 @@ func main() {
 	s.SetEvents(true)
 	s.SetUsageSource(func() []byte {
 		now := time.Now().UnixMilli()
-		return []byte(fmt.Sprintf(`{"version":1,"usage":{"at":%d,"fiveHour":{"utilization":0.64,"resetsAt":%d},"weekly":{"utilization":0.14,"resetsAt":%d},"credits":"available","today":12345678,"week":98765432},"meta":{"session_C3":{"last":%d,"msgs":12,"status":"waiting","tokens":1500000,"context":45000,"contextMax":200000},"session_A1":{"last":%d,"msgs":3,"status":"running","tokens":2500,"context":1000,"contextMax":200000}}}`, now, now/1000+3600, now/1000+86400, now-120000, now))
+		return []byte(fmt.Sprintf(`{"version":1,"usage":{"at":%d,"fiveHour":{"utilization":0.64,"resetsAt":%d},"weekly":{"utilization":0.14,"resetsAt":%d},"credits":"available","today":12345678,"week":98765432},"meta":{"session_C3":{"last":%d,"msgs":12,"status":"waiting","kmem":"Zomboid Tester","tokens":1500000,"context":45000,"contextMax":200000},"session_A1":{"last":%d,"msgs":3,"status":"running","tokens":2500,"context":1000,"contextMax":200000}}}`, now, now/1000+3600, now/1000+86400, now-120000, now))
 	})
 	if len(os.Args) > 5 {
 		file := os.Args[5]

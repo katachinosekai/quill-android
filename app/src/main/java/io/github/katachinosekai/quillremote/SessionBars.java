@@ -135,6 +135,12 @@ class SessionBars {
             sb.setSpan(new android.text.style.ForegroundColorSpan(col), 0, 1, 0);
         }
         sb.append(txt);
+        String kmem = m.optString("kmem");
+        if (!kmem.isEmpty()) {
+            int at = sb.length() + (txt.isEmpty() ? 0 : 5);
+            sb.append(txt.isEmpty() ? "" : "  ·  ").append(kmem);
+            sb.setSpan(new android.text.style.ForegroundColorSpan(MainActivity.ACCENT), at, sb.length(), 0);
+        }
         return sb;
     }
 

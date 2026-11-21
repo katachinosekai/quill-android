@@ -50,6 +50,7 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
 ## 0.9.5 (in progress)
+- kmem names (Quill d3249a9, user 2026-11-21): `/usage` meta has an optional `kmem` string per RC id; the session subline appends "  ·  <name>" in the accent color (folder bar drop-down, vertical sidebar). foldersd test data gives session_C3 "Zomboid Tester"; emu-test checks it in both layouts.
 - Update notification (user 2026-11-21): `Updated` receives MY_PACKAGE_REPLACED (manifest receiver, allowed for implicit broadcasts) and posts "Quill updated to <versionName>" on its own "Updates" channel (IMPORTANCE_DEFAULT), tap opens the app; it also clears a stale `update.failed`, so a manual install after a blocked update doesn't show the blocked banner. Fires for any update (in-app updater, manual install, adb install -r), not for a fresh install, and never for an app that was never opened (stopped state), so emu-test launches the app before its `install -r` check.
 
 ## 0.9.4 (hardware-keyboard focus, 2026-11-20)

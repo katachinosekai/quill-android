@@ -411,7 +411,7 @@ tap_text "OK" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 nap 1
 tap_text "GitHub connect test" && nap 5
 adb_ shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | grep -q "$PKG" && ok "GitHub sign-in stays in Quill" || bad "GitHub sign-in stays in Quill" "$(adb_ shell dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity')"
-has 'Mock session page' && bad "GitHub page replaced the mock (skin check skipped)" || ok "GitHub page loaded in the app"
+gone 'Mock session page' 15 && ok "GitHub page loaded in the app" || bad "GitHub page replaced the mock (skin check skipped)"
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
 nap 3
 tap_text "GitHub repo test" && nap 4
@@ -496,11 +496,13 @@ if [ -d "$QUILL/internal/folders" ] && command -v go >/dev/null; then
 			tap_text "Zomboid (1)" && nap 2
 			shot 06d-two-line
 			has '12 msgs' && ok "two-line folder rows (age · msgs)" || bad "two-line folder rows (age · msgs)"
+			has '12 msgs  ·  Zomboid Tester' && ok "session row shows the kmem name" || bad "session row shows the kmem name"
 			adb_ shell input keyevent KEYCODE_BACK
 			nap 1
 		else
 			wait_for 'text="Active  1"' 40 && ok "pairing: folders from local network" || bad "pairing: folders from local network"
 			has 'text="Zomboid  1"' && ok "pairing: grouping" || bad "pairing: grouping"
+			wait_for '12 msgs  ·  Zomboid Tester' 10 && ok "session row shows the kmem name" || bad "session row shows the kmem name"
 		fi
 		notif() { adb_ shell dumpsys notification --noredact 2>/dev/null | grep -c -F "$1"; }
 		now() { echo $(( $(date +%s) * 1000 )); }
