@@ -44,27 +44,46 @@ final class ChatView extends LinearLayout {
         boolean hasResult;
         String requestId;
         String state;
+        String detail;
+        boolean canAllowAlways = true;
         JSONArray questions;
+        JSONArray choices;
+        boolean choicesOpen;
+        JSONObject diff;
+        int rev;
 
         static Item from(JSONObject o) {
             Item it = new Item();
             it.seq = o.optInt("seq");
+            it.rev = o.optInt("rev");
             it.kind = o.optString("kind");
             it.text = o.optString("text");
             it.streaming = o.optBoolean("streaming");
-            it.toolName = o.optString("toolName");
-            it.summary = o.optString("summary");
-            it.result = o.optString("result");
-            it.resultError = o.optBoolean("resultError");
-            it.hasResult = o.optBoolean("hasResult");
-            it.requestId = o.optString("requestId");
-            it.state = o.optString("state");
-            it.questions = o.optJSONArray("questions");
+            JSONObject tool = o.optJSONObject("tool");
+            it.toolName = tool != null ? tool.optString("name") : o.optString("toolName");
+            it.summary = tool != null ? tool.optString("summary") : o.optString("summary");
+            it.result = tool != null ? tool.optString("result") + (tool.optBoolean("resultTruncated") ? "\n…" : "") : o.optString("result");
+            it.resultError = tool != null ? tool.optBoolean("isError") : o.optBoolean("resultError");
+            it.hasResult = tool != null ? tool.optBoolean("done") : o.optBoolean("hasResult");
+            JSONObject req = o.optJSONObject("request");
+            it.requestId = req != null ? req.optString("id") : o.optString("requestId");
+            it.state = req != null ? req.optString("state") : o.optString("state");
+            it.detail = req != null ? req.optString("detail") : "";
+            if (req != null && req.has("canAllowAlways")) {
+                it.canAllowAlways = req.optBoolean("canAllowAlways");
+            }
+            if (req != null && !req.optString("tool").isEmpty() && it.toolName.isEmpty()) {
+                it.toolName = req.optString("tool");
+            }
+            it.questions = req != null && req.has("questions") ? req.optJSONArray("questions") : o.optJSONArray("questions");
+            it.choices = o.optJSONArray("choices");
+            it.choicesOpen = o.optBoolean("choicesOpen", it.choices != null);
+            it.diff = o.optJSONObject("diff");
             return it;
         }
 
         String sig() {
-            return kind + "|" + text.length() + "|" + text.hashCode() + "|" + streaming + "|" + hasResult + "|" + state + "|" + result.length();
+            return kind + "|" + rev + "|" + text.length() + "|" + text.hashCode() + "|" + streaming + "|" + hasResult + "|" + state + "|" + result.length() + "|" + choicesOpen;
         }
     }
 
@@ -266,6 +285,15 @@ final class ChatView extends LinearLayout {
                 return plan(it);
             case "question":
                 return question(it);
+            case "thinking":
+                return thinking(it);
+            case "rotate":
+                return rotate(it);
+            case "error": {
+                TextView t = label(it.text, RED, 13);
+                t.setTextIsSelectable(true);
+                return spaced(t, 8);
+            }
             default:
                 TextView t = label(it.text, MainActivity.MUTED, 13);
                 return spaced(t, 8);
@@ -301,18 +329,41 @@ final class ChatView extends LinearLayout {
         md.sp = sp;
         md.setMarkdown(it.text);
         col.addView(md);
-        String[] opts = answerable ? Choices.parse(lastLine(it.text)) : null;
+        String[] opts = null;
+        if (it.choices != null) {
+            if (it.choicesOpen) {
+                opts = new String[it.choices.length()];
+                for (int k = 0; k < opts.length; k++) {
+                    opts[k] = it.choices.optString(k);
+                }
+            }
+        } else if (answerable) {
+            opts = Choices.parse(lastLine(it.text));
+        }
         if (opts != null && !picked.contains(it.seq + ":" + it.text.hashCode())) {
+            final boolean server = it.choices != null;
             LinearLayout row = new LinearLayout(getContext());
             row.setPadding(0, dp(10), 0, 0);
-            for (String o : opts) {
+            for (int k = 0; k < opts.length; k++) {
+                final String o = opts[k];
+                final int index = k;
                 TextView b = button(o.length() > 60 ? o.substring(0, 59) + "…" : o, MainActivity.ACCENT);
                 b.setOnClickListener(v -> {
                     if (actions == null) {
                         return;
                     }
                     picked.add(it.seq + ":" + it.text.hashCode());
-                    actions.send(o);
+                    if (server) {
+                        JSONObject x = new JSONObject();
+                        try {
+                            x.put("seq", it.seq);
+                            x.put("index", index);
+                        } catch (org.json.JSONException ignored) {
+                        }
+                        actions.answer("seq:" + it.seq, "choice", x);
+                    } else {
+                        actions.send(o);
+                    }
                     row.setVisibility(GONE);
                 });
                 LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
@@ -351,6 +402,9 @@ final class ChatView extends LinearLayout {
         head.setSingleLine(!expanded.contains(it.seq));
         head.setEllipsize(android.text.TextUtils.TruncateAt.END);
         col.addView(head);
+        if (expanded.contains(it.seq) && it.diff != null) {
+            col.addView(diffView(it.diff));
+        }
         if (expanded.contains(it.seq) && !it.result.isEmpty()) {
             TextView r = label(it.result, MainActivity.TEXT, 12);
             r.setTypeface(Typeface.MONOSPACE);
@@ -403,10 +457,25 @@ final class ChatView extends LinearLayout {
         return it.state.isEmpty() || "pending".equals(it.state);
     }
 
+    static String stateLabel(String s) {
+        switch (s) {
+            case "allowed": return "allowed";
+            case "allowedAlways": return "always allowed";
+            case "denied": return "denied";
+            case "cancelled": return "cancelled";
+            case "autoAllowed": return "allowed automatically";
+            case "ruleAllowed": return "allowed by a rule";
+            case "retryAllowed": return "allowed on retry";
+            case "planAsked": return "asked in the plan";
+            default: return s;
+        }
+    }
+
     View permission(Item it) {
-        LinearLayout c = card(pending(it) ? "Allow " + it.toolName + "?" : it.toolName + ": " + it.state, pending(it) ? MainActivity.ACCENT : 0xFF444440);
-        if (!it.summary.isEmpty()) {
-            TextView s = label(it.summary, MainActivity.TEXT, 13);
+        LinearLayout c = card(pending(it) ? "Allow " + it.toolName + "?" : it.toolName + ": " + stateLabel(it.state), pending(it) ? MainActivity.ACCENT : 0xFF444440);
+        String what = !it.detail.isEmpty() ? it.detail : it.summary;
+        if (!what.isEmpty()) {
+            TextView s = label(what, MainActivity.TEXT, 13);
             s.setTypeface(Typeface.MONOSPACE);
             s.setTextIsSelectable(true);
             s.setPadding(0, dp(6), 0, 0);
@@ -415,14 +484,16 @@ final class ChatView extends LinearLayout {
         if (pending(it)) {
             LinearLayout row = buttons(c);
             addButton(row, "Allow", GREEN, v -> act(it, "allow", null));
-            addButton(row, "Always", BLUE, v -> act(it, "allowAlways", null));
+            if (it.canAllowAlways) {
+                addButton(row, "Always", BLUE, v -> act(it, "allowAlways", null));
+            }
             addButton(row, "Deny", RED, v -> act(it, "deny", null));
         }
         return spaced(c, 12);
     }
 
     View plan(Item it) {
-        LinearLayout c = card(pending(it) ? planTitle(it.text) : "Plan: " + it.state, pending(it) ? MainActivity.ACCENT : 0xFF444440);
+        LinearLayout c = card(pending(it) ? planTitle(it.text) : "Plan: " + stateLabel(it.state), pending(it) ? MainActivity.ACCENT : 0xFF444440);
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp - 1;
         md.setMarkdown(it.text);
@@ -470,6 +541,11 @@ final class ChatView extends LinearLayout {
             }
             String qtext = q.optString("question");
             boolean multi = q.optBoolean("multiSelect");
+            if (!q.optString("header").isEmpty()) {
+                TextView h = label(q.optString("header").toUpperCase(java.util.Locale.ROOT), MainActivity.MUTED, 11);
+                h.setPadding(0, dp(10), 0, 0);
+                c.addView(h);
+            }
             Set<String> sel = new LinkedHashSet<>();
             chosen.put(qtext, sel);
             TextView qt = label(qtext, MainActivity.TEXT, 15);
@@ -524,6 +600,68 @@ final class ChatView extends LinearLayout {
                 }
                 act(it, "answer", extra);
             });
+        }
+        return spaced(c, 12);
+    }
+
+    View diffView(JSONObject d) {
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        String path = d.optString("path");
+        if (!path.isEmpty()) {
+            sb.append(path).append('\n');
+            sb.setSpan(new android.text.style.ForegroundColorSpan(MainActivity.MUTED), 0, sb.length(), 0);
+        }
+        JSONArray lines = d.optJSONArray("lines");
+        for (int i = 0; lines != null && i < lines.length(); i++) {
+            JSONObject l = lines.optJSONObject(i);
+            if (l == null) {
+                continue;
+            }
+            String op = l.optString("op");
+            int s = sb.length();
+            String mark = "add".equals(op) || "+".equals(op) ? "+ " : "del".equals(op) || "-".equals(op) ? "- " : "  ";
+            sb.append(mark).append(l.optString("text")).append('\n');
+            int color = mark.startsWith("+") ? GREEN : mark.startsWith("-") ? RED : MainActivity.MUTED;
+            sb.setSpan(new android.text.style.ForegroundColorSpan(color), s, sb.length(), 0);
+        }
+        if (d.optBoolean("truncated")) {
+            sb.append("…");
+        }
+        TextView t = label("", MainActivity.TEXT, 12);
+        t.setText(sb);
+        t.setTypeface(Typeface.MONOSPACE);
+        t.setTextIsSelectable(true);
+        t.setHorizontallyScrolling(true);
+        t.setPadding(dp(10), dp(8), dp(10), dp(8));
+        android.widget.HorizontalScrollView h = new android.widget.HorizontalScrollView(getContext());
+        h.setBackground(round(MarkdownView.CODE_BG, 8));
+        h.addView(t);
+        LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(4);
+        h.setLayoutParams(lp);
+        return h;
+    }
+
+    View thinking(Item it) {
+        boolean open = expanded.contains(it.seq);
+        TextView t = label(open ? it.text : "∴ Thinking" + (it.streaming ? "…" : ""), MainActivity.MUTED, 13);
+        t.setTypeface(Typeface.defaultFromStyle(Typeface.ITALIC));
+        t.setOnClickListener(v -> {
+            if (!expanded.remove(it.seq)) {
+                expanded.add(it.seq);
+            }
+            sigs.remove(it.seq);
+            setItems(items);
+        });
+        return spaced(t, 8);
+    }
+
+    View rotate(Item it) {
+        LinearLayout c = card(it.text.isEmpty() ? "Rotate this session?" : it.text, pending(it) ? MainActivity.ACCENT : 0xFF444440);
+        if (pending(it)) {
+            LinearLayout row = buttons(c);
+            addButton(row, "Rotate", MainActivity.ACCENT, v -> act(it, "rotate", null));
+            addButton(row, "Not now", 0xFF666660, v -> act(it, "dismiss", null));
         }
         return spaced(c, 12);
     }

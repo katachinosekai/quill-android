@@ -1,10 +1,13 @@
 [
- {"seq":1,"kind":"user","text":"Add a choice card to the phone app"},
- {"seq":2,"kind":"assistant","text":"## Plan\n\nI'll port **parseChoices** to Java and render buttons under the *last* message.\n\n- Parser in `Choices.java`\n  - same cases as the desktop\n- Buttons send the option\n\n```java\nString[] opts = Choices.parse(line);\n```\n\n| file | change |\n|---|---|\n| Choices.java | new |\n| ChatView.java | buttons |\n\nSee [the desktop notes](https://github.com/katachinosekai/quill)."},
- {"seq":3,"kind":"tool","toolName":"Bash","summary":"./gradlew -q testDebugUnitTest","hasResult":true,"result":"tests=8 failures=0"},
- {"seq":4,"kind":"tool","toolName":"Edit","summary":"ChatView.java","hasResult":true,"resultError":true,"result":"old_string not found"},
- {"seq":5,"kind":"permission","toolName":"Bash","summary":"git push origin master","requestId":"req-1","state":"pending"},
- {"seq":6,"kind":"question","requestId":"req-2","state":"pending","questions":[{"question":"Which layouts should get buttons?","multiSelect":true,"options":[{"label":"Phone","description":"narrow screens"},{"label":"Tablet"}]},{"question":"Release now?","multiSelect":false,"options":["Yes","Later"]}]},
- {"seq":7,"kind":"plan","requestId":"req-3","state":"pending","text":"1. Write the parser\n2. Add buttons\n\n**Approve?** Once you do, I'll start."},
- {"seq":8,"kind":"assistant","text":"Built it and the tests pass.\n\n**Push now, or wait for the release?**"}
+ {"seq":1,"rev":1,"kind":"user","text":"Add a choice card to the phone app"},
+ {"seq":2,"rev":1,"kind":"thinking","text":"The desktop parser splits at the last ', or '."},
+ {"seq":3,"rev":1,"kind":"assistant","text":"## Plan\n\nI'll port **parseChoices** to Java and render buttons under the *last* message.\n\n- Parser in `Choices.java`\n  - same cases as the desktop\n- Buttons send the option\n\n```java\nString[] opts = Choices.parse(line);\n```\n\n| file | change |\n|---|---|\n| Choices.java | new |\n| ChatView.java | buttons |\n\nSee [the desktop notes](https://github.com/katachinosekai/quill)."},
+ {"seq":4,"rev":1,"kind":"tool","tool":{"name":"Bash","id":"t1","summary":"./gradlew -q testDebugUnitTest","done":true,"isError":false,"result":"tests=8 failures=0"}},
+ {"seq":5,"rev":2,"kind":"tool","tool":{"name":"Edit","id":"t2","summary":"ChatView.java","done":true,"isError":false,"result":"ok"},"diff":{"path":"app/src/main/java/ChatView.java","lines":[{"op":"ctx","text":"void act() {"},{"op":"del","text":"  old();"},{"op":"add","text":"  next();"}],"truncated":false}},
+ {"seq":6,"rev":1,"kind":"permission","request":{"id":"req-1","state":"pending","tool":"Bash","detail":"git push origin master","canAllowAlways":false}},
+ {"seq":7,"rev":1,"kind":"permission","request":{"id":"req-0","state":"allowedAlways","tool":"Read","detail":"COMMENTS.md","canAllowAlways":true}},
+ {"seq":8,"rev":1,"kind":"question","request":{"id":"req-2","state":"pending","questions":[{"header":"Layouts","question":"Which layouts should get buttons?","multiSelect":true,"options":[{"label":"Phone","description":"narrow screens"},{"label":"Tablet"}]},{"header":"Release","question":"Release now?","multiSelect":false,"options":[{"label":"Yes"},{"label":"Later"}]}]}},
+ {"seq":9,"rev":1,"kind":"rotate","text":"Context is 78% full. Rotate to a fresh session?","request":{"id":"rot-1","state":"pending"}},
+ {"seq":10,"rev":1,"kind":"error","text":"API error: overloaded, retrying"},
+ {"seq":11,"rev":1,"kind":"assistant","text":"Built it and the tests pass.\n\n**Push now, or wait for the release?**","choices":["Push now","Wait for the release"],"choicesOpen":true}
 ]
