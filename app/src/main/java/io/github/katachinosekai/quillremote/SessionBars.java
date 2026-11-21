@@ -429,7 +429,7 @@ class SessionBars {
         }
         if (items.isEmpty()) {
             TextView empty = new TextView(a);
-            empty.setText("No sessions found on this page yet. Open claude.ai's own session list once, then they show up here.");
+            empty.setText(remote ? "No live sessions from Quill Desktop right now." : "No sessions found on this page yet. Open claude.ai's own session list once, then they show up here.");
             empty.setTextColor(MainActivity.MUTED);
             empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
             empty.setPadding(a.dp(8), 0, a.dp(8), 0);

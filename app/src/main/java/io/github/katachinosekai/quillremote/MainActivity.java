@@ -242,7 +242,8 @@ public class MainActivity extends Activity {
                 }
             });
         }));
-        unlockDlg.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+        unlockDlg.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE | android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        unlockDlg.getWindow().setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         unlockDlg.show();
         pw.requestFocus();
     }
