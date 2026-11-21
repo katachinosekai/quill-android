@@ -31,6 +31,12 @@ class SessionBars {
     static final int MAX_TABS = 12;
     static final int CARD = 0xFF2F2F2C;
     static final Pattern SESSION = Pattern.compile("/code/(session_[A-Za-z0-9]+)");
+    static final Pattern REMOTE_ID = Pattern.compile("[A-Za-z0-9_-]{2,80}");
+    boolean remote;
+
+    boolean validId(String id) {
+        return id != null && (remote ? REMOTE_ID.matcher(id).matches() : SESSION.matcher("/code/" + id).matches());
+    }
 
     static class Item {
         final String id, folder, title;
@@ -87,7 +93,11 @@ class SessionBars {
 
     static String resets(JSONObject w) {
         long t = w == null ? 0 : w.optLong("resetsAt");
-        return t == 0 ? "" : " · resets " + new java.text.SimpleDateFormat("H:mm", java.util.Locale.getDefault()).format(new java.util.Date(t * 1000));
+        if (t == 0) {
+            return "";
+        }
+        String f = t * 1000 - System.currentTimeMillis() > 20 * 3600_000L ? "EEE H:mm" : "H:mm";
+        return " · resets " + new java.text.SimpleDateFormat(f, java.util.Locale.getDefault()).format(new java.util.Date(t * 1000));
     }
 
     String[] usageParts() {
@@ -98,6 +108,12 @@ class SessionBars {
         JSONObject m = current == null ? null : meta.optJSONObject(current);
         String sess = m == null ? "–" : tok(m.optLong("tokens")) + (m.optLong("contextMax") > 0 ? " · ctx " + Math.round(100.0 * m.optLong("context") / m.optLong("contextMax")) + "%" : "");
         String credits = usage.optString("credits");
+        if (remote) {
+            String ctx = m != null && m.optLong("contextMax") > 0 ? "Context " + Math.round(100.0 * m.optLong("context") / m.optLong("contextMax")) + "%" : null;
+            String five5 = "5-hour " + pct(five) + resets(five) + ("paused".equals(credits) ? " · paused" : "");
+            String wk = "Weekly " + pct(week) + resets(week);
+            return ctx == null ? new String[]{five5, wk} : new String[]{five5, ctx, wk};
+        }
         return new String[]{
                 "5-hour " + pct(five) + resets(five),
                 "Session " + sess,
@@ -213,6 +229,7 @@ class SessionBars {
         View edge = new View(a);
         edge.setBackgroundColor(0xFF3A3A37);
         side.addView(edge, new LinearLayout.LayoutParams(a.dp(1), ViewGroup.LayoutParams.MATCH_PARENT));
+        remote = a.phoneApi != null && a.phoneApi.available();
         loadTabs();
     }
 
@@ -456,7 +473,7 @@ class SessionBars {
             for (int i = 0; arr != null && i < arr.length(); i++) {
                 JSONObject it = arr.getJSONObject(i);
                 String id = it.optString("id");
-                if (SESSION.matcher("/code/" + id).matches()) {
+                if (validId(id)) {
                     items.add(new Item(id, it.optString("folder"), it.optString("title")));
                 }
             }
@@ -465,10 +482,14 @@ class SessionBars {
             for (int i = 0; ord != null && i < ord.length(); i++) {
                 order.add(ord.getString(i));
             }
-            Matcher m = SESSION.matcher(o.optString("path"));
-            current = m.find() ? m.group(1) : null;
-            Notifier.foregroundRc = current;
-            if (current != null) {
+            if (remote) {
+                current = validId(o.optString("current")) ? o.optString("current") : null;
+            } else {
+                Matcher m = SESSION.matcher(o.optString("path"));
+                current = m.find() ? m.group(1) : null;
+                Notifier.foregroundRc = current;
+            }
+            if (current != null && !remote) {
                 prefs.edit().putString("last", MainActivity.HOME + "/" + current).apply();
             }
         } catch (JSONException e) {
@@ -511,10 +532,10 @@ class SessionBars {
 
     void loadTabs() {
         try {
-            JSONArray arr = new JSONArray(prefs.getString("tabs", "[]"));
+            JSONArray arr = new JSONArray(prefs.getString(remote ? "remote.tabs" : "tabs", "[]"));
             for (int i = 0; i < arr.length(); i++) {
                 JSONArray t = arr.getJSONArray(i);
-                if (SESSION.matcher("/code/" + t.getString(0)).matches()) {
+                if (validId(t.getString(0))) {
                     tabs.add(new String[]{t.getString(0), t.optString(1)});
                 }
             }
@@ -527,7 +548,7 @@ class SessionBars {
         for (String[] t : tabs) {
             arr.put(new JSONArray().put(t[0]).put(t[1]));
         }
-        prefs.edit().putString("tabs", arr.toString()).apply();
+        prefs.edit().putString(remote ? "remote.tabs" : "tabs", arr.toString()).apply();
     }
 
     void closeTab(String id) {

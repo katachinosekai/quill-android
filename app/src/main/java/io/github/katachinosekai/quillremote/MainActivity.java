@@ -58,6 +58,9 @@ public class MainActivity extends Activity {
     ValueCallback<Uri[]> pendingFiles;
     SessionBars bars;
     FolderSync sync;
+    PhoneApi phoneApi;
+    Remote remote;
+    ChatView chat;
     Notifier fgNotifier;
 
     void askNotifyPermission() {
@@ -173,6 +176,10 @@ public class MainActivity extends Activity {
     void acceptPair(Uri data) {
         String name = FolderSync.pair(prefs, data);
         android.widget.Toast.makeText(this, name == null ? "Not a valid Quill pairing link" : "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
+        if (name != null && remote == null && phoneApi != null && phoneApi.available()) {
+            recreate();
+            return;
+        }
         if (name != null) {
             sync.refresh();
             askNotifyPermission();
@@ -194,6 +201,10 @@ public class MainActivity extends Activity {
     }
 
     void openSession(String id) {
+        if (remote != null) {
+            remote.open(id);
+            return;
+        }
         if (web == null || !SessionBars.SESSION.matcher("/code/" + id).matches()) {
             return;
         }
@@ -204,8 +215,16 @@ public class MainActivity extends Activity {
         });
     }
 
+    String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            return "";
+        }
+    }
+
     void loadHome() {
-        if (web != null) {
+        if (remote == null && web != null) {
             web.loadUrl(HOME);
         }
     }
@@ -222,6 +241,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(BG);
 
         root.addView(bar(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        phoneApi = new PhoneApi(prefs);
         bars = new SessionBars(this, prefs);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.HORIZONTAL);
@@ -260,6 +280,11 @@ public class MainActivity extends Activity {
         setupWeb();
         android.widget.FrameLayout webFrame = new android.widget.FrameLayout(this);
         webFrame.addView(web, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
+        if (bars.remote) {
+            chat = new ChatView(this);
+            webFrame.addView(chat, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
+            web.setVisibility(View.GONE);
+        }
         webFrame.addView(zoomLabel, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
         column.addView(webFrame, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         bars.applyMode(false);
@@ -283,10 +308,36 @@ public class MainActivity extends Activity {
         }
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
         fgNotifier = new Notifier(this);
-        sync.usageListener = json -> bars.setUsage(json);
-        String cachedUsage = prefs.getString("usage.cache", null);
-        if (cachedUsage != null) {
-            bars.setUsage(cachedUsage);
+        if (chat != null) {
+            sync.usageListener = json -> { };
+            remote = new Remote(phoneApi, chat, new Remote.Host() {
+                @Override
+                public void onSessions(String barsJson, String usageJson) {
+                    bars.update(barsJson);
+                    bars.setUsage(usageJson);
+                }
+
+                @Override
+                public void onOpened(String id, org.json.JSONObject session) {
+                    prefs.edit().putString("remote.last", id).apply();
+                }
+
+                @Override
+                public void onConnection(String line) {
+                    chat.setConnection(line);
+                }
+
+                @Override
+                public void toast(String msg) {
+                    MainActivity.this.toast(msg);
+                }
+            }, appVersion(), prefs.getString("remote.last", null));
+        } else {
+            sync.usageListener = json -> bars.setUsage(json);
+            String cachedUsage = prefs.getString("usage.cache", null);
+            if (cachedUsage != null) {
+                bars.setUsage(cachedUsage);
+            }
         }
         Updater.clean(this);
         updater = new Updater(this, prefs, new Updater.Listener() {
@@ -325,6 +376,9 @@ public class MainActivity extends Activity {
             setZoom(pinchZoom(prefs.getInt("zoom", 115), f));
         }
         String test = testUrl(getIntent());
+        if (remote != null) {
+            return;
+        }
         if (test != null) {
             web.loadUrl(test);
         } else if (handleOpen(getIntent())) {
@@ -1182,6 +1236,9 @@ public class MainActivity extends Activity {
         if (sync != null) {
             sync.stop();
         }
+        if (remote != null) {
+            remote.stop();
+        }
         Notifier.appVisible = false;
         if (fgNotifier != null && !prefs.getBoolean("notifyBackground", false)) {
             fgNotifier.stop();
@@ -1193,6 +1250,9 @@ public class MainActivity extends Activity {
         super.onResume();
         if (sync != null) {
             sync.start();
+        }
+        if (remote != null) {
+            remote.start();
         }
         if (updater != null) {
             updater.checkIfDue();

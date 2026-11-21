@@ -98,6 +98,7 @@ final class ChatView extends LinearLayout {
     final EditText box;
     final TextView send;
     final TextView status;
+    TextView conn;
     Actions actions;
     float sp = 15f;
     final Map<Integer, View> views = new HashMap<>();
@@ -124,6 +125,13 @@ final class ChatView extends LinearLayout {
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         status.setPadding(dp(16), dp(2), dp(16), dp(2));
         status.setVisibility(GONE);
+        conn = new TextView(c);
+        conn.setTextColor(MainActivity.TEXT);
+        conn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        conn.setBackgroundColor(0xFF5A2A22);
+        conn.setPadding(dp(16), dp(6), dp(16), dp(6));
+        conn.setVisibility(GONE);
+        addView(conn, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         LinearLayout bar = new LinearLayout(c);
@@ -200,6 +208,11 @@ final class ChatView extends LinearLayout {
         send.setContentDescription(b ? "Stop" : "Send");
         status.setText(line == null ? "" : line);
         status.setVisibility(line == null || line.isEmpty() ? GONE : VISIBLE);
+    }
+
+    void setConnection(String line) {
+        conn.setText(line == null ? "" : line);
+        conn.setVisibility(line == null || line.isEmpty() ? GONE : VISIBLE);
     }
 
     void clear() {
