@@ -374,48 +374,61 @@ class SessionBars {
     }
 
     /** Portrait only: hold the edge ~0.35 s (a short buzz), then drag left or right; the width is remembered for portrait. */
-    /** Portrait: drag the edge sideways (starts right away, or after a short hold), or tap it to open/close. Width remembered for portrait. */
+    /**
+     * Portrait: touch the edge and drag (grabs at once); tap toggles the list. While dragging only the edge strip moves
+     * (translationX, cheap); the list and chat are resized once on release, because re-laying out a long chat on every
+     * move made the drag lag (user 2026-11-21: "takes a long time to grab").
+     */
     View.OnTouchListener resizer() {
         boolean[] armed = {false};
+        boolean[] moved = {false};
         float[] down = {0, 0};
-        Runnable[] arm = {null};
+        int[] startW = {0};
+        int[] target = {0};
         int slop = android.view.ViewConfiguration.get(a).getScaledTouchSlop();
         return (v, e) -> {
             switch (e.getActionMasked()) {
                 case android.view.MotionEvent.ACTION_DOWN:
                     armed[0] = false;
+                    moved[0] = false;
                     down[0] = e.getRawX();
                     down[1] = e.getRawY();
+                    startW[0] = side.getWidth();
+                    target[0] = startW[0];
                     v.getParent().requestDisallowInterceptTouchEvent(true);
-                    arm[0] = () -> startDrag(v, armed);
                     if (portrait()) {
-                        v.postDelayed(arm[0], 200);
+                        startDrag(v, armed);
                     }
                     return true;
                 case android.view.MotionEvent.ACTION_MOVE:
-                    if (!armed[0] && portrait() && Math.abs(e.getRawX() - down[0]) > slop && Math.abs(e.getRawX() - down[0]) > Math.abs(e.getRawY() - down[1])) {
-                        v.removeCallbacks(arm[0]);
-                        startDrag(v, armed);
+                    if (Math.abs(e.getRawX() - down[0]) > slop) {
+                        moved[0] = true;
                     }
-                    if (armed[0]) {
+                    if (armed[0] && moved[0]) {
                         int[] at = new int[2];
                         side.getLocationOnScreen(at);
-                        int w = (int) e.getRawX() - at[0] + a.dp(HANDLE_W) / 2;
-                        setSideWidth(Math.max(0, Math.min(w, screenW())));
+                        int w = Math.max(a.dp(HANDLE_W), Math.min((int) e.getRawX() - at[0] + a.dp(HANDLE_W) / 2, screenW()));
+                        target[0] = w;
+                        v.setTranslationX(w - startW[0]);
                     }
                     return true;
                 case android.view.MotionEvent.ACTION_UP:
                 case android.view.MotionEvent.ACTION_CANCEL:
-                    v.removeCallbacks(arm[0]);
-                    if (!armed[0]) {
-                        if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP && Math.abs(e.getRawX() - down[0]) <= slop) {
+                    boolean wasArmed = armed[0];
+                    armed[0] = false;
+                    v.setTranslationX(0);
+                    side.setTranslationZ(0);
+                    v.setBackgroundColor(MainActivity.SIDE);
+                    if (!moved[0]) {
+                        if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP) {
                             toggleSide();
                         }
                         return true;
                     }
-                    armed[0] = false;
-                    v.setBackgroundColor(MainActivity.SIDE);
-                    int w = side.getWidth();
+                    if (!wasArmed) {
+                        return true;
+                    }
+                    int w = target[0];
                     float d = a.getResources().getDisplayMetrics().density;
                     SharedPreferences.Editor ed = prefs.edit();
                     if (w < a.dp(SNAP_DP)) {
@@ -451,6 +464,12 @@ class SessionBars {
         }
         v.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
         v.setBackgroundColor(0xFF4A3A33);
+        // Let the strip move past the list's bounds and draw above the chat while dragging.
+        side.setClipChildren(false);
+        if (side.getParent() instanceof ViewGroup) {
+            ((ViewGroup) side.getParent()).setClipChildren(false);
+        }
+        side.setTranslationZ(a.dp(6));
     }
 
     /** Keep Android's back-swipe from taking touches on the grip (it sits on the screen edge when the list is closed). */

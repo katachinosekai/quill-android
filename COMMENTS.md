@@ -49,6 +49,9 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## After 0.9.15
+- Edge drag latency (user: "takes a long time to grab"): the strip grabs on touch (no 200 ms hold); while dragging only the strip moves (translationX, side clipChildren off and raised with translationZ), and setSideWidth runs once on release. Resizing the side on every move re-laid out the whole ChatView (long chats re-measure all TextViews), which made the drag lag. Snap/tap behaviour unchanged.
+
 ## After 0.9.14
 - Easier list edge (user: "hard to open and close on edge"): handle 18 dp with a 5×56 dp grip; dragging starts as soon as the finger moves sideways (or after a 200 ms hold); a plain tap toggles the list; setSystemGestureExclusionRects keeps Android's back-swipe off the grip (it sits on the screen edge while closed). The edge strip stays visible when the list is closed in every orientation; dragging stays portrait-only. Content-desc "Session list edge".
 - Arrow button removed (user): MainActivity.sideArrow stays GONE; the edge strip (tap) and the session-name bar open the list.
