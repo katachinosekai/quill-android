@@ -588,6 +588,11 @@ final class ChatView extends LinearLayout {
     }
 
     View permission(Item it) {
+        if ("autoAllowed".equals(it.state) || "ruleAllowed".equals(it.state)) {
+            View none = new View(getContext());
+            none.setVisibility(GONE);
+            return none;
+        }
         LinearLayout c = card(pending(it) ? "Allow " + it.toolName + "?" : it.toolName + ": " + stateLabel(it.state), pending(it) ? MainActivity.ACCENT : 0xFF444440);
         String what = !it.detail.isEmpty() ? it.detail : it.summary;
         if (!what.isEmpty()) {
