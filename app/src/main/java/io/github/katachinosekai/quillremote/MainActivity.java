@@ -315,6 +315,9 @@ public class MainActivity extends Activity {
                 prefs.edit().putLong("update.checked", 0).apply();
             }
         }
+        if (debuggable && getIntent() != null && getIntent().hasExtra("quill.testChat")) {
+            testChat();
+        }
         boolean pairing = handlePair(getIntent());
         setupPinch();
         if (debuggable && getIntent() != null && getIntent().hasExtra("quill.testPinch")) {
@@ -329,6 +332,50 @@ public class MainActivity extends Activity {
         } else if (state == null || web.getUrl() == null) {
             web.loadUrl(pairing ? startUrl(null) : startUrl(getIntent()));
         }
+    }
+
+    void testChat() {
+        ChatView chat = new ChatView(this);
+        java.util.List<ChatView.Item> items = new java.util.ArrayList<>();
+        try (java.io.InputStream in = getAssets().open("chat-sample.json")) {
+            org.json.JSONArray arr = new org.json.JSONArray(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+            for (int i = 0; i < arr.length(); i++) {
+                items.add(ChatView.Item.from(arr.getJSONObject(i)));
+            }
+        } catch (java.io.IOException | org.json.JSONException e) {
+            toast("chat sample: " + e);
+            return;
+        }
+        chat.actions = new ChatView.Actions() {
+            @Override
+            public void send(String text) {
+                android.util.Log.w("QuillChat", "send " + text);
+                ChatView.Item it = new ChatView.Item();
+                it.seq = chat.items.size() + 100;
+                it.kind = "user";
+                it.text = text;
+                it.toolName = it.summary = it.result = it.requestId = it.state = "";
+                java.util.List<ChatView.Item> next = new java.util.ArrayList<>(chat.items);
+                next.add(it);
+                chat.setItems(next);
+            }
+
+            @Override
+            public void answer(String requestId, String action, org.json.JSONObject extra) {
+                android.util.Log.w("QuillChat", "answer " + requestId + " " + action + " " + extra);
+                toast(action + " " + extra);
+            }
+
+            @Override
+            public void interrupt() {
+                android.util.Log.w("QuillChat", "interrupt");
+            }
+        };
+        chat.setItems(items);
+        chat.setBusy(false, "Opus 5.5 · idle");
+        android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
+        d.setContentView(chat);
+        d.show();
     }
 
     View bar() {
