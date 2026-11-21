@@ -167,6 +167,8 @@ class Notifier {
         }
         String title = clip(e.optString("title"), 80);
         String folder = clip(e.optString("folder"), 40);
+        String body = clip(e.optString("body"), 160);
+        String text = !body.isEmpty() ? body : remote ? "Quill Desktop" : folder.isEmpty() ? "Quill" : folder;
         String label = LABELS[TYPES.indexOf(type)];
         channel(c);
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -180,7 +182,8 @@ class Notifier {
         Notification n = new Notification.Builder(c, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle(label + (title.isEmpty() ? "" : ": " + title))
-                .setContentText(folder.isEmpty() ? "Quill" : folder)
+                .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setContentIntent(pi)
                 .setAutoCancel(true)
                 .setCategory(type.equals("finished") ? Notification.CATEGORY_STATUS : Notification.CATEGORY_REMINDER)

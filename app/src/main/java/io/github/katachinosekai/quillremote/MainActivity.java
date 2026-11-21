@@ -742,6 +742,9 @@ public class MainActivity extends Activity {
         Runnable syncStatus = () -> {
             status.removeAllViews();
             for (String l : sync.describe().split("\n")) {
+                if (remote != null && l.startsWith("Updated ")) {
+                    l = remote.lastOk == 0 ? "Connecting to Quill Desktop…" : "Live from Quill Desktop  ·  last answer " + FolderSync.ago(System.currentTimeMillis() - remote.lastOk);
+                }
                 status.addView(line(l, MUTED));
             }
         };

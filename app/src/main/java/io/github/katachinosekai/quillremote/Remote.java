@@ -49,6 +49,7 @@ final class Remote implements ChatView.Actions {
     volatile int gen;
     volatile boolean control = true;
     volatile String deskVersion = "";
+    volatile long lastOk;
 
     String boot = "";
     long cursor;
@@ -137,6 +138,7 @@ final class Remote implements ChatView.Actions {
                 sleep(Math.min(15000, 1500L * fails));
                 continue;
             }
+            lastOk = System.currentTimeMillis();
             if (fails > 0 || boot.isEmpty()) {
                 connection("");
             }
@@ -489,7 +491,7 @@ final class Remote implements ChatView.Actions {
                     msg = "Already answered on another device.";
                     break;
                 case "blocked":
-                    msg = "Quill Desktop can't take a message for this session right now.";
+                    msg = r.detail().isEmpty() ? "Quill Desktop can't take a message for this session right now." : "Quill Desktop: " + r.detail() + ".";
                     break;
                 case "not_running":
                     msg = "Nothing is running in this session.";

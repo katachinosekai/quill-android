@@ -35,6 +35,11 @@ final class PhoneApi {
             return code >= 200 && code < 300 && body != null;
         }
 
+        String detail() {
+            JSONObject e = body == null ? null : body.optJSONObject("error");
+            return e == null ? "" : e.optString("message");
+        }
+
         String error() {
             JSONObject e = body == null ? null : body.optJSONObject("error");
             return e == null ? (code == 0 ? "unreachable" : "http_" + code) : e.optString("code");
