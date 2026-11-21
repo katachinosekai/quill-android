@@ -589,9 +589,25 @@ final class Remote implements ChatView.Actions {
         });
     }
 
-    void newSession(String folder, String backend, String model, String mode) {
+    void handoffs(java.util.function.Consumer<JSONArray> done) {
+        work.execute(() -> {
+            PhoneApi.Reply r = api.handoffs();
+            JSONArray h = r.ok() ? r.body.optJSONArray("handoffs") : null;
+            ui.post(() -> done.accept(r.ok() && h == null ? new JSONArray() : h));
+        });
+    }
+
+    void slug(String title, java.util.function.Consumer<String> done) {
+        work.execute(() -> {
+            PhoneApi.Reply r = api.slug(title);
+            String s = r.ok() ? r.body.optString("slug") : "";
+            ui.post(() -> done.accept(s));
+        });
+    }
+
+    void newSession(String folder, String backend, String model, String mode, JSONObject start) {
         write("new session", () -> {
-            PhoneApi.Reply r = api.newSession(folder, backend, model, mode);
+            PhoneApi.Reply r = api.newSession(folder, backend, model, mode, start);
             JSONObject s = r.ok() ? r.body.optJSONObject("session") : null;
             if (s != null) {
                 synchronized (Remote.this) {

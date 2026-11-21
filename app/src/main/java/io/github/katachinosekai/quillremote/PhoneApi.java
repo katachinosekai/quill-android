@@ -280,7 +280,22 @@ final class PhoneApi {
         return post("/phone/usage/resume", new JSONObject());
     }
 
-    Reply newSession(String folder, String backend, String model, String mode) {
-        return post("/phone/sessions/new", obj("folder", folder, "backend", backend, "model", model, "mode", mode));
+    Reply newSession(String folder, String backend, String model, String mode, JSONObject start) {
+        JSONObject b = obj("folder", folder, "backend", backend, "model", model, "mode", mode);
+        if (start != null) {
+            try {
+                b.put("start", start);
+            } catch (JSONException ignored) {
+            }
+        }
+        return post("/phone/sessions/new", b);
+    }
+
+    Reply handoffs() {
+        return get("/phone/handoffs", 8000);
+    }
+
+    Reply slug(String title) {
+        return get("/phone/handoffs/slug?title=" + enc(title), 5000);
     }
 }

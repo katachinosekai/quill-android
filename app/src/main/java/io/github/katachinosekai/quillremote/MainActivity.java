@@ -234,7 +234,11 @@ public class MainActivity extends Activity {
         if (remote == null) {
             return;
         }
-        remote.folders(folders -> {
+        remote.folders(folders -> remote.handoffs(handoffs -> newSessionDialog(folders, handoffs)));
+    }
+
+    void newSessionDialog(org.json.JSONArray folders, org.json.JSONArray handoffs) {
+        {
             if (folders.length() == 0) {
                 toast("Quill Desktop has no folders to start a session in.");
                 return;
@@ -242,6 +246,96 @@ public class MainActivity extends Activity {
             LinearLayout col = new LinearLayout(this);
             col.setOrientation(LinearLayout.VERTICAL);
             col.setPadding(dp(20), dp(8), dp(20), 0);
+            boolean kmem = handoffs != null;
+            android.widget.EditText name = new android.widget.EditText(this);
+            TextView preview = label("");
+            String[] resume = {null};
+            android.app.AlertDialog[] dlg = {null};
+            if (kmem) {
+                col.addView(label("Name"));
+                name.setHint("Name, e.g. Quill Android");
+                name.setSingleLine(true);
+                name.setContentDescription("Session name");
+                col.addView(name);
+                col.addView(preview);
+                Runnable[] pending = {null};
+                name.addTextChangedListener(new android.text.TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence s, int st, int c, int a) {
+                    }
+
+                    @Override
+                    public void onTextChanged(CharSequence s, int st, int b, int c) {
+                    }
+
+                    @Override
+                    public void afterTextChanged(android.text.Editable e) {
+                        if (pending[0] != null) {
+                            preview.removeCallbacks(pending[0]);
+                        }
+                        String t = e.toString().trim();
+                        if (t.isEmpty()) {
+                            preview.setText("");
+                            return;
+                        }
+                        pending[0] = () -> remote.slug(t, slug -> {
+                            if (t.equals(name.getText().toString().trim())) {
+                                preview.setText(slug.isEmpty() ? "" : "kmem name: " + slug);
+                            }
+                        });
+                        preview.postDelayed(pending[0], 300);
+                    }
+                });
+                col.addView(label("Or resume a kmem handoff"));
+                android.widget.RadioGroup rg = new android.widget.RadioGroup(this);
+                if (handoffs.length() == 0) {
+                    TextView none = label("No saved handoffs yet.");
+                    none.setPadding(0, 0, 0, dp(4));
+                    col.addView(none);
+                }
+                java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MMM d H:mm", java.util.Locale.getDefault());
+                for (int i = 0; i < handoffs.length(); i++) {
+                    org.json.JSONObject h = handoffs.optJSONObject(i);
+                    if (h == null) {
+                        continue;
+                    }
+                    String hn = h.optString("name");
+                    String saved = h.optLong("savedMs") > 0 ? " · saved " + fmt.format(new java.util.Date(h.optLong("savedMs"))) : "";
+                    org.json.JSONObject open = h.optJSONObject("openIn");
+                    if (open != null) {
+                        TextView t = new TextView(this);
+                        t.setText(hn + saved + " · open in " + open.optString("title") + " ›");
+                        t.setTextColor(MUTED);
+                        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                        t.setPadding(dp(8), dp(10), dp(8), dp(10));
+                        String oid = open.optString("id");
+                        t.setOnClickListener(v -> {
+                            if (dlg[0] != null) {
+                                dlg[0].dismiss();
+                            }
+                            remote.open(oid);
+                        });
+                        col.addView(t);
+                        continue;
+                    }
+                    android.widget.RadioButton rb = new android.widget.RadioButton(this);
+                    rb.setText(hn + saved);
+                    rb.setId(View.generateViewId());
+                    rb.setOnClickListener(v -> {
+                        if (hn.equals(resume[0])) {
+                            resume[0] = null;
+                            rg.clearCheck();
+                        } else {
+                            resume[0] = hn;
+                        }
+                        name.setEnabled(resume[0] == null);
+                    });
+                    rg.addView(rb);
+                }
+                if (rg.getChildCount() > 0) {
+                    col.addView(rg);
+                }
+            }
             android.widget.Spinner folder = spinner(col, "Folder", names(folders, "name"));
             android.widget.RadioGroup backend = new android.widget.RadioGroup(this);
             backend.setOrientation(LinearLayout.HORIZONTAL);
@@ -265,20 +359,28 @@ public class MainActivity extends Activity {
                 fill(model, list(remote.models.optJSONArray(b)));
                 fill(mode, list(remote.modes.optJSONArray(b)));
             });
-            new android.app.AlertDialog.Builder(this)
+            android.widget.ScrollView sv = new android.widget.ScrollView(this);
+            sv.addView(col);
+            dlg[0] = new android.app.AlertDialog.Builder(this)
                     .setTitle("New session")
-                    .setView(col)
+                    .setView(sv)
                     .setPositiveButton("Start", (d, w) -> {
                         String b = String.valueOf(backend.findViewById(backend.getCheckedRadioButtonId()).getTag());
                         org.json.JSONObject f = folders.optJSONObject(folder.getSelectedItemPosition());
                         if (f == null || model.getSelectedItem() == null || mode.getSelectedItem() == null) {
                             return;
                         }
-                        remote.newSession(f.optString("path"), b, String.valueOf(model.getSelectedItem()), String.valueOf(mode.getSelectedItem()));
+                        org.json.JSONObject start = null;
+                        if (kmem) {
+                            start = resume[0] != null
+                                    ? PhoneApi.obj("kmem", "resume", "name", resume[0])
+                                    : PhoneApi.obj("kmem", "new", "title", name.getText().toString().trim());
+                        }
+                        remote.newSession(f.optString("path"), b, String.valueOf(model.getSelectedItem()), String.valueOf(mode.getSelectedItem()), start);
                     })
                     .setNegativeButton("Cancel", null)
                     .show();
-        });
+        }
     }
 
     TextView label(String t) {
