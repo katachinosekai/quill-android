@@ -263,19 +263,77 @@ public class MainActivity extends Activity {
     boolean swOn;
     /** A gesture that started on or near the list edge goes to the edge only (no row long-press, any speed). */
     boolean edgeGesture;
+    /** Hold-to-grab anywhere (user 2026-11-21): hold still HOLD_MS, then a sideways move pulls the list edge to the finger. */
+    static final int HOLD_MS = 450;
+    boolean holdArmed;
+    boolean holdDragging;
+    final Runnable holdArm = () -> {
+        holdArmed = true;
+        swOn = false;
+        if (bars != null && bars.handle != null) {
+            bars.handle.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        }
+    };
 
     /** Swipe sideways anywhere (user 2026-11-21): right opens the session list, left closes it. The edge strip still works on its own. */
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent e) {
         if (bars != null && bars.vertical && bars.edgeTouch != null) {
-            if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+            int am = e.getActionMasked();
+            if (am == android.view.MotionEvent.ACTION_DOWN) {
+                swX = e.getRawX();
+                swY = e.getRawY();
+                swT = e.getEventTime();
                 edgeGesture = bars.nearEdge(e.getRawX(), e.getRawY());
+                holdArmed = false;
+                holdDragging = false;
+                bars.handle.removeCallbacks(holdArm);
+                // One rule for the edge and anywhere else (user 2026-11-21): hold ~0.45 s, then drag.
+                bars.handle.postDelayed(holdArm, HOLD_MS);
+            } else if (am == android.view.MotionEvent.ACTION_POINTER_DOWN) {
+                bars.handle.removeCallbacks(holdArm);
+                holdArmed = false;
+            } else if (am == android.view.MotionEvent.ACTION_MOVE && !holdArmed && !holdDragging
+                    && Math.hypot(e.getRawX() - swX, e.getRawY() - swY) > android.view.ViewConfiguration.get(this).getScaledTouchSlop()) {
+                // Moved before the hold time: a normal scroll or swipe, not a grab.
+                bars.handle.removeCallbacks(holdArm);
+            }
+            if (holdArmed && !holdDragging && am == android.view.MotionEvent.ACTION_MOVE
+                    && Math.abs(e.getRawX() - swX) > android.view.ViewConfiguration.get(this).getScaledTouchSlop()
+                    && Math.abs(e.getRawX() - swX) > Math.abs(e.getRawY() - swY)) {
+                // Armed and moving sideways: cancel whatever the views underneath started, and drag the edge from here.
+                android.view.MotionEvent cancel = android.view.MotionEvent.obtain(e);
+                cancel.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+                android.view.MotionEvent down = android.view.MotionEvent.obtain(e);
+                down.setAction(android.view.MotionEvent.ACTION_DOWN);
+                bars.edgeTouch.onTouch(bars.handle, down);
+                down.recycle();
+                holdDragging = true;
+            }
+            if (holdDragging) {
+                bars.edgeTouch.onTouch(bars.handle, e);
+                if (am == android.view.MotionEvent.ACTION_UP || am == android.view.MotionEvent.ACTION_CANCEL) {
+                    holdDragging = false;
+                    holdArmed = false;
+                }
+                return true;
+            }
+            if (am == android.view.MotionEvent.ACTION_UP || am == android.view.MotionEvent.ACTION_CANCEL) {
+                bars.handle.removeCallbacks(holdArm);
+                holdArmed = false;
             }
             if (edgeGesture) {
-                bars.edgeTouch.onTouch(bars.handle, e);
-                int act = e.getActionMasked();
-                if (act == android.view.MotionEvent.ACTION_UP || act == android.view.MotionEvent.ACTION_CANCEL) {
+                // On the edge: a quick tap opens/closes the list; nothing underneath (rows) gets the touch.
+                if (am == android.view.MotionEvent.ACTION_UP && !holdArmed
+                        && Math.hypot(e.getRawX() - swX, e.getRawY() - swY) <= android.view.ViewConfiguration.get(this).getScaledTouchSlop()) {
+                    bars.toggleSide();
+                }
+                if (am == android.view.MotionEvent.ACTION_UP || am == android.view.MotionEvent.ACTION_CANCEL) {
                     edgeGesture = false;
+                    holdArmed = false;
+                    bars.handle.removeCallbacks(holdArm);
                 }
                 return true;
             }

@@ -173,6 +173,8 @@ tap_edit() {
 	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
 }
 pref_has_any() { adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "$1"; }
+# Edge and anywhere follow one rule: hold ~0.45 s, then drag (x1 y x2)
+hold_drag() { adb_ shell "input motionevent DOWN $1 $2; sleep 0.65; input motionevent MOVE $((($1 + $3) / 2)) $2; input motionevent MOVE $3 $2; input motionevent UP $3 $2"; nap 1; }
 side_on() { native 'text="Sessions"' && return 0; tap_text "Session list edge"; nap 2; wait_for 'text="Sessions"' 5; }
 side_off() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' || return 0; tap_text "Session list edge"; nap 2; }
 bounds_of() { dump | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' '; }
@@ -345,22 +347,22 @@ if [ "$wide" -ge 600 ]; then
 	if [ -n "$hb" ]; then
 		read -r hx1 hy1 hx2 hy2 <<< "$hb"
 		hx=$(((hx1 + hx2) / 2)); hy=$(((hy1 + hy2) / 2))
-		adb_ shell input swipe $hx $hy $((hx - 200)) $hy 2500
+		hold_drag $hx $hy $((hx - 200))
 		nap 2
 		DIRTY=1
 		nb=$(dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$')
 		[ -n "$nb" ] && [ "$nb" -lt $((hx1 - 100)) ] && pref_has_any 'sideW.portrait' && ok "portrait: hold and drag the edge resizes the session list" || bad "portrait: hold and drag the edge resizes the session list" "$hx1 -> $nb"
 		hpos() { DIRTY=1; dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$'; }
-		adb_ shell input swipe $((nb + 5)) $hy 2 $hy 2500
+		hold_drag $((nb + 5)) $hy 2
 		nap 2
 		cb=$(hpos)
 		[ -n "$cb" ] && [ "$cb" -lt 40 ] && pref_has_any 'name="sideOpen" value="false"' && ok "portrait: drag to the left edge closes the list (edge stays)" || bad "portrait: drag to the left edge closes the list (edge stays)" "edge at $cb"
 		sw=$(adb_ shell wm size | tail -1 | awk '{print $3}'); sw=${sw%x*}
-		adb_ shell input swipe $((cb + 10)) $hy $((sw - 2)) $hy 2500
+		hold_drag $((cb + 10)) $hy $((sw - 2))
 		nap 2
 		fb=$(hpos)
 		[ -n "$fb" ] && [ "$fb" -gt $((sw - 80)) ] && pref_has_any 'name="sideOpen" value="true"' && ok "portrait: drag to the right edge opens the list fully" || bad "portrait: drag to the right edge opens the list fully" "edge at $fb of $sw"
-		adb_ shell input swipe $((fb + 5)) $hy $hx $hy 600
+		hold_drag $((fb + 5)) $hy $hx
 		nap 2
 		tb=$(hpos)
 		adb_ shell input tap $((tb + 10)) $hy
@@ -370,7 +372,7 @@ if [ "$wide" -ge 600 ]; then
 		adb_ shell input tap 15 $hy
 		nap 2
 		ob=$(hpos)
-		[ -n "$ob" ] && [ "$ob" -gt 200 ] && ok "portrait: tapping the closed edge opens it again (quick drag works too)" || bad "portrait: tapping the closed edge opens it again (quick drag works too)" "edge at $ob"
+		[ -n "$ob" ] && [ "$ob" -gt 200 ] && ok "portrait: tapping the closed edge opens it again" || bad "portrait: tapping the closed edge opens it again" "edge at $ob"
 	else
 		bad "portrait: hold and drag the edge resizes the session list" "no handle"
 	fi
@@ -385,11 +387,11 @@ if [ "$wide" -ge 600 ]; then
 		lcx=$(((lx1 + lx2) / 2))
 		for q in 1 3; do
 			ly=$((ly1 + (ly2 - ly1) * q / 4))
-			adb_ shell input swipe $lcx $ly $((lcx + 150)) $ly 600
+			hold_drag $lcx $ly $((lcx + 150))
 			nap 2
 			nx=$(hpos)
 			[ -n "$nx" ] && [ "$nx" -gt $((lx1 + 80)) ] && ok "landscape: drag the edge at $q/4 height" || bad "landscape: drag the edge at $q/4 height" "$lx1 -> $nx"
-			adb_ shell input swipe $((nx + 9)) $ly $lcx $ly 600
+			hold_drag $((nx + 9)) $ly $lcx
 			nap 2
 		done
 	else
@@ -397,17 +399,32 @@ if [ "$wide" -ge 600 ]; then
 	fi
 	adb_ shell settings put system user_rotation 0
 	nap 4
+	# Hold anywhere ~0.45 s, then move sideways: the list edge follows the finger
+	hb2=$(dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	if [ -n "$hb2" ]; then
+		read -r gx1 gy1 gx2 gy2 <<< "$hb2"
+		read -r GW GH <<< "$(scr)"
+		gy=$(((gy1 + gy2) / 2))
+		gx=$((gx2 + 150))
+		hold_drag $gx $gy $((gx + 160))
+		nap 2
+		DIRTY=1
+		hx=$(hpos)
+		[ -n "$hx" ] && [ "$hx" -gt $((gx + 100)) ] && [ "$hx" -lt $((gx + 200)) ] && ok "hold anywhere then drag pulls the list edge to the finger" || bad "hold anywhere then drag pulls the list edge to the finger" "$gx1 -> $hx (finger at $((gx + 160)))"
+		hold_drag $((hx + 9)) $gy $(((gx1 + gx2) / 2))
+		nap 2
+	fi
 	# Slow grab just beside the strip (chat side): a held, slow drag resizes the list and opens no row menu
 	sb=$(dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
 	if [ -n "$sb" ]; then
 		read -r sx1 sy1 sx2 sy2 <<< "$sb"
 		sy=$((sy1 + (sy2 - sy1) / 3))
-		adb_ shell input swipe $((sx2 + 20)) $sy $((sx2 + 220)) $sy 4000
+		hold_drag $((sx2 + 20)) $sy $((sx2 + 220))
 		nap 2
 		DIRTY=1
 		nx=$(hpos)
-		[ -n "$nx" ] && [ "$nx" -gt $((sx1 + 120)) ] && ! has 'text="Rename..."' && ! has 'text="Expand all folders"' && ok "slow grab beside the edge drags it (no row menu)" || bad "slow grab beside the edge drags it (no row menu)" "$sx1 -> $nx"
-		adb_ shell input swipe $((nx + 9)) $sy $(((sx1 + sx2) / 2)) $sy 600
+		[ -n "$nx" ] && [ "$nx" -gt $((sx1 + 120)) ] && ! has 'text="Rename..."' && ! has 'text="Expand all folders"' && ok "hold beside the edge then drag (no row menu)" || bad "hold beside the edge then drag (no row menu)" "$sx1 -> $nx"
+		hold_drag $((nx + 9)) $sy $(((sx1 + sx2) / 2))
 		nap 2
 	fi
 	tap_text "Session list edge" && nap 2
