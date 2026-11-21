@@ -373,6 +373,15 @@ nap 3
 if [ -n "$first" ]; then
 	adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "name=\"last\">https://claude.ai/code/$first<" && ok "Ctrl+1 opens the first tab ($first)" || bad "Ctrl+1 opens the first tab" "$first"
 fi
+adb_ shell am force-stop "$PKG"
+launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
+nap 4
+bars0=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o -E 'name="(barsHidden|sideOpen)" value="[a-z]*"' | tr '\n' ' ')
+adb_ shell input keyevent KEYCODE_ENTER
+adb_ shell input keyevent KEYCODE_ENTER
+nap 1
+bars1=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o -E 'name="(barsHidden|sideOpen)" value="[a-z]*"' | tr '\n' ' ')
+[ "$bars0" = "$bars1" ] && ! dump | tr '>' '\n' | grep -F 'focused="true"' | grep -q -F 'class="android.widget.TextView"' && ok "Enter after a cold start stays in the page (top bar not focused)" || bad "Enter after a cold start stays in the page (top bar not focused)" "$bars0 -> $bars1"
 launch --es quill.testUrl http://127.0.0.1:8765/code/session_A1/
 nap 3
 tap_text "Continue with Google test" && nap 2

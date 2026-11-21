@@ -272,6 +272,7 @@ public class MainActivity extends Activity {
         });
         setContentView(root);
         getWindow().getDecorView().setBackgroundColor(SIDE);
+        web.requestFocus();
 
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
@@ -892,6 +893,10 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 inject(url);
                 syncSignInBanner(url);
+                View f = getCurrentFocus();
+                if (view == web && !(f instanceof android.widget.EditText)) {
+                    web.requestFocus();
+                }
                 if (url != null && url.startsWith("https://claude.ai/")) {
                     prefs.edit().putString("last", url).apply();
                 }
