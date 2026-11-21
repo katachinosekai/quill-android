@@ -65,4 +65,4 @@ Emulator tests: `scripts/emu-test.sh --avd qfold` (also `qphone`, `qtab`). It ne
 For a signed release, create `~/Android/quill-release.properties` with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. Without it the release build is unsigned (`./gradlew assembleDebug` also works).
 
 ## License
-MIT. See [LICENSE](LICENSE). QR codes are decoded with [ZXing](https://github.com/zxing/zxing) core (Apache-2.0).
+GPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Releases up to and including 0.9.6 were published under the MIT License. QR codes are decoded with [ZXing](https://github.com/zxing/zxing) core (Apache-2.0).

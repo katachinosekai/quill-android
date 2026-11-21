@@ -801,6 +801,7 @@ public class MainActivity extends Activity {
         section(box, "About", true);
         String desk = remote != null ? remote.deskVersion : "";
         box.addView(line("Quill Android " + updater.current() + (desk.isEmpty() || "dev".equals(desk) ? "" : "  ·  Quill Desktop " + desk), MUTED));
+        box.addView(line("License GPL-3.0-or-later  ·  ZXing Apache-2.0", MUTED));
         box.addView(textButton("Check for updates", v -> {
             toast("Checking for updates...");
             updater.check(true);
