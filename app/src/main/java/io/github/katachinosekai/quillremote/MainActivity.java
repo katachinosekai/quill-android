@@ -169,6 +169,7 @@ public class MainActivity extends Activity {
         if (data == null || !"quillpair".equals(data.getScheme())) {
             return false;
         }
+        intent.setData(null);
         acceptPair(data);
         return true;
     }
@@ -176,9 +177,12 @@ public class MainActivity extends Activity {
     void acceptPair(Uri data) {
         String name = FolderSync.pair(prefs, data);
         android.widget.Toast.makeText(this, name == null ? "Not a valid Quill pairing link" : "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
-        if (name != null && remote == null && phoneApi != null && phoneApi.available()) {
+        if (name != null && phoneApi != null && (remote != null) != phoneApi.available()) {
             recreate();
             return;
+        }
+        if (name != null && remote != null) {
+            remote.restart();
         }
         if (name != null) {
             sync.refresh();
@@ -303,7 +307,7 @@ public class MainActivity extends Activity {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
         }
 
-        if (state != null) {
+        if (state != null && !bars.remote) {
             web.restoreState(state);
         }
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
@@ -313,8 +317,12 @@ public class MainActivity extends Activity {
             remote = new Remote(phoneApi, chat, new Remote.Host() {
                 @Override
                 public void onSessions(String barsJson, String usageJson) {
+                    boolean typing = chat.box.hasFocus();
                     bars.update(barsJson);
                     bars.setUsage(usageJson);
+                    if (typing && !chat.box.hasFocus()) {
+                        chat.box.requestFocus();
+                    }
                 }
 
                 @Override
@@ -330,6 +338,12 @@ public class MainActivity extends Activity {
                 @Override
                 public void toast(String msg) {
                     MainActivity.this.toast(msg);
+                }
+
+                @Override
+                public void onUnsupported() {
+                    prefs.edit().putBoolean("phone.unsupported", true).apply();
+                    recreate();
                 }
             }, appVersion(), prefs.getString("remote.last", null));
         } else {
@@ -423,6 +437,16 @@ public class MainActivity extends Activity {
             @Override
             public void interrupt() {
                 android.util.Log.w("QuillChat", "interrupt");
+            }
+
+            @Override
+            public void queueOp(String op, int index, String text) {
+                android.util.Log.w("QuillChat", "queue " + op + " " + index + " " + text);
+            }
+
+            @Override
+            public void resume() {
+                android.util.Log.w("QuillChat", "resume");
             }
         };
         chat.setItems(items);
@@ -1253,6 +1277,13 @@ public class MainActivity extends Activity {
         }
         if (remote != null) {
             remote.start();
+        } else if (phoneApi != null && phoneApi.paired2() && prefs.getBoolean("phone.unsupported", false)) {
+            new Thread(() -> {
+                if (phoneApi.sessions().ok()) {
+                    prefs.edit().remove("phone.unsupported").apply();
+                    runOnUiThread(this::recreate);
+                }
+            }, "quill-probe").start();
         }
         if (updater != null) {
             updater.checkIfDue();

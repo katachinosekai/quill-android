@@ -20,6 +20,8 @@ final class Remote implements ChatView.Actions {
         void onConnection(String line);
 
         void toast(String msg);
+
+        void onUnsupported();
     }
 
     final PhoneApi api;
@@ -30,6 +32,7 @@ final class Remote implements ChatView.Actions {
     final ExecutorService work = Executors.newSingleThreadExecutor();
     Thread streamThread;
     volatile boolean running;
+    volatile int gen;
     volatile boolean control = true;
 
     String boot = "";
@@ -56,22 +59,37 @@ final class Remote implements ChatView.Actions {
             return;
         }
         running = true;
-        streamThread = new Thread(this::loop, "quill-remote");
+        int g = ++gen;
+        streamThread = new Thread(() -> loop(g), "quill-remote");
         streamThread.setDaemon(true);
         streamThread.start();
     }
 
     void stop() {
         running = false;
+        gen++;
         if (streamThread != null) {
             streamThread.interrupt();
         }
     }
 
-    void loop() {
+    void restart() {
+        stop();
+        synchronized (this) {
+            boot = "";
+            epoch = -1;
+            rev = 0;
+            items.clear();
+            sessions.clear();
+        }
+        chat.clear();
+        start();
+    }
+
+    void loop(int g) {
         boolean hello = false;
         int fails = 0;
-        while (running) {
+        while (running && g == gen) {
             if (!hello) {
                 PhoneApi.Reply h = api.hello(android.os.Build.MODEL, appVersion);
                 if (h.ok()) {
@@ -84,7 +102,12 @@ final class Remote implements ChatView.Actions {
                 }
             }
             PhoneApi.Reply r = boot.isEmpty() ? api.sessions() : api.stream(cursor);
-            if (!running) {
+            if (!running || g != gen) {
+                return;
+            }
+            if (r.code == 404) {
+                running = false;
+                ui.post(host::onUnsupported);
                 return;
             }
             if (!r.ok()) {
@@ -268,9 +291,12 @@ final class Remote implements ChatView.Actions {
         String usageJson = usageJson(meta);
         String barsJson = bars.toString();
         JSONObject cur = current == null ? null : session(current);
+        boolean paused = usage != null && usage.optBoolean("paused");
+        long until = usage == null ? 0 : usage.optLong("pausedUntilMs");
         ui.post(() -> {
             host.onSessions(barsJson, usageJson);
             statusLine(cur);
+            chat.setPause(paused, until);
         });
     }
 
@@ -371,9 +397,11 @@ final class Remote implements ChatView.Actions {
         for (JSONObject it : items.values()) {
             list.add(ChatView.Item.from(it));
         }
+        JSONArray q = queue;
         ui.post(() -> {
             if (id.equals(current)) {
                 chat.setItems(list);
+                chat.setQueue(q);
             }
         });
     }
@@ -471,6 +499,39 @@ final class Remote implements ChatView.Actions {
             return;
         }
         write("answer", () -> api.answer(id, body));
+    }
+
+    @Override
+    public void queueOp(String op, int index, String text) {
+        String id = current;
+        if (id != null) {
+            write("delete".equals(op) ? "remove" : "send now", () -> {
+                PhoneApi.Reply r = api.queue(id, op, index, text);
+                if (r.ok() && r.body.has("queue")) {
+                    JSONArray q = r.body.optJSONArray("queue");
+                    ui.post(() -> {
+                        if (id.equals(current)) {
+                            chat.setQueue(q);
+                        }
+                    });
+                }
+                return r;
+            });
+        }
+    }
+
+    @Override
+    public void resume() {
+        write("resume", () -> {
+            PhoneApi.Reply r = api.resume();
+            if (r.ok() && r.body.optJSONObject("usage") != null) {
+                synchronized (Remote.this) {
+                    usage = r.body.optJSONObject("usage");
+                }
+                publish();
+            }
+            return r;
+        });
     }
 
     @Override

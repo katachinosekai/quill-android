@@ -49,6 +49,8 @@ type server struct {
 	changes  []change
 	sessions []*session
 	control  bool
+	paused   bool
+	noAPI    bool
 	idem     map[string][2]string
 	log      []string
 }
@@ -113,7 +115,11 @@ func (s *server) add(x *session, it item) item {
 
 func (s *server) usage() map[string]any {
 	now := time.Now().UnixMilli()
-	return map[string]any{"paused": false, "pausedUntilMs": 0, "fiveHour": map[string]any{"pct": 64, "resetsAtMs": now + 3600000},
+	until := int64(0)
+	if s.paused {
+		until = now + 1800000
+	}
+	return map[string]any{"paused": s.paused, "pausedUntilMs": until, "fiveHour": map[string]any{"pct": 64, "resetsAtMs": now + 3600000},
 		"week": map[string]any{"pct": 14, "resetsAtMs": now + 86400000}}
 }
 
@@ -132,6 +138,20 @@ func fail(w http.ResponseWriter, code int, c string) {
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Quill-Key")), []byte(s.key)) != 1 {
 		fail(w, 403, "forbidden")
+		return
+	}
+	if r.URL.Path == "/debug/noapi" {
+		s.mu.Lock()
+		s.noAPI = r.URL.Query().Get("on") == "1"
+		s.mu.Unlock()
+		reply(w, 200, map[string]any{})
+		return
+	}
+	s.mu.Lock()
+	noAPI := s.noAPI
+	s.mu.Unlock()
+	if noAPI && strings.HasPrefix(r.URL.Path, "/phone/") {
+		fail(w, 404, "not_found")
 		return
 	}
 	var body map[string]any
@@ -258,6 +278,27 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 			queue = append(queue, map[string]any{"index": i, "text": t})
 		}
 		reply(w, 200, map[string]any{"id": x.ID, "epoch": x.Epoch, "rev": x.Rev, "reset": reset, "hasMore": false, "items": items, "queue": queue})
+	case p == "/debug/busy":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		if q.Get("on") == "1" {
+			x.Status = "running"
+		} else {
+			x.Status = "idle"
+		}
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
+	case p == "/debug/pause":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.paused = q.Get("on") == "1"
+		s.emit(map[string]any{"type": "usage", "usage": s.usage()})
+		reply(w, 200, map[string]any{})
 	case p == "/debug/log":
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -279,7 +320,11 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 		fail(w, 403, "control_off")
 		return
 	}
-	if p == "/debug/control" {
+	if p == "/phone/usage/resume" {
+		s.paused = false
+		u := s.usage()
+		s.emit(map[string]any{"type": "usage", "usage": u})
+		reply(w, 200, map[string]any{"usage": u})
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(p, "/phone/session/"), "/")
@@ -350,6 +395,27 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 			return
 		}
 		fail(w, 404, "not_found")
+	case "queue":
+		if len(parts) < 3 {
+			fail(w, 404, "not_found")
+			return
+		}
+		idx := int(body["index"].(float64))
+		text, _ := body["text"].(string)
+		if idx < 0 || idx >= len(x.Queue) || x.Queue[idx] != text {
+			fail(w, 409, "stale")
+			return
+		}
+		x.Queue = append(x.Queue[:idx], x.Queue[idx+1:]...)
+		if parts[2] == "send-now" {
+			s.add(x, item{"kind": "user", "text": text})
+		}
+		s.touch(x, nil)
+		queue := []any{}
+		for i, t := range x.Queue {
+			queue = append(queue, map[string]any{"index": i, "text": t})
+		}
+		reply(w, 200, map[string]any{"queue": queue})
 	case "interrupt":
 		was := x.Status == "running"
 		x.Status = "idle"

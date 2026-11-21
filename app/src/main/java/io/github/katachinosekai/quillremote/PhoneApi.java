@@ -50,8 +50,12 @@ final class PhoneApi {
         this.prefs = prefs;
     }
 
+    boolean paired2() {
+        return prefs.getInt("pair.v", 0) >= 2 && !prefs.getString("pair.key", "").isEmpty();
+    }
+
     boolean available() {
-        return prefs.getInt("pair.v", 0) >= 2 && !prefs.getString("pair.key", "").isEmpty()
+        return !prefs.getBoolean("phone.unsupported", false) && prefs.getInt("pair.v", 0) >= 2 && !prefs.getString("pair.key", "").isEmpty()
                 && !prefs.getString("pair.fp", "").isEmpty() && prefs.getInt("pair.port", -1) > 0;
     }
 

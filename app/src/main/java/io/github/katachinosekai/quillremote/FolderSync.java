@@ -114,7 +114,7 @@ class FolderSync {
         String fp = u.getQueryParameter("fp"), f = u.getQueryParameter("f"), g = u.getQueryParameter("g");
         String n = u.getQueryParameter("n"), id = u.getQueryParameter("i"), v = u.getQueryParameter("v");
         SharedPreferences.Editor e = prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
-                .remove("pair.id").remove("pair.v").remove("pair.lastHost");
+                .remove("pair.id").remove("pair.v").remove("pair.lastHost").remove("phone.unsupported");
         boolean any = false;
         if (h != null && p != null && k != null && fp != null) {
             List<String> hosts = new ArrayList<>();

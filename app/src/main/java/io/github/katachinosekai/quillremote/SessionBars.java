@@ -458,7 +458,7 @@ class SessionBars {
                 return;
             }
             bars.a.runOnUiThread(() -> {
-                if (bars.a.trustedPage()) {
+                if (!bars.remote && bars.a.trustedPage()) {
                     bars.update(json);
                 }
             });

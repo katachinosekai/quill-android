@@ -30,6 +30,10 @@ final class ChatView extends LinearLayout {
         void answer(String requestId, String action, JSONObject extra);
 
         void interrupt();
+
+        void queueOp(String op, int index, String text);
+
+        void resume();
     }
 
     static final class Item {
@@ -99,6 +103,9 @@ final class ChatView extends LinearLayout {
     final TextView send;
     final TextView status;
     TextView conn;
+    final LinearLayout queueBox;
+    final LinearLayout pauseBar;
+    final TextView pauseText;
     Actions actions;
     float sp = 15f;
     final Map<Integer, View> views = new HashMap<>();
@@ -132,6 +139,26 @@ final class ChatView extends LinearLayout {
         conn.setPadding(dp(16), dp(6), dp(16), dp(6));
         conn.setVisibility(GONE);
         addView(conn, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        pauseBar = new LinearLayout(c);
+        pauseBar.setGravity(Gravity.CENTER_VERTICAL);
+        pauseBar.setPadding(dp(16), dp(6), dp(10), dp(6));
+        pauseBar.setBackgroundColor(0xFF4A3A1E);
+        pauseText = label("", MainActivity.TEXT, 13);
+        pauseBar.addView(pauseText, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        TextView resume = button("Resume now", 0xFFF2B33D);
+        resume.setOnClickListener(v -> {
+            if (actions != null) {
+                actions.resume();
+            }
+        });
+        pauseBar.addView(resume);
+        pauseBar.setVisibility(GONE);
+        addView(pauseBar, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        queueBox = new LinearLayout(c);
+        queueBox.setOrientation(VERTICAL);
+        queueBox.setPadding(dp(12), dp(4), dp(12), 0);
+        queueBox.setVisibility(GONE);
+        addView(queueBox, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         LinearLayout bar = new LinearLayout(c);
@@ -148,8 +175,10 @@ final class ChatView extends LinearLayout {
         box.setPadding(dp(14), dp(10), dp(14), dp(10));
         box.setBackground(round(USER_BG, 14));
         box.setOnKeyListener((v, code, e) -> {
-            if (code == KeyEvent.KEYCODE_ENTER && e.getAction() == KeyEvent.ACTION_DOWN && !e.isShiftPressed()) {
-                submit();
+            if ((code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) && !e.isShiftPressed()) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    submit();
+                }
                 return true;
             }
             return false;
@@ -200,6 +229,8 @@ final class ChatView extends LinearLayout {
         }
         actions.send(t);
         box.setText("");
+        box.requestFocus();
+        box.post(box::requestFocus);
     }
 
     void setBusy(boolean b, String line) {
@@ -208,6 +239,73 @@ final class ChatView extends LinearLayout {
         send.setContentDescription(b ? "Stop" : "Send");
         status.setText(line == null ? "" : line);
         status.setVisibility(line == null || line.isEmpty() ? GONE : VISIBLE);
+    }
+
+    void setPause(boolean paused, long untilMs) {
+        if (paused) {
+            String until = untilMs > 0 ? " until " + new java.text.SimpleDateFormat("H:mm", java.util.Locale.getDefault()).format(new java.util.Date(untilMs)) : "";
+            pauseText.setText("Sessions are paused near the 5-hour limit" + until + ".");
+        }
+        pauseBar.setVisibility(paused ? VISIBLE : GONE);
+    }
+
+    String queueSig = "";
+
+    void setQueue(JSONArray q) {
+        String sig = q == null ? "" : q.toString();
+        if (sig.equals(queueSig)) {
+            return;
+        }
+        queueSig = sig;
+        boolean typing = box.hasFocus();
+        queueBox.removeAllViews();
+        int n = q == null ? 0 : q.length();
+        if (n > 0) {
+            TextView h = label(n == 1 ? "1 queued message" : n + " queued messages", MainActivity.MUTED, 12);
+            h.setPadding(dp(4), 0, 0, dp(2));
+            queueBox.addView(h);
+        }
+        for (int i = 0; i < n; i++) {
+            JSONObject e = q.optJSONObject(i);
+            if (e == null) {
+                continue;
+            }
+            int index = e.optInt("index", i);
+            String text = e.optString("text");
+            LinearLayout row = new LinearLayout(getContext());
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(10), dp(4), dp(4), dp(4));
+            row.setBackground(round(CARD, 10));
+            TextView t = label(text, MainActivity.TEXT, 14);
+            t.setMaxLines(2);
+            t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            row.addView(t, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+            TextView now = label("Send now", MainActivity.ACCENT, 13);
+            now.setTypeface(Typeface.DEFAULT_BOLD);
+            now.setPadding(dp(10), dp(8), dp(10), dp(8));
+            now.setOnClickListener(v -> {
+                if (actions != null) {
+                    actions.queueOp("send-now", index, text);
+                }
+            });
+            row.addView(now);
+            TextView del = label("✕", MainActivity.MUTED, 16);
+            del.setContentDescription("Remove from queue");
+            del.setPadding(dp(10), dp(6), dp(10), dp(6));
+            del.setOnClickListener(v -> {
+                if (actions != null) {
+                    actions.queueOp("delete", index, text);
+                }
+            });
+            row.addView(del);
+            LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            lp.bottomMargin = dp(4);
+            queueBox.addView(row, lp);
+        }
+        queueBox.setVisibility(n > 0 ? VISIBLE : GONE);
+        if (typing && !box.hasFocus()) {
+            box.requestFocus();
+        }
     }
 
     void setConnection(String line) {
@@ -221,9 +319,11 @@ final class ChatView extends LinearLayout {
         sigs.clear();
         expanded.clear();
         items = new ArrayList<>();
+        setQueue(null);
     }
 
     void setItems(List<Item> next) {
+        boolean typing = box.hasFocus();
         boolean atEnd = !scroll.canScrollVertically(1);
         Map<Integer, Item> bySeq = new HashMap<>();
         for (Item it : next) {
@@ -259,8 +359,11 @@ final class ChatView extends LinearLayout {
             sigs.put(it.seq, sig);
         }
         items = next;
+        if (typing && !box.hasFocus()) {
+            box.requestFocus();
+        }
         if (atEnd) {
-            scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+            scroll.post(() -> scroll.scrollTo(0, Math.max(0, list.getHeight() - scroll.getHeight())));
         }
     }
 
