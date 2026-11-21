@@ -35,6 +35,10 @@ final class ChatView extends LinearLayout {
         void queueOp(String op, int index, String text);
 
         void resume();
+
+        /** Typing in the message box (soft keyboards don't reach Activity.onUserInteraction); keeps the device unlock alive. */
+        default void typing() {
+        }
     }
 
     static final class Item {
@@ -116,6 +120,16 @@ final class ChatView extends LinearLayout {
     List<Item> items = new ArrayList<>();
     boolean busy;
     boolean follow = true;
+    TextView latest;
+
+    /** Show ↓ only when the newest message is out of view by more than a little. */
+    void syncLatest() {
+        if (latest == null) {
+            return;
+        }
+        int below = col.getHeight() - scroll.getHeight() - scroll.getScrollY();
+        latest.setVisibility(below > dp(80) ? VISIBLE : GONE);
+    }
     static final int PAGE = 50;
     int shownLimit = PAGE;
     final TextView earlier;
@@ -156,7 +170,32 @@ final class ChatView extends LinearLayout {
         col.addView(earlier, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         col.addView(list, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         scroll.addView(col);
-        addView(scroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+        // ↓ jumps to the newest message; shown while the chat is scrolled up (like Quill Desktop and claude.ai).
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(c);
+        frame.addView(scroll, new android.widget.FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        latest = new TextView(c);
+        latest.setText("↓");
+        latest.setContentDescription("Go to latest message");
+        latest.setTextColor(MainActivity.TEXT);
+        latest.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        latest.setGravity(Gravity.CENTER);
+        GradientDrawable lg = new GradientDrawable();
+        lg.setShape(GradientDrawable.OVAL);
+        lg.setColor(0xF02F2F2C);
+        lg.setStroke(dp(1), 0xFF555550);
+        latest.setBackground(lg);
+        latest.setElevation(dp(4));
+        latest.setVisibility(GONE);
+        latest.setOnClickListener(v -> {
+            follow = true;
+            scroll.fullScroll(View.FOCUS_DOWN);
+            scroll.post(this::toBottom);
+            latest.setVisibility(GONE);
+        });
+        android.widget.FrameLayout.LayoutParams ll = new android.widget.FrameLayout.LayoutParams(dp(44), dp(44), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        ll.bottomMargin = dp(12);
+        frame.addView(latest, ll);
+        addView(frame, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         scroll.setOnTouchListener((v, e) -> {
             if (pinch != null) {
                 pinch.onTouchEvent(e);
@@ -180,11 +219,13 @@ final class ChatView extends LinearLayout {
             } else if (user && y < oy) {
                 follow = false;
             }
+            syncLatest();
         });
         View.OnLayoutChangeListener keep = (v, l, t, r, b, ol, ot, or, ob) -> {
             if (follow && b - t != ob - ot) {
                 scroll.post(this::toBottom);
             }
+            scroll.post(this::syncLatest);
         };
         list.addOnLayoutChangeListener(keep);
         scroll.addOnLayoutChangeListener(keep);
@@ -274,6 +315,22 @@ final class ChatView extends LinearLayout {
                 return true;
             }
             return false;
+        });
+        box.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence t, int a, int b, int c) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence t, int a, int b, int c) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable e) {
+                if (actions != null) {
+                    actions.typing();
+                }
+            }
         });
         bar.addView(box, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
         send = new TextView(c);

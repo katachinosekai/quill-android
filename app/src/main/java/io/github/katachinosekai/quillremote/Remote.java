@@ -222,6 +222,12 @@ final class Remote implements ChatView.Actions {
     }
 
     /** Activity keeps the unlock alive; at most once a minute. */
+    @Override
+    public void typing() {
+        touch();
+    }
+
+    /** Your own activity (touches, keys, typing) keeps Quill Desktop's device unlock alive; sent at most once a minute. Without activity the desktop's idle timer (15 min default) runs out and the app asks for the password again. */
     void touch() {
         long now = System.currentTimeMillis();
         if (PhoneApi.unlockToken == null || now - lastTouch < 60_000) {

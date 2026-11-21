@@ -365,6 +365,20 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		s.paused = q.Get("on") == "1"
 		s.emit(map[string]any{"type": "usage", "usage": s.usage()})
 		reply(w, 200, map[string]any{})
+	case p == "/debug/long":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		for i := 1; i <= 40; i++ {
+			s.add(x, item{"kind": "assistant", "text": fmt.Sprintf("Filler line %d for scrolling.", i)})
+		}
+		s.add(x, item{"kind": "assistant", "text": "Newest filler message."})
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
 	case p == "/debug/suggest":
 		s.mu.Lock()
 		defer s.mu.Unlock()

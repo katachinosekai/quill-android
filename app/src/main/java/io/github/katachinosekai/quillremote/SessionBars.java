@@ -335,7 +335,8 @@ class SessionBars {
         g.setCornerRadius(a.dp(2));
         grip.setBackground(g);
         handle.addView(grip, new android.widget.FrameLayout.LayoutParams(a.dp(5), a.dp(56), Gravity.CENTER));
-        handle.setOnTouchListener(resizer());
+        edgeTouch = resizer();
+        handle.setOnTouchListener(edgeTouch);
         side.addView(handle, new LinearLayout.LayoutParams(a.dp(HANDLE_W), ViewGroup.LayoutParams.MATCH_PARENT));
         this.handle = handle;
         excludeGestures();
@@ -348,6 +349,21 @@ class SessionBars {
     static final int MIN_CHAT_DP = 160;
     static final int SNAP_DP = 100;
     View handle;
+    View.OnTouchListener edgeTouch;
+    static final int GRAB_SLOP_DP = 24;
+
+    /** True when a touch at this screen point is on or within GRAB_SLOP_DP of the edge strip (so slow grabs never hit a row's long-press). */
+    boolean nearEdge(float rawX, float rawY) {
+        if (handle == null || handle.getVisibility() != View.VISIBLE || side.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        android.graphics.Rect r = new android.graphics.Rect();
+        if (!handle.getGlobalVisibleRect(r)) {
+            return false;
+        }
+        // Wider on the chat side; narrower over the list so taps on the end of a row still open it.
+        return rawX >= r.left - a.dp(GRAB_SLOP_DP) / 2 && rawX <= r.right + a.dp(GRAB_SLOP_DP) && rawY >= r.top && rawY <= r.bottom;
+    }
 
     boolean portrait() {
         return a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
@@ -358,8 +374,14 @@ class SessionBars {
     }
 
     /** Width the user dragged the list to in portrait (dp), or 0 for the default. */
+    /** The pref holding the dragged list width for the current orientation (dp). */
+    String widthKey() {
+        return portrait() ? "sideW.portrait" : "sideW.landscape";
+    }
+
+    /** Width the user dragged the list to in this orientation (dp), or 0 for the default. */
     int portraitW() {
-        return portrait() ? prefs.getInt("sideW.portrait", 0) : 0;
+        return prefs.getInt(widthKey(), 0);
     }
 
     int clampSide(int px) {
@@ -396,9 +418,8 @@ class SessionBars {
                     startW[0] = side.getWidth();
                     target[0] = startW[0];
                     v.getParent().requestDisallowInterceptTouchEvent(true);
-                    if (portrait()) {
-                        startDrag(v, armed);
-                    }
+                    // Drag works in both orientations (user 2026-11-21: off-centre grabs failed in landscape, where it was tap-only).
+                    startDrag(v, armed);
                     return true;
                 case android.view.MotionEvent.ACTION_MOVE:
                     if (Math.abs(e.getRawX() - down[0]) > slop) {
@@ -437,11 +458,11 @@ class SessionBars {
                         setSideWidth(0);
                     } else if (w > screenW() - a.dp(SNAP_DP)) {
                         // Dragged to the right edge: the list fills the screen.
-                        ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(screenW() / d));
+                        ed.putBoolean("sideOpen", true).putInt(widthKey(), Math.round(screenW() / d));
                         setSideWidth(screenW());
                     } else {
                         int c = clampSide(w);
-                        ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(c / d));
+                        ed.putBoolean("sideOpen", true).putInt(widthKey(), Math.round(c / d));
                         setSideWidth(c);
                     }
                     ed.apply();
@@ -527,13 +548,36 @@ class SessionBars {
         if (lp == null) {
             return;
         }
+        // At a screen edge (list closed, or filling the screen) the strip widens by Android's back-gesture zone, so part of
+        // it is outside that zone at every height (Android only lets an app reserve ~200 dp of the edge from the gesture).
+        int[] gi = gestureInsets();
+        boolean closed = vertical && w <= a.dp(HANDLE_W) + gi[0];
+        boolean full = w >= screenW() - a.dp(4);
+        int hw = a.dp(HANDLE_W) + (closed ? gi[0] : full ? gi[1] : 0);
+        if (handle != null && handle.getLayoutParams() != null && handle.getLayoutParams().width != hw) {
+            handle.getLayoutParams().width = hw;
+            handle.requestLayout();
+        }
         // A closed list keeps its edge strip (tap opens it; in portrait it can also be dragged open).
-        if (vertical && w < a.dp(HANDLE_W)) {
-            w = a.dp(HANDLE_W);
+        if (closed) {
+            w = hw;
         }
         lp.width = w;
         side.setLayoutParams(lp);
         side.setVisibility(w > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    /** Left and right system-gesture insets in px (0 before Android 10 or when gesture navigation is off). */
+    int[] gestureInsets() {
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            return new int[]{0, 0};
+        }
+        android.view.WindowInsets wi = a.getWindow().getDecorView().getRootWindowInsets();
+        if (wi == null) {
+            return new int[]{0, 0};
+        }
+        android.graphics.Insets g = wi.getSystemGestureInsets();
+        return new int[]{g.left, g.right};
     }
 
     void toggleSide() {

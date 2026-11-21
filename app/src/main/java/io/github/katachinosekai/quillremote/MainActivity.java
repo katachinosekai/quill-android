@@ -261,10 +261,25 @@ public class MainActivity extends Activity {
     float swX, swY;
     long swT;
     boolean swOn;
+    /** A gesture that started on or near the list edge goes to the edge only (no row long-press, any speed). */
+    boolean edgeGesture;
 
     /** Swipe sideways anywhere (user 2026-11-21): right opens the session list, left closes it. The edge strip still works on its own. */
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent e) {
+        if (bars != null && bars.vertical && bars.edgeTouch != null) {
+            if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                edgeGesture = bars.nearEdge(e.getRawX(), e.getRawY());
+            }
+            if (edgeGesture) {
+                bars.edgeTouch.onTouch(bars.handle, e);
+                int act = e.getActionMasked();
+                if (act == android.view.MotionEvent.ACTION_UP || act == android.view.MotionEvent.ACTION_CANCEL) {
+                    edgeGesture = false;
+                }
+                return true;
+            }
+        }
         if (bars != null && bars.vertical) {
             switch (e.getActionMasked()) {
                 case android.view.MotionEvent.ACTION_DOWN: {
@@ -282,7 +297,7 @@ public class MainActivity extends Activity {
                     if (swOn) {
                         float dx = e.getRawX() - swX;
                         float dy = e.getRawY() - swY;
-                        if (Math.abs(dx) >= dp(90) && Math.abs(dy) < Math.abs(dx) * 0.5f && e.getEventTime() - swT < 800) {
+                        if (Math.abs(dx) >= dp(90) && Math.abs(dy) < Math.abs(dx) * 0.5f && e.getEventTime() - swT < 1500) {
                             boolean open = prefs.getBoolean("sideOpen", true);
                             if (dx > 0 != open) {
                                 bars.toggleSide();
@@ -365,7 +380,6 @@ public class MainActivity extends Activity {
     @Override
     public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);
-        syncOrientBtn();
         syncTitle();
         if (bars != null) {
             bars.applyMode(false);
@@ -902,23 +916,6 @@ public class MainActivity extends Activity {
             inject();
         });
         left.addView(centerBtn);
-        // Landscape/Portrait (user 2026-11-21): shows the current orientation; tap turns the screen and keeps it there, long-press follows auto-rotate again.
-        orientBtn = button("Portrait", "Switch screen orientation", v -> {
-            boolean land = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-            prefs.edit().putString("orientation", land ? "portrait" : "landscape").apply();
-            applyOrientation();
-        });
-        orientBtn.setOnLongClickListener(v -> {
-            prefs.edit().putString("orientation", "auto").apply();
-            applyOrientation();
-            toast("Following the phone's auto-rotate again.");
-            return true;
-        });
-        orientBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        orientBtn.setPadding(dp(10), 0, dp(10), 0);
-        orientBtn.getLayoutParams().width = LinearLayout.LayoutParams.WRAP_CONTENT;
-        left.addView(orientBtn);
-        syncOrientBtn();
         bar.addView(left, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.CENTER_VERTICAL));
 
         LinearLayout mid = new LinearLayout(this);
@@ -1293,7 +1290,6 @@ public class MainActivity extends Activity {
         return c;
     }
 
-    TextView orientBtn;
 
     TextView sessionBar;
 
@@ -1316,24 +1312,12 @@ public class MainActivity extends Activity {
         sessionBar.setVisibility(t.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
+    /** The Landscape/Portrait button was removed again (user 2026-11-21): clear any orientation lock it left behind. */
     void applyOrientation() {
-        switch (prefs.getString("orientation", "auto")) {
-            case "portrait":
-                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-                break;
-            case "landscape":
-                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-                break;
-            default:
-                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        if (prefs.contains("orientation")) {
+            prefs.edit().remove("orientation").apply();
         }
-    }
-
-    void syncOrientBtn() {
-        if (orientBtn != null) {
-            boolean land = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-            orientBtn.setText(land ? "Landscape" : "Portrait");
-        }
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
     }
 
     TextView button(String label, String desc, View.OnClickListener onTap) {

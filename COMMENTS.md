@@ -51,6 +51,11 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 
 ## After 0.9.15
 - Edge drag latency (user: "takes a long time to grab"): the strip grabs on touch (no 200 ms hold); while dragging only the strip moves (translationX, side clipChildren off and raised with translationZ), and setSideWidth runs once on release. Resizing the side on every move re-laid out the whole ChatView (long chats re-measure all TextViews), which made the drag lag. Snap/tap behaviour unchanged.
+- Landscape grabs (user: grabs at 1/4 and 3/4 height failed; the tablet is in landscape): the edge drags in both orientations, width saved per orientation (`sideW.portrait` / `sideW.landscape`). At a screen edge (closed / full) the strip widens by the system-gesture inset (gesture-nav phones; 0 with 3-button nav).
+- Slow grabs (user: "quick swipes work but not slow grabs; it checks for the right-click menu"): MainActivity.dispatchTouchEvent sends any gesture that starts within 24 dp right / 12 dp left of the strip to the edge (SessionBars.nearEdge/edgeTouch) and consumes it, so rows never long-press from there. Swipe-anywhere accepts up to 1.5 s.
+- Orientation button removed again (user); applyOrientation clears any lock it left.
+- Typing on the soft keyboard counts as unlock activity (ChatView TextWatcher → Actions.typing → Remote.touch, max once a minute); Quill 2 did the same for Other PCs in fbd6544.
+- ↓ "Go to latest message" (user): round button at the bottom centre of the chat while more than 80 dp of newer content is below; tap scrolls down and follows again. Mock /debug/long fills a session for the test.
 
 ## After 0.9.14
 - Easier list edge (user: "hard to open and close on edge"): handle 18 dp with a 5×56 dp grip; dragging starts as soon as the finger moves sideways (or after a 200 ms hold); a plain tap toggles the list; setSystemGestureExclusionRects keeps Android's back-swipe off the grip (it sits on the screen edge while closed). The edge strip stays visible when the list is closed in every orientation; dragging stays portrait-only. Content-desc "Session list edge".

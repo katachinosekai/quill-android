@@ -374,6 +374,42 @@ if [ "$wide" -ge 600 ]; then
 	else
 		bad "portrait: hold and drag the edge resizes the session list" "no handle"
 	fi
+	# Landscape: the edge drags too, from any height (user: grabs at 1/4 and 3/4 height failed)
+	adb_ shell settings put system accelerometer_rotation 0
+	adb_ shell settings put system user_rotation 1
+	nap 4
+	DIRTY=1
+	lb=$(dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	if [ -n "$lb" ]; then
+		read -r lx1 ly1 lx2 ly2 <<< "$lb"
+		lcx=$(((lx1 + lx2) / 2))
+		for q in 1 3; do
+			ly=$((ly1 + (ly2 - ly1) * q / 4))
+			adb_ shell input swipe $lcx $ly $((lcx + 150)) $ly 600
+			nap 2
+			nx=$(hpos)
+			[ -n "$nx" ] && [ "$nx" -gt $((lx1 + 80)) ] && ok "landscape: drag the edge at $q/4 height" || bad "landscape: drag the edge at $q/4 height" "$lx1 -> $nx"
+			adb_ shell input swipe $((nx + 9)) $ly $lcx $ly 600
+			nap 2
+		done
+	else
+		bad "landscape: drag the edge at 1/4 height" "no edge"
+	fi
+	adb_ shell settings put system user_rotation 0
+	nap 4
+	# Slow grab just beside the strip (chat side): a held, slow drag resizes the list and opens no row menu
+	sb=$(dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	if [ -n "$sb" ]; then
+		read -r sx1 sy1 sx2 sy2 <<< "$sb"
+		sy=$((sy1 + (sy2 - sy1) / 3))
+		adb_ shell input swipe $((sx2 + 20)) $sy $((sx2 + 220)) $sy 4000
+		nap 2
+		DIRTY=1
+		nx=$(hpos)
+		[ -n "$nx" ] && [ "$nx" -gt $((sx1 + 120)) ] && ! has 'text="Rename..."' && ! has 'text="Expand all folders"' && ok "slow grab beside the edge drags it (no row menu)" || bad "slow grab beside the edge drags it (no row menu)" "$sx1 -> $nx"
+		adb_ shell input swipe $((nx + 9)) $sy $(((sx1 + sx2) / 2)) $sy 600
+		nap 2
+	fi
 	tap_text "Session list edge" && nap 2
 	shot 02-sidebar-closed
 	native_gone 'text="Sessions"' 5 && ok "tapping the edge hides the list" || bad "tapping the edge hides the list"
@@ -405,7 +441,7 @@ if [ "$(width_dp)" -lt 600 ]; then
 	wait_for 'text="Unsorted idea"' 15 && ok "phone: folder list with its sessions" || bad "phone: folder list with its sessions"
 	shot 04-folder-list
 	has 'Close tab' && bad "phone: no tabs" || ok "phone: no tabs"
-	has 'content-desc="Switch screen orientation"' && has 'text="Portrait"' && ok "phone: Landscape/Portrait button shows Portrait" || bad "phone: Landscape/Portrait button shows Portrait"
+	has 'content-desc="Switch screen orientation"' && bad "phone: no Landscape/Portrait button" || ok "phone: no Landscape/Portrait button"
 	lpress "Unsorted idea" && nap 2
 	centered "Open" && ! has 'text="Open in new tab"' && ok "phone: long-press opens a centered session menu" || bad "phone: long-press opens a centered session menu"
 	adb_ shell input keyevent KEYCODE_BACK
@@ -417,15 +453,6 @@ if [ "$(width_dp)" -lt 600 ]; then
 	tap_text "Unsorted idea" && nap 2
 	native_gone 'text="Sessions"' 8 && ok "phone: picking a session closes the list" || bad "phone: picking a session closes the list"
 	wait_for 'content-desc="Open session: ' 8 && has 'text="Quill"' && ok "phone: session name bar under the top bar while the list is closed" || bad "phone: session name bar under the top bar while the list is closed"
-	rot() { adb_ shell dumpsys window displays | grep -m1 -o 'mCurrentRotation=ROTATION_[0-9]*' | grep -o '[0-9]*$'; }
-	tap_text "Switch screen orientation" && nap 3
-	r1=$(rot)
-	wait_for 'text="Landscape"' 8 && [ "$r1" = 90 -o "$r1" = 270 ] && ok "phone: orientation button turns to landscape" || bad "phone: orientation button turns to landscape" "rotation $r1"
-	gone 'content-desc="Open session: ' 5 && ok "phone: no session name bar in landscape" || bad "phone: no session name bar in landscape"
-	tap_text "Switch screen orientation" && nap 3
-	wait_for 'text="Portrait"' 8 && [ "$(rot)" = 0 ] && ok "phone: orientation button turns back to portrait" || bad "phone: orientation button turns back to portrait" "rotation $(rot)"
-	lpress "Portrait" && nap 2
-	pref_has_any 'name="orientation">auto<' && ok "phone: long-press follows auto-rotate again" || bad "phone: long-press follows auto-rotate again"
 	adb_ shell input tap 10 10 >/dev/null
 fi
 
@@ -781,6 +808,18 @@ if [ -n "${PPORT:-}" ]; then
 	[ "$(plog | grep -o 'session_A1/send[^,]*Run the tests' | wc -l)" -ge 2 ] && ok "remote: double-tap fills in the suggestion" || bad "remote: double-tap fills in the suggestion"
 	pcurl "/debug/suggest?id=session_A1&text=" >/dev/null
 	ime_off
+	popen session_B2
+	pcurl "/debug/long?id=session_B2" >/dev/null
+	wait_for 'text="Newest filler message."' 15
+	gone 'content-desc="Go to latest message"' 5 && ok "remote: no ↓ button at the newest message" || bad "remote: no ↓ button at the newest message"
+	read -r CW CH <<< "$(scr)"
+	for i in 1 2 3; do adb_ shell input swipe $((CW * 2 / 3)) $((CH * 2 / 5)) $((CW * 2 / 3)) $((CH * 4 / 5)) 200; done
+	nap 2
+	wait_for 'content-desc="Go to latest message"' 5 && ok "remote: ↓ button appears when scrolled up" || bad "remote: ↓ button appears when scrolled up"
+	tap_text "Go to latest message" && nap 2
+	wait_for 'text="Newest filler message."' 5 && gone 'content-desc="Go to latest message"' 5 && ok "remote: ↓ jumps to the newest message" || bad "remote: ↓ jumps to the newest message"
+	popen session_A1
+	wait_for 'text="Rename the greeting"' 10
 	has 'Edit main.go' && ok "remote: tool row" || bad "remote: tool row"
 	adb_ shell cmd statusbar collapse >/dev/null 2>&1
 	tap_edit && nap 1
