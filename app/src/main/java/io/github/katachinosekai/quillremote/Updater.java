@@ -1,6 +1,5 @@
 package io.github.katachinosekai.quillremote;
 
-import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
@@ -40,7 +39,7 @@ class Updater {
     static final String DOWNLOAD_PREFIX = "https://github.com/katachinosekai/quill-android/releases/download/";
     static final List<String> HOSTS = Arrays.asList("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com");
     static final long MAX_APK = 50L << 20;
-    static final long CHECK_EVERY = 24L * 3600 * 1000;
+    static final long CHECK_EVERY = 3600L * 1000;
     static final Pattern TAG = Pattern.compile("v?(\\d+)\\.(\\d+)\\.(\\d+)");
     static final Pattern DIGEST = Pattern.compile("sha256:([0-9a-f]{64})");
     static final String ACTION_STATUS = "io.github.katachinosekai.quillremote.INSTALL_STATUS";
@@ -63,7 +62,7 @@ class Updater {
         }
     }
 
-    final Activity a;
+    final Context a;
     final SharedPreferences prefs;
     final Listener listener;
     final ExecutorService pool = Executors.newSingleThreadExecutor();
@@ -72,7 +71,7 @@ class Updater {
     boolean allowTestHost;
     boolean busy;
 
-    Updater(Activity a, SharedPreferences prefs, Listener listener) {
+    Updater(Context a, SharedPreferences prefs, Listener listener) {
         this.a = a;
         this.prefs = prefs;
         this.listener = listener;

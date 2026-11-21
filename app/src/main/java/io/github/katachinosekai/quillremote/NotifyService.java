@@ -57,11 +57,52 @@ public class NotifyService extends Service {
             notifier = new Notifier(this);
         }
         notifier.start(25);
+        updateTick.removeCallbacks(updateCheck);
+        updateTick.postDelayed(updateCheck, 60_000);
         return START_STICKY;
     }
 
+    /** While Quill Android watches in the background, it also looks for app updates (hourly) and posts one notification per new version. */
+    final android.os.Handler updateTick = new android.os.Handler(android.os.Looper.getMainLooper());
+    Updater updater;
+    final Runnable updateCheck = new Runnable() {
+        @Override
+        public void run() {
+            android.content.SharedPreferences prefs = getSharedPreferences("quill", MODE_PRIVATE);
+            if (updater == null) {
+                updater = new Updater(NotifyService.this, prefs, new Updater.Listener() {
+                    @Override
+                    public void onUpdate(Updater.Release r) {
+                        if (Notifier.appVisible || r.version.equals(prefs.getString("update.notified", ""))) {
+                            return;
+                        }
+                        prefs.edit().putString("update.notified", r.version).apply();
+                        Notifier.channel(NotifyService.this);
+                        PendingIntent open = PendingIntent.getActivity(NotifyService.this, 3, new Intent(NotifyService.this, MainActivity.class),
+                                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                        Notification n = new Notification.Builder(NotifyService.this, Notifier.CHANNEL)
+                                .setSmallIcon(R.drawable.ic_notify)
+                                .setContentTitle("Quill update")
+                                .setContentText("Quill Android " + r.version + " is available. Tap to update.")
+                                .setContentIntent(open)
+                                .setAutoCancel(true)
+                                .build();
+                        getSystemService(NotificationManager.class).notify(ID + 1, n);
+                    }
+
+                    @Override
+                    public void onMessage(String msg) {
+                    }
+                });
+            }
+            updater.checkIfDue();
+            updateTick.postDelayed(this, Updater.CHECK_EVERY);
+        }
+    };
+
     @Override
     public void onDestroy() {
+        updateTick.removeCallbacks(updateCheck);
         if (notifier != null) {
             notifier.stop();
         }

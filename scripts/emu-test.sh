@@ -172,6 +172,30 @@ tap_edit() {
 	set -- $b
 	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
 }
+bounds_of() { dump | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' '; }
+lpress() {
+	local b
+	b=$(bounds_of "$1")
+	[ -z "$b" ] && return 1
+	set -- $b
+	adb_ shell input swipe $((($1 + $3) / 2)) $((($2 + $4) / 2)) $((($1 + $3) / 2)) $((($2 + $4) / 2)) 900
+}
+# centered "<text>": the menu entry sits in the middle of the screen (a centered menu, not a popup at the finger)
+centered() {
+	local b size w h x y
+	b=$(bounds_of "$1")
+	[ -z "$b" ] && return 1
+	size=$(adb_ shell wm size | tail -1 | awk '{print $3}')
+	w=${size%x*}
+	h=${size#*x}
+	case "$(adb_ shell dumpsys window displays | grep -m1 -o 'mCurrentRotation=ROTATION_[0-9]*')" in
+	*_90|*_270) x=$w; w=$h; h=$x ;;
+	esac
+	set -- $b
+	x=$((($1 + $3) / 2))
+	y=$((($2 + $4) / 2))
+	[ $((x * 10)) -gt $((w * 4)) ] && [ $((x * 10)) -lt $((w * 6)) ] && [ $((y * 10)) -gt $((h * 2)) ] && [ $((y * 10)) -lt $((h * 8)) ]
+}
 width_dp() {
 	local size dens w h
 	size=$(adb_ shell wm size | tail -1 | awk '{print $3}')
@@ -309,6 +333,10 @@ if [ "$wide" -ge 600 ]; then
 	has 'content-desc="Sidebar"' && ok "sidebar arrow shown" || bad "sidebar arrow shown"
 	tap_text "Zomboid launcher" && nap 3
 	adb_ shell dumpsys activity top | grep -q "$PKG" && ok "open session from sidebar" || bad "open session from sidebar"
+	lpress "Fix edits" && nap 2
+	centered "Open" && { has 'text="Open in new tab"' || has 'text="Close tab"'; } && ok "sidebar long-press: centered session menu" || bad "sidebar long-press: centered session menu"
+	adb_ shell input keyevent KEYCODE_BACK
+	nap 1
 	tap_text "Sidebar" && nap 2
 	shot 02-sidebar-closed
 	native_gone 'text="Sessions"' 5 && ok "arrow hides sidebar" || bad "arrow hides sidebar"
@@ -348,9 +376,25 @@ if [ "$(width_dp)" -lt 600 ]; then
 		set -- $b
 		adb_ shell input swipe $((($1 + $3) / 2)) $((($2 + $4) / 2)) $((($1 + $3) / 2)) $((($2 + $4) / 2)) 900
 		nap 2
+		centered "Open all in tabs" && ok "folder long-press: centered menu" || bad "folder long-press: centered menu" "$(bounds_of 'Open all in tabs')"
+		has 'text="Collapse all folders"' && bad "folder menu: no expand/collapse in horizontal mode" || ok "folder menu: no expand/collapse in horizontal mode"
+		has 'text="Switch to vertical sidebar"' && ok "folder menu: layout switch like Quill Desktop" || bad "folder menu: layout switch like Quill Desktop"
 		tap_text "Open all in tabs" && nap 3
 		n=$(adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -o 'session_[A-Za-z0-9]*' | sort -u | wc -l)
 		[ "$n" -ge 4 ] && ok "folder long-press: open all in tabs ($n)" || bad "folder long-press: open all in tabs" "$n tabs"
+		b=$(dump | tr '>' '\n' | grep -F 'content-desc="Close tab"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+		if [ -n "$b" ]; then
+			set -- $b
+			adb_ shell input swipe $(($1 - 40)) $((($2 + $4) / 2)) $(($1 - 40)) $((($2 + $4) / 2)) 900
+			nap 2
+		fi
+		if wait_for 'text="Close other tabs"' 5; then
+			centered "Close other tabs" && has 'text="Close tabs to the right"' && has 'text="Open"' && ok "tab long-press: centered session menu" || bad "tab long-press: centered session menu"
+			adb_ shell input keyevent KEYCODE_BACK
+			nap 1
+		else
+			bad "tab long-press: centered session menu" "no menu"
+		fi
 	fi
 	tap_text "Other (4)" && nap 2
 	shot 04-dropdown
@@ -761,9 +805,113 @@ if [ -n "${PPORT:-}" ]; then
 	wait_for 'text="Allow Bash?"' 15 && ok "remote: permission card" || bad "remote: permission card"
 	tap_text "Allow" && nap 1
 	wait_for 'text="Bash: allowed"' 10 && ok "remote: Allow answers and the card resolves" || bad "remote: Allow answers and the card resolves"
-	tap_text "New session" && nap 2
-	tap_text "START" >/dev/null 2>&1 || tap_text "Start" >/dev/null 2>&1
+	tap_part() {
+		local b
+		b=$(dump | tr '>' '\n' | grep -F "text=\"$1" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+		[ -z "$b" ] && return 1
+		set -- $b
+		adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
+	}
+	tap_desc() {
+		local b
+		b=$(dump | tr '>' '\n' | grep -F "content-desc=\"$1\"" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+		[ -z "$b" ] && return 1
+		set -- $b
+		adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
+	}
+	pstart() { tap_text "START" >/dev/null 2>&1 || tap_text "Start" >/dev/null 2>&1; }
+	tap_desc "New session" && nap 2
+	wait_for 'content-desc="Session name"' 10 && ok "remote: new session dialog has a name field" || bad "remote: new session dialog has a name field"
+	has 'text="zomboid-fps · saved' && has 'open in Fix edits' && ok "remote: new session dialog lists kmem handoffs, open ones point to their session" || bad "remote: new session dialog lists kmem handoffs, open ones point to their session"
+	pstart
 	wait_for 'Started with online · opus · default' 15 && ok "remote: new session started and opened" || bad "remote: new session started and opened"
+	plog | grep -q -F 'new session start=map[kmem:new title:]' && ok "remote: empty name starts with kmem new" || bad "remote: empty name starts with kmem new" "$(plog | grep -o 'new session start=[^"]*' | tail -1)"
+	tap_desc "New session" && nap 2
+	tap_edit && nap 1
+	adb_ shell input text "My%sTest"
+	wait_for 'kmem name: my-test' 10 && ok "remote: name shows the kmem name preview" || bad "remote: name shows the kmem name preview"
+	adb_ shell dumpsys input_method | grep -q 'mInputShown=true' && adb_ shell input keyevent KEYCODE_BACK && nap 1
+	pstart
+	wait_for 'text="kmem name: my-test"' 15 && wait_for 'My Test' 5 && ok "remote: named session starts with that kmem name" || bad "remote: named session starts with that kmem name"
+	tap_desc "New session" && nap 2
+	tap_part "zomboid-fps · saved" && nap 1
+	pstart
+	wait_for 'Resumed kmem handoff zomboid-fps' 15 && ok "remote: resume a kmem handoff from the phone" || bad "remote: resume a kmem handoff from the phone"
+	tap_desc "New session" && nap 2
+	tap_part "quill-tester · saved" && nap 2
+	wait_for 'text="Rename the greeting"' 10 && ok "remote: handoff open elsewhere opens that session" || bad "remote: handoff open elsewhere opens that session"
+	pcurl "/debug/nohandoffs?on=1" >/dev/null
+	tap_desc "New session" && nap 2
+	wait_for 'text="Folder"' 10 && ! has 'content-desc="Session name"' && ok "remote: older Quill Desktop: dialog without the kmem part" || bad "remote: older Quill Desktop: dialog without the kmem part"
+	tap_text "CANCEL" >/dev/null 2>&1 || tap_text "Cancel" >/dev/null 2>&1
+	nap 1
+	pcurl "/debug/nohandoffs?on=0" >/dev/null
+	tap_any() { tap_text "$(echo "$1" | tr '[:lower:]' '[:upper:]')" >/dev/null 2>&1 || tap_text "$1" >/dev/null 2>&1; }
+	wait_log() { local i; for i in $(seq 1 40); do plog | grep -q "$1" && return 0; sleep 0.25; done; return 1; }
+	ime_off() { adb_ shell dumpsys input_method | grep -q 'mInputShown=true' && adb_ shell input keyevent KEYCODE_BACK && nap 1; }
+	lpress "Zomboid launcher" && nap 2
+	wait_for 'text="Rename..."' 5 && has 'text="End session"' && has 'text="Delete session..."' && ! has 'text="Set archive"' && ! has 'text="Move to folder..."' && ! has 'kmem name...' \
+		&& ok "remote: long-press menu has Quill Desktop's session actions" || bad "remote: long-press menu has Quill Desktop's session actions"
+	centered "End session" && ok "remote: session menu is centered" || bad "remote: session menu is centered"
+	tap_text "Rename..." && nap 2
+	tap_edit && nap 1
+	adb_ shell input keyevent KEYCODE_MOVE_END
+	for i in $(seq 1 20); do adb_ shell input keyevent KEYCODE_DEL; done
+	adb_ shell input text "Launcher%s2"
+	ime_off
+	tap_any "Save" && nap 2
+	wait_for 'text="Launcher 2"' 10 && ok "remote: rename from the menu" || bad "remote: rename from the menu" "$(plog | grep -o '/rename [^"]*' | tail -1)"
+	lpress "Launcher 2" && nap 2
+	if wait_for 'text="Restore original name"' 5; then
+		tap_text "Restore original name" && nap 2
+		wait_for 'text="Zomboid launcher"' 10 && ok "remote: Restore original name" || bad "remote: Restore original name"
+	else
+		bad "remote: Restore original name" "not in the menu"
+		adb_ shell input keyevent KEYCODE_BACK
+	fi
+	lpress "My Test" && nap 2
+	tap_text "Delete session..." && nap 2
+	tap_any "Delete" && nap 2
+	gone 'text="My Test"' 10 && ok "remote: Delete session after confirming" || bad "remote: Delete session after confirming"
+	lpress "Zomboid launcher" && nap 2
+	tap_text "Project..." && nap 2
+	tap_text "New project..." && nap 2
+	tap_edit && nap 1
+	adb_ shell input text "Games"
+	ime_off
+	tap_any "Save" && nap 2
+	wait_log 'session_C3/project.*Games' && wait_for 'Games' 10 && ok "remote: Project... moves the session to a new project" || bad "remote: Project... moves the session to a new project"
+	lpress "zomboid-fps" && nap 2
+	tap_text "End session" && nap 2
+	wait_log '/end ' && ok "remote: End session" || bad "remote: End session"
+	tap_desc "New session" && nap 2
+	b=$(bounds_of "$(dump | tr '>' '\n' | grep -o 'text="old-notes · saved[^"]*"' | head -1 | sed 's/^text="//; s/"$//')")
+	if [ -n "$b" ]; then
+		set -- $b
+		adb_ shell input swipe $((($1 + $3) / 2)) $((($2 + $4) / 2)) $((($1 + $3) / 2)) $((($2 + $4) / 2)) 900
+		nap 2
+	fi
+	if wait_for 'text="Delete handoff..."' 5; then
+		ok "remote: long-press on a handoff opens its menu"
+		tap_text "Delete handoff..." && nap 2
+		tap_any "Delete" && nap 2
+		wait_log 'handoffs/old-notes/delete' && ok "remote: Delete handoff" || bad "remote: Delete handoff"
+	else
+		bad "remote: long-press on a handoff opens its menu"
+		adb_ shell input keyevent KEYCODE_BACK
+	fi
+	tap_text "CANCEL" >/dev/null 2>&1 || tap_text "Cancel" >/dev/null 2>&1
+	nap 1
+	tap_desc "New session" && nap 2
+	b=$(bounds_of "$(dump | tr '>' '\n' | grep -o 'text="zomboid-fps · saved[^"]*"' | head -1 | sed 's/^text="//; s/"$//')")
+	if [ -n "$b" ]; then
+		set -- $b
+		adb_ shell input swipe $((($1 + $3) / 2)) $((($2 + $4) / 2)) $((($1 + $3) / 2)) $((($2 + $4) / 2)) 900
+		nap 2
+	fi
+	tap_text "Resume" && nap 2
+	wait_for 'Resumed fresh from handoff zomboid-fps' 10 && ok "remote: Resume a handoff from its menu" || bad "remote: Resume a handoff from its menu"
+
 	popen session_A1
 	wait_for 'text="Rename the greeting"' 10
 	nap 2
@@ -785,6 +933,7 @@ if [ -n "${PPORT:-}" ]; then
 	launch
 	wait_for 'text="Rename the greeting"' 30 && ok "remote: switches back once the API answers" || bad "remote: switches back once the API answers"
 	crashed && bad "remote: no crash" "$(adb_ logcat -d -b crash | grep -m1 -A2 'FATAL')" || ok "remote: no crash"
+	plog > "$OUT/phoned-requests.json" 2>/dev/null
 	kill "$PHONE_PID" 2>/dev/null
 	PHONE_PID=""
 else

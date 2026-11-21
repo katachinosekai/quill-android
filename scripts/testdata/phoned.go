@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +29,7 @@ type item map[string]any
 
 type session struct {
 	ID, Title, Folder, Group, Status string
-	Kmem                             string
+	Kmem, Orig                       string
 	Epoch                            int
 	Rev                              int64
 	Items                            []item
@@ -41,20 +42,22 @@ type change struct {
 }
 
 type server struct {
-	mu       sync.Mutex
-	wake     *sync.Cond
-	key      string
-	boot     string
-	cursor   int64
-	changes  []change
-	sessions []*session
-	control  bool
-	paused   bool
-	noAPI    bool
-	events   []map[string]any
-	nextID   int64
-	idem     map[string][2]string
-	log      []string
+	mu        sync.Mutex
+	wake      *sync.Cond
+	key       string
+	boot      string
+	cursor    int64
+	changes   []change
+	sessions  []*session
+	control   bool
+	paused    bool
+	noAPI     bool
+	noHandoff bool
+	handoffs  []map[string]any
+	events    []map[string]any
+	nextID    int64
+	idem      map[string][2]string
+	log       []string
 }
 
 func (s *server) find(id string) *session {
@@ -87,6 +90,10 @@ func (s *server) sessionJSON(x *session) map[string]any {
 	if x.Kmem != "" {
 		m["kmem"] = x.Kmem
 	}
+	if x.Orig != "" {
+		m["renamed"] = true
+	}
+	m["project"] = x.Group
 	return m
 }
 
@@ -220,9 +227,32 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 			list = append(list, s.sessionJSON(x))
 		}
 		reply(w, 200, map[string]any{"boot": s.boot, "cursor": s.cursor, "control": s.control, "usage": s.usage(),
-			"models": map[string]any{"online": []string{"opus", "sonnet"}, "local": []string{}},
-			"modes":  map[string]any{"online": []string{"default", "acceptEdits", "plan", "auto"}, "local": []string{"default"}},
+			"models":   map[string]any{"online": []string{"opus", "sonnet"}, "local": []string{}},
+			"modes":    map[string]any{"online": []string{"default", "acceptEdits", "plan", "auto"}, "local": []string{"default"}},
+			"projects": s.projects(),
+			"actions":  []string{"rename", "resume", "end", "delete", "project"},
 			"sessions": list})
+	case p == "/phone/handoffs":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.noHandoff {
+			fail(w, 404, "not_found")
+			return
+		}
+		reply(w, 200, map[string]any{"handoffs": s.handoffs})
+	case p == "/phone/handoffs/slug":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.noHandoff {
+			fail(w, 404, "not_found")
+			return
+		}
+		reply(w, 200, map[string]any{"slug": slugOf(q.Get("title"))})
+	case p == "/debug/nohandoffs":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.noHandoff = q.Get("on") == "1"
+		reply(w, 200, map[string]any{})
 	case p == "/phone/folders":
 		reply(w, 200, map[string]any{"folders": []any{map[string]string{"path": "/home/user/Projects/demo", "name": "demo"}}})
 	case p == "/phone/stream":
@@ -375,11 +405,79 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 			fail(w, 400, "bad_request")
 			return
 		}
-		x := &session{ID: fmt.Sprintf("session_N%d", len(s.sessions)+1), Title: "New session", Folder: strings.TrimPrefix(folder, "/home/user/Projects/"),
-			Group: "Active", Status: "idle", Epoch: 1}
+		title, kmem, note := "New session", "", ""
+		if st, has := body["start"]; has {
+			m, _ := st.(map[string]any)
+			switch m["kmem"] {
+			case "resume":
+				name, _ := m["name"].(string)
+				if name == "quill-tester" {
+					fail(w, 409, "blocked")
+					return
+				}
+				if name == "" {
+					fail(w, 422, "bad_request")
+					return
+				}
+				title, kmem, note = name, name, "Resumed kmem handoff "+name
+			case "new":
+				t, _ := m["title"].(string)
+				if strings.TrimSpace(t) != "" {
+					title = strings.TrimSpace(t)
+				}
+				kmem = slugOf(title)
+				note = "kmem name: " + kmem
+			default:
+				fail(w, 422, "bad_request")
+				return
+			}
+		}
+		s.log = append(s.log, fmt.Sprintf("new session start=%v", body["start"]))
+		x := &session{ID: s.newID(), Title: title, Folder: strings.TrimPrefix(folder, "/home/user/Projects/"),
+			Group: "Active", Status: "idle", Kmem: kmem, Epoch: 1}
 		s.sessions = append([]*session{x}, s.sessions...)
 		s.add(x, item{"kind": "notice", "text": fmt.Sprintf("Started with %v · %v · %v", body["backend"], body["model"], body["mode"])})
+		if note != "" {
+			s.add(x, item{"kind": "notice", "text": note})
+		}
 		reply(w, 200, map[string]any{"session": s.sessionJSON(x)})
+		return
+	}
+	if strings.HasPrefix(p, "/phone/handoffs/") {
+		hp := strings.Split(strings.TrimPrefix(p, "/phone/handoffs/"), "/")
+		at := -1
+		for i, h := range s.handoffs {
+			if len(hp) == 2 && h["name"] == hp[0] {
+				at = i
+			}
+		}
+		if at < 0 {
+			fail(w, 404, "not_found")
+			return
+		}
+		h := s.handoffs[at]
+		switch hp[1] {
+		case "resume":
+			if o, ok := h["openIn"].(map[string]any); ok {
+				reply(w, 200, map[string]any{"session": s.sessionJSON(s.find(o["id"].(string)))})
+				return
+			}
+			n := &session{ID: s.newID(), Title: hp[0], Folder: "demo", Group: "Quill", Status: "idle", Kmem: hp[0], Epoch: 1}
+			s.sessions = append([]*session{n}, s.sessions...)
+			s.handoffs = append(s.handoffs[:at], s.handoffs[at+1:]...)
+			s.add(n, item{"kind": "notice", "text": "Resumed fresh from handoff " + hp[0]})
+			s.touch(n, nil)
+			reply(w, 200, map[string]any{"session": s.sessionJSON(n)})
+		case "delete":
+			if h["openIn"] != nil {
+				fail(w, 409, "blocked")
+				return
+			}
+			s.handoffs = append(s.handoffs[:at], s.handoffs[at+1:]...)
+			reply(w, 200, map[string]any{"removed": hp[0]})
+		default:
+			fail(w, 404, "not_found")
+		}
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(p, "/phone/session/"), "/")
@@ -471,6 +569,63 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 			queue = append(queue, map[string]any{"index": i, "text": t})
 		}
 		reply(w, 200, map[string]any{"queue": queue})
+	case "rename":
+		t, _ := body["title"].(string)
+		if len(t) > 200 {
+			fail(w, 400, "bad_request")
+			return
+		}
+		if t == "" {
+			if x.Orig != "" {
+				x.Title, x.Orig = x.Orig, ""
+			}
+		} else {
+			if x.Orig == "" {
+				x.Orig = x.Title
+			}
+			x.Title = t
+		}
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{"session": s.sessionJSON(x)})
+	case "resume":
+		s.add(x, item{"kind": "notice", "text": "Resumed"})
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{"session": s.sessionJSON(x)})
+	case "end":
+		for i, y := range s.sessions {
+			if y == x {
+				s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
+				break
+			}
+		}
+		name := x.Kmem
+		if name == "" {
+			name = slugOf(x.Title)
+		}
+		s.handoffs = append([]map[string]any{{"name": name, "savedMs": time.Now().UnixMilli(), "openIn": nil}}, s.handoffs...)
+		s.emit(map[string]any{"type": "removed", "id": x.ID})
+		reply(w, 200, map[string]any{"saving": true})
+	case "delete":
+		for i, y := range s.sessions {
+			if y == x {
+				s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
+				break
+			}
+		}
+		s.emit(map[string]any{"type": "removed", "id": x.ID})
+		reply(w, 200, map[string]any{"removed": x.ID})
+	case "project":
+		pr, has := body["project"].(string)
+		if !has || len(pr) > 200 {
+			fail(w, 400, "bad_request")
+			return
+		}
+		if pr == "" {
+			pr = "Other"
+		}
+		x.Group = pr
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{"session": s.sessionJSON(x)})
 	case "interrupt":
 		was := x.Status == "running"
 		x.Status = "idle"
@@ -519,6 +674,11 @@ func main() {
 	}
 	port, _ := strconv.Atoi(os.Args[1])
 	s := &server{key: os.Args[2], boot: strconv.FormatInt(time.Now().UnixNano(), 36), control: true, idem: map[string][2]string{}}
+	s.handoffs = []map[string]any{
+		{"name": "zomboid-fps", "savedMs": int64(1795250000000), "openIn": nil},
+		{"name": "quill-tester", "savedMs": int64(1795240000000), "openIn": map[string]any{"id": "session_A1", "title": "Fix edits"}},
+		{"name": "old-notes", "savedMs": int64(1795230000000), "openIn": nil},
+	}
 	s.wake = sync.NewCond(&s.mu)
 	a := &session{ID: "session_A1", Title: "Fix edits", Folder: "demo", Group: "Active", Status: "idle", Kmem: "Quill Tester", Epoch: 1}
 	b := &session{ID: "session_C3", Title: "Zomboid launcher", Folder: "zomboid", Group: "Zomboid", Status: "waiting", Epoch: 1}
@@ -541,4 +701,39 @@ func main() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt)
 	<-ch
+}
+
+func slugOf(t string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(t)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+		} else if b.Len() > 0 && !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	return strings.TrimSuffix(b.String(), "-")
+}
+
+var newSeq int
+
+func (s *server) newID() string {
+	newSeq++
+	return fmt.Sprintf("session_N%d", newSeq)
+}
+
+func (s *server) projects() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range s.sessions {
+		if !seen[x.Group] {
+			seen[x.Group] = true
+			out = append(out, x.Group)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

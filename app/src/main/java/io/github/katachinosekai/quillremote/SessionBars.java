@@ -512,6 +512,10 @@ class SessionBars {
             for (Item it : list) {
                 View r = twoLine(it, a.dp(34), 14);
                 r.setOnClickListener(v -> a.openSession(it.id));
+                r.setOnLongClickListener(v -> {
+                    sessionMenu(it.id);
+                    return true;
+                });
                 sideList.addView(r);
             }
         }
@@ -736,7 +740,7 @@ class SessionBars {
         chip.addView(close, new LinearLayout.LayoutParams(a.dp(34), ViewGroup.LayoutParams.MATCH_PARENT));
         chip.setOnClickListener(v -> a.openSession(id));
         chip.setOnLongClickListener(v -> {
-            tabMenu(v, id);
+            sessionMenu(id);
             return true;
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, a.dp(34));
@@ -745,34 +749,183 @@ class SessionBars {
         return chip;
     }
 
-    void folderMenu(View anchor, String folder, List<Item> list) {
-        android.widget.PopupMenu m = new android.widget.PopupMenu(a, anchor);
-        m.getMenu().add(0, 1, 0, "Open all in tabs");
-        if (vertical) {
-            m.getMenu().add(0, 2, 1, "Expand all folders");
-            m.getMenu().add(0, 3, 2, "Collapse all folders");
+    static final class Menu {
+        final List<String> labels = new ArrayList<>();
+        final List<Runnable> acts = new ArrayList<>();
+
+        Menu add(String label, Runnable act) {
+            labels.add(label);
+            acts.add(act);
+            return this;
         }
-        m.setOnMenuItemClickListener(mi -> {
-            switch (mi.getItemId()) {
-                case 1:
-                    openAll(list);
-                    break;
-                case 2:
-                case 3:
-                    SharedPreferences.Editor e = prefs.edit();
-                    for (String f : order) {
-                        e.putBoolean("fold." + f, mi.getItemId() == 2);
+    }
+
+    void showMenu(String title, Menu m) {
+        new android.app.AlertDialog.Builder(a)
+                .setTitle(title)
+                .setItems(m.labels.toArray(new String[0]), (d, w) -> m.acts.get(w).run())
+                .show();
+    }
+
+    void folderMenu(View anchor, String folder, List<Item> list) {
+        Menu m = new Menu();
+        m.add("Open all in tabs", () -> openAll(list));
+        if (vertical) {
+            m.add("Expand all folders", () -> setAllFolders(true));
+            m.add("Collapse all folders", () -> setAllFolders(false));
+            m.add("Switch to horizontal tabs", () -> setLayout(false));
+        } else {
+            m.add("Switch to vertical sidebar", () -> setLayout(true));
+        }
+        showMenu(folder, m);
+    }
+
+    void setAllFolders(boolean open) {
+        SharedPreferences.Editor e = prefs.edit();
+        for (String f : order) {
+            e.putBoolean("fold." + f, open);
+        }
+        for (Item it : items) {
+            e.putBoolean("fold." + it.folder, open);
+        }
+        e.apply();
+        render();
+    }
+
+    void setLayout(boolean vert) {
+        prefs.edit().putString("tabMode", vert ? "vertical" : "horizontal").apply();
+        applyMode(true);
+    }
+
+    void sessionMenu(String id) {
+        Item it = item(id);
+        int ti = tabIndex(id);
+        String title = it != null ? it.title : ti >= 0 ? tabs.get(ti)[1] : id;
+        Menu m = new Menu();
+        Remote r = remote ? a.remote : null;
+        JSONObject s = r == null ? null : r.session(id);
+        if (s != null && r.can("rename")) {
+            m.add("Rename...", () -> askName(title, name -> r.sessionAction("rename", id, "rename", PhoneApi.obj("title", name))));
+        }
+        m.add("Open", () -> a.openSession(id));
+        if (s != null && r.can("resume")) {
+            m.add("Resume", () -> r.sessionAction("resume", id, "resume", null));
+        }
+        if (s != null && r.can("end")) {
+            m.add("End session", () -> r.sessionAction("end session", id, "end", null));
+        }
+        if (s != null && r.can("delete")) {
+            m.add("Delete session...", () -> new android.app.AlertDialog.Builder(a)
+                    .setTitle("Delete session?")
+                    .setMessage("\"" + title + "\" is removed from Quill Desktop. Its kmem handoff goes to the kmem recycle bin.")
+                    .setPositiveButton("Delete", (d, w) -> r.sessionAction("delete", id, "delete", null))
+                    .setNegativeButton("Cancel", null)
+                    .show());
+        }
+        if (ti < 0) {
+            m.add("Open in new tab", () -> {
+                if (tabIndex(id) < 0) {
+                    tabs.add(new String[]{id, title});
+                    while (tabs.size() > MAX_TABS) {
+                        tabs.remove(0);
                     }
-                    for (Item it : items) {
-                        e.putBoolean("fold." + it.folder, mi.getItemId() == 2);
-                    }
-                    e.apply();
+                    saveTabs();
                     render();
-                    break;
+                }
+            });
+        } else {
+            m.add("Close tab", () -> closeTab(id));
+            m.add("Close other tabs", () -> editTabs(id, 2));
+            m.add("Close tabs to the right", () -> editTabs(id, 3));
+            if (ti > 0) {
+                m.add("Move left", () -> editTabs(id, 4));
             }
-            return true;
-        });
-        m.show();
+            if (ti < tabs.size() - 1) {
+                m.add("Move right", () -> editTabs(id, 5));
+            }
+        }
+        if (s != null && r.can("project")) {
+            m.add("Project...", () -> projectMenu(r, id, s.optString("project")));
+        }
+        if (s != null && r.can("rename") && s.optBoolean("renamed")) {
+            m.add("Restore original name", () -> r.sessionAction("restore name", id, "rename", PhoneApi.obj("title", "")));
+        }
+        String kmem = s == null ? "" : s.optString("kmem");
+        showMenu(kmem.isEmpty() || kmem.equals(title) ? title : title + "  ·  kmem " + kmem, m);
+    }
+
+    /** Quill Desktop groups live sessions by kmem project; "" = automatic. */
+    void projectMenu(Remote r, String id, String now) {
+        Menu m = new Menu();
+        JSONArray pr = r.projects();
+        for (int k = 0; pr != null && k < pr.length(); k++) {
+            String p = pr.optString(k);
+            if (!p.isEmpty()) {
+                m.add(p.equals(now) ? p + "  ✓" : p, () -> r.sessionAction("project", id, "project", PhoneApi.obj("project", p)));
+            }
+        }
+        m.add("New project...", () -> askName("Project", "", p -> r.sessionAction("project", id, "project", PhoneApi.obj("project", p))));
+        m.add("Automatic", () -> r.sessionAction("project", id, "project", PhoneApi.obj("project", "")));
+        showMenu("Project", m);
+    }
+
+    void askName(String current, java.util.function.Consumer<String> done) {
+        askName("Rename session", current, done);
+    }
+
+    void askName(String title, String current, java.util.function.Consumer<String> done) {
+        android.widget.EditText e = new android.widget.EditText(a);
+        e.setText(current);
+        e.setSingleLine(true);
+        e.setSelectAllOnFocus(true);
+        e.setContentDescription(title);
+        android.widget.FrameLayout box = new android.widget.FrameLayout(a);
+        box.setPadding(a.dp(20), a.dp(8), a.dp(20), 0);
+        box.addView(e);
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a)
+                .setTitle(title)
+                .setView(box)
+                .setPositiveButton("Save", (x, w) -> {
+                    String n = e.getText().toString().trim();
+                    if (!n.isEmpty() && n.length() <= 200) {
+                        done.accept(n);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+        d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+        d.show();
+        e.requestFocus();
+    }
+
+    void editTabs(String id, int op) {
+        int at = tabIndex(id);
+        if (at < 0) {
+            return;
+        }
+        switch (op) {
+            case 2:
+                String[] keep = tabs.get(at);
+                tabs.clear();
+                tabs.add(keep);
+                break;
+            case 3:
+                while (tabs.size() > at + 1) {
+                    tabs.remove(tabs.size() - 1);
+                }
+                break;
+            case 4:
+                tabs.add(at - 1, tabs.remove(at));
+                break;
+            case 5:
+                tabs.add(at + 1, tabs.remove(at));
+                break;
+        }
+        saveTabs();
+        render();
+        if (current != null && tabIndex(current) < 0) {
+            a.openSession(id);
+        }
     }
 
     void openAll(List<Item> list) {
@@ -789,54 +942,6 @@ class SessionBars {
         if (!list.isEmpty()) {
             a.openSession(list.get(0).id);
         }
-    }
-
-    void tabMenu(View anchor, String id) {
-        android.widget.PopupMenu m = new android.widget.PopupMenu(a, anchor);
-        int i = tabIndex(id);
-        m.getMenu().add(0, 1, 0, "Close");
-        m.getMenu().add(0, 2, 1, "Close others");
-        m.getMenu().add(0, 3, 2, "Close tabs to the right");
-        if (i > 0) {
-            m.getMenu().add(0, 4, 3, "Move left");
-        }
-        if (i >= 0 && i < tabs.size() - 1) {
-            m.getMenu().add(0, 5, 4, "Move right");
-        }
-        m.setOnMenuItemClickListener(mi -> {
-            int at = tabIndex(id);
-            if (at < 0) {
-                return true;
-            }
-            switch (mi.getItemId()) {
-                case 1:
-                    closeTab(id);
-                    return true;
-                case 2:
-                    String[] keep = tabs.get(at);
-                    tabs.clear();
-                    tabs.add(keep);
-                    break;
-                case 3:
-                    while (tabs.size() > at + 1) {
-                        tabs.remove(tabs.size() - 1);
-                    }
-                    break;
-                case 4:
-                    tabs.add(at - 1, tabs.remove(at));
-                    break;
-                case 5:
-                    tabs.add(at + 1, tabs.remove(at));
-                    break;
-            }
-            saveTabs();
-            render();
-            if (current != null && tabIndex(current) < 0) {
-                a.openSession(id);
-            }
-            return true;
-        });
-        m.show();
     }
 
     View bookmark(String folder, List<Item> list) {
@@ -880,5 +985,12 @@ class SessionBars {
             a.openSession(list.get(pos).id);
         });
         pop.show();
+        if (pop.getListView() != null) {
+            pop.getListView().setOnItemLongClickListener((p, v, pos, id) -> {
+                pop.dismiss();
+                sessionMenu(list.get(pos).id);
+                return true;
+            });
+        }
     }
 }

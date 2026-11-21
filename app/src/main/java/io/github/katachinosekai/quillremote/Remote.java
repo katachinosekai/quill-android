@@ -57,6 +57,8 @@ final class Remote implements ChatView.Actions {
     JSONObject usage;
     JSONObject models = new JSONObject();
     JSONObject modes = new JSONObject();
+    JSONArray projects = new JSONArray();
+    final java.util.Set<String> actions = new java.util.HashSet<>();
     volatile String current;
     int epoch = -1;
     long rev;
@@ -180,6 +182,14 @@ final class Remote implements ChatView.Actions {
         if (o.optJSONObject("modes") != null) {
             modes = o.optJSONObject("modes");
         }
+        if (o.optJSONArray("projects") != null) {
+            projects = o.optJSONArray("projects");
+        }
+        actions.clear();
+        JSONArray acts = o.optJSONArray("actions");
+        for (int i = 0; acts != null && i < acts.length(); i++) {
+            actions.add(acts.optString(i));
+        }
         sessions.clear();
         JSONArray arr = o.optJSONArray("sessions");
         for (int i = 0; arr != null && i < arr.length(); i++) {
@@ -298,7 +308,7 @@ final class Remote implements ChatView.Actions {
             JSONArray its = new JSONArray();
             JSONArray order = new JSONArray();
             for (JSONObject s : sessions) {
-                String g = s.optString("group", "Other");
+                String g = s.optString("project", s.optString("group", "Other"));
                 its.put(new JSONObject().put("id", s.optString("id")).put("folder", g).put("title", s.optString("title")));
                 boolean seen = false;
                 for (int k = 0; k < order.length(); k++) {
@@ -465,10 +475,70 @@ final class Remote implements ChatView.Actions {
         work.execute(() -> fetch(id, true));
     }
 
+    synchronized boolean can(String action) {
+        return actions.contains(action);
+    }
+
+    synchronized JSONArray projects() {
+        return projects;
+    }
+
+    /** Resume or delete a saved kmem handoff (POST /phone/handoffs/{name}/resume|delete). */
+    void handoffAction(String name, String action, Runnable done) {
+        write(action.equals("delete") ? "delete handoff" : "resume", () -> api.post("/phone/handoffs/" + PhoneApi.enc(name) + "/" + action, new JSONObject()), r -> {
+            JSONObject s = r.body.optJSONObject("session");
+            if (s != null) {
+                synchronized (Remote.this) {
+                    replace(s);
+                }
+                publish();
+                String id = s.optString("id");
+                ui.post(() -> open(id));
+            }
+            if (done != null) {
+                ui.post(done);
+            }
+        });
+    }
+
+    /** A session-menu action (rename, resume, end, delete, place) from the long-press menu. */
+    void sessionAction(String what, String id, String action, JSONObject body) {
+        write(what, () -> api.action(id, action, body), r -> {
+            JSONObject s = r.body.optJSONObject("session");
+            String removed = r.body.optString("removed");
+            synchronized (Remote.this) {
+                if (s != null) {
+                    replace(s);
+                }
+                if (!removed.isEmpty()) {
+                    remove(removed);
+                    if (removed.equals(current)) {
+                        current = sessions.isEmpty() ? null : sessions.get(0).optString("id");
+                    }
+                }
+            }
+            publish();
+            if (s != null && "resume".equals(action) && !s.optString("id").equals(id)) {
+                String nid = s.optString("id");
+                ui.post(() -> open(nid));
+            } else if (!removed.isEmpty() && removed.equals(id) && current != null) {
+                String cur = current;
+                ui.post(() -> open(cur));
+            }
+        });
+    }
+
     void write(String what, java.util.function.Supplier<PhoneApi.Reply> call) {
+        write(what, call, null);
+    }
+
+    void write(String what, java.util.function.Supplier<PhoneApi.Reply> call, java.util.function.Consumer<PhoneApi.Reply> onOk) {
         work.execute(() -> {
             PhoneApi.Reply r = call.get();
             if (r.ok()) {
+                if (onOk != null) {
+                    onOk.accept(r);
+                }
                 String id = current;
                 if (id != null) {
                     fetch(id, false);

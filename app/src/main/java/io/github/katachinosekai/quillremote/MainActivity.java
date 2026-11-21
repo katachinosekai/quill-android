@@ -320,6 +320,10 @@ public class MainActivity extends Activity {
                     }
                     android.widget.RadioButton rb = new android.widget.RadioButton(this);
                     rb.setText(hn + saved);
+                    rb.setOnLongClickListener(v -> {
+                        handoffMenu(hn, dlg[0]);
+                        return true;
+                    });
                     rb.setId(View.generateViewId());
                     rb.setOnClickListener(v -> {
                         if (hn.equals(resume[0])) {
@@ -381,6 +385,29 @@ public class MainActivity extends Activity {
                     .setNegativeButton("Cancel", null)
                     .show();
         }
+    }
+
+    /** Long-press on a saved kmem handoff: resume it or move it to the kmem recycle bin (emptying stays on Quill Desktop). */
+    void handoffMenu(String name, android.app.AlertDialog parent) {
+        SessionBars.Menu m = new SessionBars.Menu();
+        m.add("Resume", () -> {
+            if (parent != null) {
+                parent.dismiss();
+            }
+            remote.handoffAction(name, "resume", null);
+        });
+        m.add("Delete handoff...", () -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Delete handoff?")
+                .setMessage("\"" + name + "\" moves to the kmem recycle bin. You can restore it in Quill Desktop.")
+                .setPositiveButton("Delete", (d, w) -> remote.handoffAction(name, "delete", () -> {
+                    if (parent != null) {
+                        parent.dismiss();
+                    }
+                    toast("Moved " + name + " to the kmem recycle bin.");
+                }))
+                .setNegativeButton("Cancel", null)
+                .show());
+        bars.showMenu(name, m);
     }
 
     TextView label(String t) {
@@ -1510,6 +1537,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        updateTick.removeCallbacks(updateCheck);
         CookieManager.getInstance().flush();
         if (sync != null) {
             sync.stop();
@@ -1522,6 +1550,19 @@ public class MainActivity extends Activity {
             fgNotifier.stop();
         }
     }
+
+    /** Checks GitHub for a newer Quill Android when the app comes to the front and then hourly while it stays open. */
+    final android.os.Handler updateTick = new android.os.Handler(android.os.Looper.getMainLooper());
+    final Runnable updateCheck = new Runnable() {
+        @Override
+        public void run() {
+            updateTick.removeCallbacks(this);
+            if (updater != null) {
+                updater.checkIfDue();
+            }
+            updateTick.postDelayed(this, Updater.CHECK_EVERY);
+        }
+    };
 
     @Override
     protected void onResume() {
@@ -1539,9 +1580,7 @@ public class MainActivity extends Activity {
                 }
             }, "quill-probe").start();
         }
-        if (updater != null) {
-            updater.checkIfDue();
-        }
+        updateCheck.run();
         showUpdateBlocked();
         Notifier.appVisible = true;
         if (fgNotifier != null) {

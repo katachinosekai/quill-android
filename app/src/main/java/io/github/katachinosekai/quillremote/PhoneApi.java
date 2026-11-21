@@ -268,6 +268,10 @@ final class PhoneApi {
         return post("/phone/session/" + enc(id) + "/answer", body);
     }
 
+    Reply action(String id, String action, JSONObject body) {
+        return post("/phone/session/" + enc(id) + "/" + action, body == null ? new JSONObject() : body);
+    }
+
     Reply interrupt(String id) {
         return post("/phone/session/" + enc(id) + "/interrupt", new JSONObject());
     }
