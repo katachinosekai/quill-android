@@ -256,6 +256,13 @@ fi
 LOGQUIET=$(adb_ shell getprop log.tag | tr -d '\r' | grep -x -E '[EWAFS].*')
 adb_ logcat -c
 adb_ logcat -b crash -c
+adb_ shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
+launch
+sleep 2
+adb_ install -r "$ROOT/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
+for i in $(seq 1 40); do adb_ shell dumpsys notification --noredact 2>/dev/null | grep -q -F "Quill updated to" && break; sleep 0.25; done
+adb_ shell dumpsys notification --noredact 2>/dev/null | grep -q -F "Quill updated to" && ok "update finished notification" || bad "update finished notification"
+adb_ shell cmd notification cancel_all "$PKG" >/dev/null 2>&1 || true
 
 mkdir -p "$WORK/www/code"
 for s in A1:Fix-edits B2:Old-server-notes C3:Zomboid-launcher D4:Unsorted-idea; do
