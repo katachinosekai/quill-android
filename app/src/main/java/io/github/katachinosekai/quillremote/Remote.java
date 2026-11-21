@@ -22,6 +22,9 @@ final class Remote implements ChatView.Actions {
         void toast(String msg);
 
         void onUnsupported();
+
+        /** Quill Desktop wants a password for this device (hello "unlock", or 401 "locked"). */
+        void onLocked();
     }
 
     final PhoneApi api;
@@ -116,6 +119,10 @@ final class Remote implements ChatView.Actions {
                     hello = true;
                     control = h.body.optBoolean("control", true);
                     deskVersion = h.body.optString("quill", "");
+                    if (h.body.optBoolean("unlock") && PhoneApi.unlockToken == null) {
+                        lockedWait(g);
+                        continue;
+                    }
                 } else if (h.code == 403 && "forbidden".equals(h.error())) {
                     connection("This phone was removed in Quill Desktop. Pair it again from the Devices button in the Quill Desktop top bar.");
                     sleep(15000);
@@ -125,6 +132,10 @@ final class Remote implements ChatView.Actions {
             PhoneApi.Reply r = boot.isEmpty() ? api.sessions() : api.stream(cursor);
             if (!running || g != gen) {
                 return;
+            }
+            if (r.code == 401 && "locked".equals(r.error())) {
+                lockedWait(g);
+                continue;
             }
             if (r.code == 404) {
                 running = false;
@@ -155,6 +166,69 @@ final class Remote implements ChatView.Actions {
                 boot = "";
             }
         }
+    }
+
+    /** Drop everything loaded (like Quill Desktop's client), ask for the password, and wait until unlocked. */
+    void lockedWait(int g) {
+        PhoneApi.unlockToken = null;
+        synchronized (this) {
+            sessions.clear();
+            items.clear();
+            boot = "";
+        }
+        ui.post(() -> {
+            chat.clear();
+            host.onLocked();
+        });
+        publish();
+        connection("Locked by Quill Desktop. Enter its device password to continue.");
+        while (running && g == gen && PhoneApi.unlockToken == null) {
+            sleep(500);
+        }
+        connection("");
+    }
+
+    volatile long lastTouch;
+
+    /** POST /phone/unlock; done gets "" on success, else the message to show. */
+    void unlock(String password, java.util.function.Consumer<String> done) {
+        work.execute(() -> {
+            PhoneApi.Reply r = api.unlock(password);
+            String msg;
+            if (r.ok() && !r.body.optString("token").isEmpty()) {
+                PhoneApi.unlockToken = r.body.optString("token");
+                lastTouch = System.currentTimeMillis();
+                msg = "";
+            } else {
+                switch (r.error()) {
+                    case "wrong_password":
+                        msg = "Wrong password" + (r.detail().isEmpty() ? "." : " (" + r.detail() + ").");
+                        break;
+                    case "locked_out":
+                        msg = "Too many wrong tries. Quill Desktop blocks this device for 15 minutes.";
+                        break;
+                    case "no_password":
+                        msg = "Quill Desktop has no device password set yet (Settings → Sessions → Devices).";
+                        break;
+                    case "unreachable":
+                        msg = "Can't reach Quill Desktop.";
+                        break;
+                    default:
+                        msg = "Unlock failed: " + r.error();
+                }
+            }
+            ui.post(() -> done.accept(msg));
+        });
+    }
+
+    /** Activity keeps the unlock alive; at most once a minute. */
+    void touch() {
+        long now = System.currentTimeMillis();
+        if (PhoneApi.unlockToken == null || now - lastTouch < 60_000) {
+            return;
+        }
+        lastTouch = now;
+        work.execute(api::touch);
     }
 
     void sleep(long ms) {
@@ -543,6 +617,11 @@ final class Remote implements ChatView.Actions {
                 if (id != null) {
                     fetch(id, false);
                 }
+                return;
+            }
+            if (r.code == 401 && "locked".equals(r.error())) {
+                PhoneApi.unlockToken = null;
+                restart();
                 return;
             }
             if (r.code == 403 && "control_off".equals(r.error())) {

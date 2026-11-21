@@ -866,6 +866,29 @@ if [ -n "${PPORT:-}" ]; then
 	tap_text "Resume" && nap 2
 	wait_for 'Resumed fresh from handoff zomboid-fps' 10 && ok "remote: Resume a handoff from its menu" || bad "remote: Resume a handoff from its menu"
 
+	pcurl "/debug/lock?on=1" >/dev/null
+	tap_desc "Reconnect" && nap 2
+	wait_for 'text="Unlock Quill Desktop"' 20 && ok "remote: password prompt when Quill Desktop locks this device" || bad "remote: password prompt when Quill Desktop locks this device"
+	tap_edit && nap 1
+	adb_ shell input text "wrong-pass"
+	ime_off
+	tap_any "Unlock" && nap 1
+	wait_for 'Wrong password (1 of 5 tries)' 10 && ok "remote: wrong password says how many tries" || bad "remote: wrong password says how many tries"
+	tap_edit && nap 1
+	adb_ shell input keyevent KEYCODE_MOVE_END
+	for i in $(seq 1 12); do adb_ shell input keyevent KEYCODE_DEL; done
+	adb_ shell input text "test-password-1"
+	ime_off
+	tap_any "Unlock" && nap 1
+	gone 'text="Unlock Quill Desktop"' 10 && wait_log '/phone/unlock ' && ok "remote: right password unlocks" || bad "remote: right password unlocks"
+	popen session_A1
+	wait_for 'text="Rename the greeting"' 20 && ok "remote: sessions load again after unlocking" || bad "remote: sessions load again after unlocking"
+	pcurl "/debug/relock" >/dev/null
+	tap_desc "Reconnect" && nap 2
+	wait_for 'text="Unlock Quill Desktop"' 20 && ok "remote: asks again once Quill Desktop drops the unlock" || bad "remote: asks again once Quill Desktop drops the unlock"
+	pcurl "/debug/lock?on=0" >/dev/null
+	tap_any "Cancel" && nap 1
+	tap_desc "Reconnect" && nap 2
 	popen session_A1
 	wait_for 'text="Rename the greeting"' 10
 	nap 2

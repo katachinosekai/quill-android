@@ -53,6 +53,9 @@ type server struct {
 	paused    bool
 	noAPI     bool
 	noHandoff bool
+	lockOn    bool
+	unlockTok string
+	wrongPw   int
 	handoffs  []map[string]any
 	events    []map[string]any
 	nextID    int64
@@ -147,6 +150,28 @@ func fail(w http.ResponseWriter, code int, c string) {
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Quill-Key")), []byte(s.key)) != 1 {
 		fail(w, 403, "forbidden")
+		return
+	}
+	if r.URL.Path == "/debug/lock" {
+		s.mu.Lock()
+		s.lockOn = r.URL.Query().Get("on") == "1"
+		s.unlockTok, s.wrongPw = "", 0
+		s.mu.Unlock()
+		reply(w, 200, map[string]any{})
+		return
+	}
+	if r.URL.Path == "/debug/relock" {
+		s.mu.Lock()
+		s.unlockTok = ""
+		s.mu.Unlock()
+		reply(w, 200, map[string]any{})
+		return
+	}
+	s.mu.Lock()
+	locked := s.lockOn && (s.unlockTok == "" || r.Header.Get("X-Quill-Unlock") != s.unlockTok)
+	s.mu.Unlock()
+	if locked && !strings.HasPrefix(r.URL.Path, "/debug/") && r.URL.Path != "/phone/hello" && r.URL.Path != "/phone/unlock" {
+		fail(w, 401, "locked")
 		return
 	}
 	if r.URL.Path == "/debug/noapi" {
@@ -385,7 +410,24 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if p == "/phone/hello" {
-		reply(w, 200, map[string]any{"phoneId": "a1b2c3d4", "control": s.control, "boot": s.boot, "quill": "9.9.9"})
+		need := s.lockOn && (s.unlockTok == "" || r.Header.Get("X-Quill-Unlock") != s.unlockTok)
+		reply(w, 200, map[string]any{"phoneId": "a1b2c3d4", "control": s.control, "boot": s.boot, "quill": "9.9.9", "unlock": need})
+		return
+	}
+	if p == "/phone/unlock" {
+		if pw, _ := body["password"].(string); pw != "test-password-1" {
+			s.wrongPw++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(403)
+			json.NewEncoder(w).Encode(map[string]any{"v": 1, "error": map[string]any{"code": "wrong_password", "message": fmt.Sprintf("%d of 5 tries", s.wrongPw)}})
+			return
+		}
+		s.unlockTok = fmt.Sprintf("tok%d", time.Now().UnixNano())
+		reply(w, 200, map[string]any{"token": s.unlockTok, "idleMin": 15, "needed": true})
+		return
+	}
+	if p == "/phone/unlock/touch" {
+		reply(w, 200, map[string]any{"ok": true, "idleMin": 15})
 		return
 	}
 	if !s.control {

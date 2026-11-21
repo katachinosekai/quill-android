@@ -201,6 +201,60 @@ public class MainActivity extends Activity {
         syncNotifyBanner();
     }
 
+    android.app.AlertDialog unlockDlg;
+
+    /** Password prompt for Quill Desktop's paired-device lock (only when this device's Password switch is on there). */
+    void unlockDialog() {
+        if (remote == null || isFinishing() || (unlockDlg != null && unlockDlg.isShowing())) {
+            return;
+        }
+        android.widget.EditText pw = new android.widget.EditText(this);
+        pw.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        pw.setHint("Device password");
+        pw.setContentDescription("Device password");
+        pw.setSingleLine(true);
+        TextView msg = label("");
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(20), dp(8), dp(20), 0);
+        col.addView(label("Quill Desktop asks for its device password before it shows sessions here."));
+        col.addView(pw);
+        col.addView(msg);
+        unlockDlg = new android.app.AlertDialog.Builder(this)
+                .setTitle("Unlock Quill Desktop")
+                .setView(col)
+                .setPositiveButton("Unlock", null)
+                .setNegativeButton("Cancel", null)
+                .setCancelable(false)
+                .create();
+        unlockDlg.setOnShowListener(d -> unlockDlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String p = pw.getText().toString();
+            if (p.isEmpty()) {
+                return;
+            }
+            msg.setText("Unlocking…");
+            remote.unlock(p, err -> {
+                if (err.isEmpty()) {
+                    unlockDlg.dismiss();
+                } else {
+                    msg.setText(err);
+                    pw.selectAll();
+                }
+            });
+        }));
+        unlockDlg.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+        unlockDlg.show();
+        pw.requestFocus();
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        if (remote != null) {
+            remote.touch();
+        }
+    }
+
     View updateBanner() {
         updateBanner = new TextView(this);
         updateBanner.setTextColor(0xFF1F1F1D);
@@ -632,6 +686,11 @@ public class MainActivity extends Activity {
                 public void onUnsupported() {
                     prefs.edit().putBoolean("phone.unsupported", true).apply();
                     recreate();
+                }
+
+                @Override
+                public void onLocked() {
+                    unlockDialog();
                 }
             }, appVersion(), openTarget(getIntent()));
         } else {

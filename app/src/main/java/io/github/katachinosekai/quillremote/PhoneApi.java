@@ -48,6 +48,8 @@ final class PhoneApi {
 
     final SharedPreferences prefs;
     final SecureRandom random = new SecureRandom();
+    /** Quill Desktop's paired-device unlock token (POST /phone/unlock), memory only; sent as X-Quill-Unlock. */
+    static volatile String unlockToken;
     SSLContext ctx;
     String ctxFp;
 
@@ -167,6 +169,10 @@ final class PhoneApi {
                 conn.setRequestMethod(method);
                 conn.setRequestProperty("X-Quill-Key", key);
                 conn.setRequestProperty("Accept", "application/json");
+                String unlock = unlockToken;
+                if (unlock != null) {
+                    conn.setRequestProperty("X-Quill-Unlock", unlock);
+                }
                 if (idem != null) {
                     conn.setRequestProperty("Idempotency-Key", idem);
                 }
@@ -233,6 +239,14 @@ final class PhoneApi {
         } catch (JSONException ignored) {
         }
         return o;
+    }
+
+    Reply unlock(String password) {
+        return post("/phone/unlock", obj("password", password));
+    }
+
+    Reply touch() {
+        return post("/phone/unlock/touch", new JSONObject());
     }
 
     Reply hello(String name, String app) {

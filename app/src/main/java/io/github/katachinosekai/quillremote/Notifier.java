@@ -112,6 +112,10 @@ class Notifier {
                 conn.setConnectTimeout(2500);
                 conn.setReadTimeout((waitSeconds + 10) * 1000);
                 conn.setRequestProperty("X-Quill-Key", key);
+                String unlock = PhoneApi.unlockToken;
+                if (unlock != null) {
+                    conn.setRequestProperty("X-Quill-Unlock", unlock);
+                }
                 String body = FolderSync.read(conn);
                 if (body == null) {
                     continue;
