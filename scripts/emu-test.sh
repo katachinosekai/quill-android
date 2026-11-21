@@ -172,6 +172,7 @@ tap_edit() {
 	set -- $b
 	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
 }
+pref_has_any() { adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "$1"; }
 side_on() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' && return 0; tap_text "Sidebar"; nap 2; }
 side_off() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' || return 0; tap_text "Sidebar"; nap 2; }
 bounds_of() { dump | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' '; }
@@ -339,6 +340,20 @@ if [ "$wide" -ge 600 ]; then
 	centered "Open" && ! has 'text="Open in new tab"' && ! has 'text="Close tab"' && ok "sidebar long-press: centered session menu, no tab options" || bad "sidebar long-press: centered session menu, no tab options"
 	adb_ shell input keyevent KEYCODE_BACK
 	nap 1
+	hb=$(dump | tr '>' '\n' | grep -F 'content-desc="Resize session list"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	if [ -n "$hb" ]; then
+		read -r hx1 hy1 hx2 hy2 <<< "$hb"
+		hx=$(((hx1 + hx2) / 2)); hy=$(((hy1 + hy2) / 2))
+		adb_ shell input swipe $hx $hy $((hx - 200)) $hy 2500
+		nap 2
+		DIRTY=1
+		nb=$(dump | tr '>' '\n' | grep -F 'content-desc="Resize session list"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$')
+		[ -n "$nb" ] && [ "$nb" -lt $((hx1 - 100)) ] && pref_has_any 'sideW.portrait' && ok "portrait: hold and drag the edge resizes the session list" || bad "portrait: hold and drag the edge resizes the session list" "$hx1 -> $nb"
+		adb_ shell input swipe $((nb + 5)) $hy $((nb + 205)) $hy 2500
+		nap 2
+	else
+		bad "portrait: hold and drag the edge resizes the session list" "no handle"
+	fi
 	tap_text "Sidebar" && nap 2
 	shot 02-sidebar-closed
 	native_gone 'text="Sessions"' 5 && ok "arrow hides sidebar" || bad "arrow hides sidebar"

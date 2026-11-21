@@ -321,12 +321,95 @@ class SessionBars {
         sideScroll.addView(sideList, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         side = new LinearLayout(a);
         side.setOrientation(LinearLayout.HORIZONTAL);
-        side.addView(sideScroll, new LinearLayout.LayoutParams(a.dp(SIDE_W), ViewGroup.LayoutParams.MATCH_PARENT));
+        side.addView(sideScroll, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        // The edge between the list and the chat; in portrait, hold it and drag to resize the list.
+        android.widget.FrameLayout handle = new android.widget.FrameLayout(a);
+        handle.setBackgroundColor(MainActivity.SIDE);
+        handle.setContentDescription("Resize session list");
         View edge = new View(a);
         edge.setBackgroundColor(0xFF3A3A37);
-        side.addView(edge, new LinearLayout.LayoutParams(a.dp(1), ViewGroup.LayoutParams.MATCH_PARENT));
+        handle.addView(edge, new android.widget.FrameLayout.LayoutParams(a.dp(1), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
+        View grip = new View(a);
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+        g.setColor(0xFF5A5A55);
+        g.setCornerRadius(a.dp(2));
+        grip.setBackground(g);
+        handle.addView(grip, new android.widget.FrameLayout.LayoutParams(a.dp(3), a.dp(36), Gravity.CENTER));
+        handle.setOnTouchListener(resizer());
+        side.addView(handle, new LinearLayout.LayoutParams(a.dp(HANDLE_W), ViewGroup.LayoutParams.MATCH_PARENT));
+        this.handle = handle;
         remote = a.phoneApi != null && a.phoneApi.available();
         loadTabs();
+    }
+
+    static final int HANDLE_W = 10;
+    static final int MIN_SIDE_DP = 160;
+    static final int MIN_CHAT_DP = 160;
+    View handle;
+
+    boolean portrait() {
+        return a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+    }
+
+    int screenW() {
+        return a.getResources().getDisplayMetrics().widthPixels;
+    }
+
+    /** Width the user dragged the list to in portrait (dp), or 0 for the default. */
+    int portraitW() {
+        return portrait() ? prefs.getInt("sideW.portrait", 0) : 0;
+    }
+
+    int clampSide(int px) {
+        int min = a.dp(MIN_SIDE_DP);
+        int max = screenW() - a.dp(MIN_CHAT_DP);
+        return Math.max(min, Math.min(px, Math.max(min, max)));
+    }
+
+    /** True when the open list hides the chat (phones at the default width). */
+    boolean coversChat() {
+        return sideFull() >= screenW() - a.dp(4);
+    }
+
+    /** Portrait only: hold the edge ~0.35 s (a short buzz), then drag left or right; the width is remembered for portrait. */
+    View.OnTouchListener resizer() {
+        boolean[] armed = {false};
+        Runnable[] arm = {null};
+        return (v, e) -> {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    if (!portrait()) {
+                        return false;
+                    }
+                    armed[0] = false;
+                    arm[0] = () -> {
+                        armed[0] = true;
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                        v.setBackgroundColor(0xFF4A3A33);
+                    };
+                    v.postDelayed(arm[0], 350);
+                    return true;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    if (armed[0]) {
+                        int[] at = new int[2];
+                        side.getLocationOnScreen(at);
+                        setSideWidth(clampSide((int) e.getRawX() - at[0] + a.dp(HANDLE_W) / 2));
+                    }
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.removeCallbacks(arm[0]);
+                    if (armed[0]) {
+                        armed[0] = false;
+                        v.setBackgroundColor(MainActivity.SIDE);
+                        int w = side.getWidth();
+                        prefs.edit().putInt("sideW.portrait", Math.round(w / a.getResources().getDisplayMetrics().density)).apply();
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        };
     }
 
     boolean wide() {
@@ -351,13 +434,17 @@ class SessionBars {
 
     /** The folder list: a 300 dp sidebar on wide screens, the whole width on phones (it covers the chat until a session is picked). */
     int sideFull() {
-        return wide() ? a.dp(SIDE_W) + a.dp(1) : a.getResources().getDisplayMetrics().widthPixels;
+        int pw = portraitW();
+        if (pw > 0) {
+            return clampSide(a.dp(pw));
+        }
+        return wide() ? a.dp(SIDE_W) + a.dp(HANDLE_W) : screenW();
     }
 
     /** On phones the folder list closes once a session is picked. */
     void picked(String id) {
         a.openSession(id);
-        if (!wide() && prefs.getBoolean("sideOpen", true)) {
+        if (coversChat() && prefs.getBoolean("sideOpen", true)) {
             toggleSide();
         }
     }
@@ -563,7 +650,7 @@ class SessionBars {
         }
         saveTabs();
         render();
-        if (before != null && current != null && !before.equals(current) && !wide() && prefs.getBoolean("sideOpen", true)) {
+        if (before != null && current != null && !before.equals(current) && coversChat() && prefs.getBoolean("sideOpen", true)) {
             toggleSide();
         }
     }

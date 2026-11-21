@@ -49,6 +49,9 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## After 0.9.12
+- Resize the session list in portrait (user 2026-11-21): the 1 dp divider is now a 10 dp handle (SessionBars `handle`, content-desc "Resize session list", grip in the middle). In portrait, hold it 350 ms (haptic, darker), then drag; width clamps to ≥160 dp list and ≥160 dp chat, saved as `sideW.portrait` (dp) and used by sideFull() in portrait only. Landscape ignores the handle. sideScroll now fills the side (weight 1) so the side width drives everything. On phones the list only auto-closes after a pick while it covers the chat (coversChat), so a narrowed list stays open. emu-test (wide section) drags the handle 200 px and checks the new edge and the pref.
+
 ## 0.9.12 (password field, 2026-11-21)
 - The unlock field showed the password in plain text (user report via Quill 2): `setSingleLine(true)` after `setInputType(...PASSWORD)` replaces the PasswordTransformationMethod with SingleLineTransformationMethod. Now setSingleLine comes first and the transformation is set explicitly; a "Show password" checkbox swaps it off/on (keeps the cursor). emu-test checks the text isn't in the UI dump and the toggle exists (the dump hides password inputs anyway, so the check is weak; the fix itself is the call order).
 
