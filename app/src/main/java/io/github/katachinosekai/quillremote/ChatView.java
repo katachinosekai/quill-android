@@ -236,7 +236,30 @@ final class ChatView extends LinearLayout {
         box.setImeOptions(EditorInfo.IME_ACTION_SEND);
         box.setPadding(dp(14), dp(10), dp(14), dp(10));
         box.setBackground(round(USER_BG, 14));
+        // Double-tap (two taps within 0.6 s, close together) fills in the suggestion; a bit more forgiving than Android's 0.3 s.
+        long[] lastTap = {0};
+        float[] lastXY = {0, 0};
+        box.setOnTouchListener((v, e) -> {
+            if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP) {
+                long now = e.getEventTime();
+                boolean near = Math.abs(e.getX() - lastXY[0]) < dp(48) && Math.abs(e.getY() - lastXY[1]) < dp(48);
+                if (now - lastTap[0] < 600 && near && takeSuggestion()) {
+                    lastTap[0] = 0;
+                } else {
+                    lastTap[0] = now;
+                    lastXY[0] = e.getX();
+                    lastXY[1] = e.getY();
+                }
+            }
+            return false;
+        });
         box.setOnKeyListener((v, code, e) -> {
+            if (code == KeyEvent.KEYCODE_TAB && !e.isShiftPressed() && !suggestion.isEmpty() && box.getText().length() == 0) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                    takeSuggestion();
+                }
+                return true;
+            }
             if ((code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) && !e.isShiftPressed()) {
                 if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
                     submit();
@@ -312,6 +335,32 @@ final class ChatView extends LinearLayout {
     }
 
     boolean readOnly;
+    /** Claude Code's prompt suggestion for the open session (Quill Desktop's ghost text); shown as the hint while the box is empty. */
+    String suggestion = "";
+
+    void setSuggestion(String s) {
+        s = s == null ? "" : s.trim();
+        if (s.equals(suggestion)) {
+            return;
+        }
+        suggestion = s;
+        syncHint();
+    }
+
+    void syncHint() {
+        box.setHint(readOnly ? "Read only  ·  turn on device control in Quill Desktop" : suggestion.isEmpty() ? "Message Quill" : suggestion);
+        box.setContentDescription(suggestion.isEmpty() || readOnly ? "Message box" : "Message box, suggestion: " + suggestion);
+    }
+
+    /** Tab (hardware keyboard) or a double-tap fills in the suggestion while the box is empty; it is sent like any typed text. */
+    boolean takeSuggestion() {
+        if (readOnly || suggestion.isEmpty() || box.getText().length() > 0) {
+            return false;
+        }
+        box.setText(suggestion);
+        box.setSelection(box.getText().length());
+        return true;
+    }
 
     void setReadOnly(boolean ro) {
         if (ro == readOnly) {
@@ -319,7 +368,7 @@ final class ChatView extends LinearLayout {
         }
         readOnly = ro;
         box.setEnabled(!ro);
-        box.setHint(ro ? "Read only  ·  turn on device control in Quill Desktop" : "Message Quill");
+        syncHint();
         box.setAlpha(ro ? 0.6f : 1f);
         send.setEnabled(!ro);
         send.setAlpha(ro ? 0.35f : 1f);

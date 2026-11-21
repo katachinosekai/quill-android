@@ -258,6 +258,46 @@ public class MainActivity extends Activity {
         pw.requestFocus();
     }
 
+    float swX, swY;
+    long swT;
+    boolean swOn;
+
+    /** Swipe sideways anywhere (user 2026-11-21): right opens the session list, left closes it. The edge strip still works on its own. */
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent e) {
+        if (bars != null && bars.vertical) {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN: {
+                    swX = e.getRawX();
+                    swY = e.getRawY();
+                    swT = e.getEventTime();
+                    android.graphics.Rect r = new android.graphics.Rect();
+                    swOn = bars.handle == null || !bars.handle.getGlobalVisibleRect(r) || !r.contains((int) swX, (int) swY);
+                    break;
+                }
+                case android.view.MotionEvent.ACTION_POINTER_DOWN:
+                    swOn = false;
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                    if (swOn) {
+                        float dx = e.getRawX() - swX;
+                        float dy = e.getRawY() - swY;
+                        if (Math.abs(dx) >= dp(90) && Math.abs(dy) < Math.abs(dx) * 0.5f && e.getEventTime() - swT < 800) {
+                            boolean open = prefs.getBoolean("sideOpen", true);
+                            if (dx > 0 != open) {
+                                bars.toggleSide();
+                            }
+                        }
+                    }
+                    swOn = false;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return super.dispatchTouchEvent(e);
+    }
+
     @Override
     public void onUserInteraction() {
         super.onUserInteraction();
@@ -325,6 +365,8 @@ public class MainActivity extends Activity {
     @Override
     public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);
+        syncOrientBtn();
+        syncTitle();
         if (bars != null) {
             bars.applyMode(false);
             inject();
@@ -589,6 +631,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("quill", MODE_PRIVATE);
+        applyOrientation();
         debuggable = (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         skin = asset("quill.js");
 
@@ -598,6 +641,18 @@ public class MainActivity extends Activity {
 
         phoneApi = new PhoneApi(prefs);
         root.addView(bar(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        sessionBar = new TextView(this);
+        sessionBar.setTextColor(TEXT);
+        sessionBar.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        sessionBar.setTypeface(Typeface.DEFAULT_BOLD);
+        sessionBar.setSingleLine(true);
+        sessionBar.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        sessionBar.setGravity(Gravity.CENTER);
+        sessionBar.setPadding(dp(16), 0, dp(16), 0);
+        sessionBar.setBackgroundColor(SIDE);
+        sessionBar.setVisibility(View.GONE);
+        sessionBar.setOnClickListener(v -> toggleSessions());
+        root.addView(sessionBar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
         bars = new SessionBars(this, prefs);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.HORIZONTAL);
@@ -834,7 +889,8 @@ public class MainActivity extends Activity {
         sideArrow.setOnClickListener(v -> toggleSessions());
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(42), dp(36));
         ap.setMargins(0, 0, dp(3), 0);
-        left.addView(sideArrow, ap);
+        // The arrow is gone (user 2026-11-21): tap or drag the session list's edge strip instead.
+        sideArrow.setVisibility(View.GONE);
         centerBtn = button("≡", "Center everything", v -> {
             boolean all = centerCount() < CENTER_KEYS.length;
             SharedPreferences.Editor e = prefs.edit();
@@ -846,6 +902,23 @@ public class MainActivity extends Activity {
             inject();
         });
         left.addView(centerBtn);
+        // Landscape/Portrait (user 2026-11-21): shows the current orientation; tap turns the screen and keeps it there, long-press follows auto-rotate again.
+        orientBtn = button("Portrait", "Switch screen orientation", v -> {
+            boolean land = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            prefs.edit().putString("orientation", land ? "portrait" : "landscape").apply();
+            applyOrientation();
+        });
+        orientBtn.setOnLongClickListener(v -> {
+            prefs.edit().putString("orientation", "auto").apply();
+            applyOrientation();
+            toast("Following the phone's auto-rotate again.");
+            return true;
+        });
+        orientBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        orientBtn.setPadding(dp(10), 0, dp(10), 0);
+        orientBtn.getLayoutParams().width = LinearLayout.LayoutParams.WRAP_CONTENT;
+        left.addView(orientBtn);
+        syncOrientBtn();
         bar.addView(left, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.CENTER_VERTICAL));
 
         LinearLayout mid = new LinearLayout(this);
@@ -854,6 +927,7 @@ public class MainActivity extends Activity {
         icon.setImageResource(R.drawable.icon);
         mid.addView(icon, new LinearLayout.LayoutParams(dp(26), dp(26)));
         TextView title = new TextView(this);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         title.setText("Quill");
         title.setTextColor(TEXT);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
@@ -883,6 +957,12 @@ public class MainActivity extends Activity {
         }
         bar.addView(right, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END | Gravity.CENTER_VERTICAL));
         bar.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            // A session title may be long: let it use the space between the button groups (centered), ellipsized.
+            int half = Math.min(bar.getWidth() / 2 - left.getRight(), right.getLeft() - bar.getWidth() / 2);
+            int maxTitle = Math.max(dp(40), 2 * half - dp(26) - dp(16));
+            if (title.getMaxWidth() != maxTitle) {
+                title.post(() -> title.setMaxWidth(maxTitle));
+            }
             int need = mid.getMeasuredWidth();
             int room = right.getLeft() - left.getRight();
             int center = (bar.getWidth() - need) / 2;
@@ -1211,6 +1291,49 @@ public class MainActivity extends Activity {
         c.setSingleLine(true);
         c.setEllipsize(android.text.TextUtils.TruncateAt.END);
         return c;
+    }
+
+    TextView orientBtn;
+
+    TextView sessionBar;
+
+    /** Portrait with the session list fully closed: a slim bar under the top bar shows the open session's title (tap opens the list). */
+    void syncTitle() {
+        if (sessionBar == null || bars == null) {
+            return;
+        }
+        String t = "";
+        if (bars.portrait() && !prefs.getBoolean("sideOpen", true) && bars.current != null) {
+            SessionBars.Item it = bars.item(bars.current);
+            if (it != null) {
+                t = it.title.trim();
+            }
+        }
+        if (!t.contentEquals(sessionBar.getText())) {
+            sessionBar.setText(t);
+            sessionBar.setContentDescription(t.isEmpty() ? null : "Open session: " + t);
+        }
+        sessionBar.setVisibility(t.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    void applyOrientation() {
+        switch (prefs.getString("orientation", "auto")) {
+            case "portrait":
+                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+                break;
+            case "landscape":
+                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                break;
+            default:
+                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        }
+    }
+
+    void syncOrientBtn() {
+        if (orientBtn != null) {
+            boolean land = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            orientBtn.setText(land ? "Landscape" : "Portrait");
+        }
     }
 
     TextView button(String label, String desc, View.OnClickListener onTap) {

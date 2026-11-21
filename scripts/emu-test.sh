@@ -173,8 +173,8 @@ tap_edit() {
 	adb_ shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
 }
 pref_has_any() { adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "$1"; }
-side_on() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' && return 0; tap_text "Sidebar"; nap 2; }
-side_off() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' || return 0; tap_text "Sidebar"; nap 2; }
+side_on() { native 'text="Sessions"' && return 0; tap_text "Session list edge"; nap 2; wait_for 'text="Sessions"' 5; }
+side_off() { [ "$(width_dp)" -lt 600 ] || return 0; native 'text="Sessions"' || return 0; tap_text "Session list edge"; nap 2; }
 bounds_of() { dump | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' '; }
 lpress() {
 	local b
@@ -333,23 +333,24 @@ wide=$(width_dp)
 log "screen width ${wide}dp"
 if [ "$wide" -ge 600 ]; then
 	wait_for 'text="Fix edits"' 20 && ok "vertical sidebar lists sessions" || bad "vertical sidebar lists sessions"
-	has 'content-desc="Sidebar"' && ok "sidebar arrow shown" || bad "sidebar arrow shown"
+	has 'content-desc="Sidebar"' && bad "no arrow button (the list edge replaces it)" || ok "no arrow button (the list edge replaces it)"
+	has 'content-desc="Session list edge"' && ok "session list edge shown" || bad "session list edge shown"
 	tap_text "Zomboid launcher" && nap 3
 	adb_ shell dumpsys activity top | grep -q "$PKG" && ok "open session from sidebar" || bad "open session from sidebar"
 	lpress "Fix edits" && nap 2
 	centered "Open" && ! has 'text="Open in new tab"' && ! has 'text="Close tab"' && ok "sidebar long-press: centered session menu, no tab options" || bad "sidebar long-press: centered session menu, no tab options"
 	adb_ shell input keyevent KEYCODE_BACK
 	nap 1
-	hb=$(dump | tr '>' '\n' | grep -F 'content-desc="Resize session list"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	hb=$(dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
 	if [ -n "$hb" ]; then
 		read -r hx1 hy1 hx2 hy2 <<< "$hb"
 		hx=$(((hx1 + hx2) / 2)); hy=$(((hy1 + hy2) / 2))
 		adb_ shell input swipe $hx $hy $((hx - 200)) $hy 2500
 		nap 2
 		DIRTY=1
-		nb=$(dump | tr '>' '\n' | grep -F 'content-desc="Resize session list"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$')
+		nb=$(dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$')
 		[ -n "$nb" ] && [ "$nb" -lt $((hx1 - 100)) ] && pref_has_any 'sideW.portrait' && ok "portrait: hold and drag the edge resizes the session list" || bad "portrait: hold and drag the edge resizes the session list" "$hx1 -> $nb"
-		hpos() { DIRTY=1; dump | tr '>' '\n' | grep -F 'content-desc="Resize session list"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$'; }
+		hpos() { DIRTY=1; dump | tr '>' '\n' | grep -F 'content-desc="Session list edge"' | head -1 | grep -o 'bounds="\[[0-9]*' | grep -o '[0-9]*$'; }
 		adb_ shell input swipe $((nb + 5)) $hy 2 $hy 2500
 		nap 2
 		cb=$(hpos)
@@ -359,16 +360,26 @@ if [ "$wide" -ge 600 ]; then
 		nap 2
 		fb=$(hpos)
 		[ -n "$fb" ] && [ "$fb" -gt $((sw - 80)) ] && pref_has_any 'name="sideOpen" value="true"' && ok "portrait: drag to the right edge opens the list fully" || bad "portrait: drag to the right edge opens the list fully" "edge at $fb of $sw"
-		adb_ shell input swipe $((fb + 5)) $hy $hx $hy 2500
+		adb_ shell input swipe $((fb + 5)) $hy $hx $hy 600
 		nap 2
+		tb=$(hpos)
+		adb_ shell input tap $((tb + 10)) $hy
+		nap 2
+		cb=$(hpos)
+		[ -n "$cb" ] && [ "$cb" -lt 40 ] && ok "portrait: tapping the edge closes the list" || bad "portrait: tapping the edge closes the list" "edge at $cb"
+		adb_ shell input tap 15 $hy
+		nap 2
+		ob=$(hpos)
+		[ -n "$ob" ] && [ "$ob" -gt 200 ] && ok "portrait: tapping the closed edge opens it again (quick drag works too)" || bad "portrait: tapping the closed edge opens it again (quick drag works too)" "edge at $ob"
 	else
 		bad "portrait: hold and drag the edge resizes the session list" "no handle"
 	fi
-	tap_text "Sidebar" && nap 2
+	tap_text "Session list edge" && nap 2
 	shot 02-sidebar-closed
-	native_gone 'text="Sessions"' 5 && ok "arrow hides sidebar" || bad "arrow hides sidebar"
-	tap_text "Sidebar" && nap 2
-	wait_for 'text="Sessions"' 5 && ok "arrow shows sidebar" || bad "arrow shows sidebar"
+	native_gone 'text="Sessions"' 5 && ok "tapping the edge hides the list" || bad "tapping the edge hides the list"
+	has 'content-desc="Session list edge"' && ok "closed list keeps its edge" || bad "closed list keeps its edge"
+	tap_text "Session list edge" && nap 2
+	wait_for 'text="Sessions"' 5 && ok "tapping the edge shows the list" || bad "tapping the edge shows the list"
 fi
 
 if [ "$AVD" = qfold ] && [ -z "$DEVICE" ]; then
@@ -389,12 +400,12 @@ if [ "$AVD" = qfold ] && [ -z "$DEVICE" ]; then
 fi
 
 if [ "$(width_dp)" -lt 600 ]; then
-	has 'content-desc="Sidebar"' && ok "top-left arrow on phone" || bad "top-left arrow on phone"
-	native 'text="Sessions"' || { tap_text "Sidebar"; nap 2; }
+	has 'content-desc="Session list edge"' && ok "phone: list edge instead of the arrow" || bad "phone: list edge instead of the arrow"
+	native 'text="Sessions"' || { tap_text "Session list edge"; nap 2; }
 	wait_for 'text="Unsorted idea"' 15 && ok "phone: folder list with its sessions" || bad "phone: folder list with its sessions"
 	shot 04-folder-list
 	has 'Close tab' && bad "phone: no tabs" || ok "phone: no tabs"
-	has 'text="Landscape"' && bad "phone: no Landscape/Portrait button" || ok "phone: no Landscape/Portrait button"
+	has 'content-desc="Switch screen orientation"' && has 'text="Portrait"' && ok "phone: Landscape/Portrait button shows Portrait" || bad "phone: Landscape/Portrait button shows Portrait"
 	lpress "Unsorted idea" && nap 2
 	centered "Open" && ! has 'text="Open in new tab"' && ok "phone: long-press opens a centered session menu" || bad "phone: long-press opens a centered session menu"
 	adb_ shell input keyevent KEYCODE_BACK
@@ -405,7 +416,33 @@ if [ "$(width_dp)" -lt 600 ]; then
 	nap 1
 	tap_text "Unsorted idea" && nap 2
 	native_gone 'text="Sessions"' 8 && ok "phone: picking a session closes the list" || bad "phone: picking a session closes the list"
+	wait_for 'content-desc="Open session: ' 8 && has 'text="Quill"' && ok "phone: session name bar under the top bar while the list is closed" || bad "phone: session name bar under the top bar while the list is closed"
+	rot() { adb_ shell dumpsys window displays | grep -m1 -o 'mCurrentRotation=ROTATION_[0-9]*' | grep -o '[0-9]*$'; }
+	tap_text "Switch screen orientation" && nap 3
+	r1=$(rot)
+	wait_for 'text="Landscape"' 8 && [ "$r1" = 90 -o "$r1" = 270 ] && ok "phone: orientation button turns to landscape" || bad "phone: orientation button turns to landscape" "rotation $r1"
+	gone 'content-desc="Open session: ' 5 && ok "phone: no session name bar in landscape" || bad "phone: no session name bar in landscape"
+	tap_text "Switch screen orientation" && nap 3
+	wait_for 'text="Portrait"' 8 && [ "$(rot)" = 0 ] && ok "phone: orientation button turns back to portrait" || bad "phone: orientation button turns back to portrait" "rotation $(rot)"
+	lpress "Portrait" && nap 2
+	pref_has_any 'name="orientation">auto<' && ok "phone: long-press follows auto-rotate again" || bad "phone: long-press follows auto-rotate again"
 	adb_ shell input tap 10 10 >/dev/null
+fi
+
+scr() { local size w h; size=$(adb_ shell wm size | tail -1 | awk '{print $3}'); w=${size%x*}; h=${size#*x}; case "$(adb_ shell dumpsys window displays | grep -m1 -o 'mCurrentRotation=ROTATION_[0-9]*')" in *_90|*_270) echo "$h $w" ;; *) echo "$w $h" ;; esac; }
+read -r SW SH <<< "$(scr)"
+swipe_l() { adb_ shell input swipe $((SW * 4 / 5)) $((SH / 2)) $((SW / 4)) $((SH / 2)) 250; nap 2; }
+swipe_r() { adb_ shell input swipe $((SW / 4)) $((SH / 2)) $((SW * 4 / 5)) $((SH / 2)) 250; nap 2; }
+if native 'text="Sessions"'; then
+	swipe_l
+	native_gone 'text="Sessions"' 5 && ok "swipe left anywhere closes the list" || bad "swipe left anywhere closes the list"
+	swipe_r
+	wait_for 'text="Sessions"' 5 && ok "swipe right anywhere opens the list" || bad "swipe right anywhere opens the list"
+else
+	swipe_r
+	wait_for 'text="Sessions"' 5 && ok "swipe right anywhere opens the list" || bad "swipe right anywhere opens the list"
+	swipe_l
+	native_gone 'text="Sessions"' 5 && ok "swipe left anywhere closes the list" || bad "swipe left anywhere closes the list"
 fi
 
 for j in Artifacts Customize More Scheduled "Edit sidebar"; do has "text=\"$j\"" && bad "hidden: $j" || ok "hidden: $j"; done
@@ -699,6 +736,7 @@ if [ -n "${PPORT:-}" ]; then
 	pcurl() { curl -sk -H "X-Quill-Key: $PKEY" "https://127.0.0.1:$PPORT$1"; }
 	plog() { pcurl /debug/log; }
 	wait_log() { local i; for i in $(seq 1 40); do plog | grep -q "$1" && return 0; sleep 0.25; done; return 1; }
+	ime_off() { adb_ shell dumpsys input_method | grep -q 'mInputShown=true' && adb_ shell input keyevent KEYCODE_BACK && nap 1; }
 	popen() { adb_ shell am start -W -f 0x24000000 -n "$PKG/$ACT" --es quill.openQuill "$1" >/dev/null 2>&1; }
 	pnotif() { adb_ shell dumpsys notification --noredact 2>/dev/null | grep -c -F "$1"; }
 	pref_has() { adb_ shell run-as "$PKG" cat shared_prefs/quill.xml 2>/dev/null | grep -q "$1"; }
@@ -722,6 +760,27 @@ if [ -n "${PPORT:-}" ]; then
 	echo "$U_SEEN" | grep -q 'tok · ctx 23%' && echo "$U_SEEN" | grep -q 'Today 5.6M · 7d 42.0M' && echo "$U_SEEN" | grep -q '"available"' && ok "remote: usage shows This session, All sessions, credits" || bad "remote: usage shows This session, All sessions, credits" "$U_SEEN"
 	side_off
 	has 'content-desc="New session"' && ok "remote: + New session in the top bar" || bad "remote: + New session in the top bar"
+	popen session_A1
+	wait_for 'text="Rename the greeting"' 10
+	pcurl "/debug/suggest?id=session_A1&text=Run%20the%20tests" >/dev/null
+	wait_for 'suggestion: Run the tests' 10 && ok "remote: prompt suggestion shown in the empty box" || bad "remote: prompt suggestion shown in the empty box"
+	tap_edit && nap 1
+	adb_ shell input keyevent KEYCODE_TAB
+	nap 1
+	adb_ shell input keyevent KEYCODE_ENTER
+	wait_log 'session_A1/send[^,]*Run the tests' && ok "remote: Tab fills in the suggestion" || bad "remote: Tab fills in the suggestion"
+	nap 2
+	eb=$(dump | tr '>' '\n' | grep -F 'class="android.widget.EditText"' | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]*' | tr '\n' ' ')
+	if [ -n "$eb" ]; then
+		read -r ex1 ey1 ex2 ey2 <<< "$eb"
+		adb_ shell "input tap $(((ex1 + ex2) / 2)) $(((ey1 + ey2) / 2)); input tap $(((ex1 + ex2) / 2)) $(((ey1 + ey2) / 2))"
+		nap 1
+		adb_ shell input keyevent KEYCODE_ENTER
+	fi
+	for i in $(seq 1 40); do [ "$(plog | grep -o 'session_A1/send[^,]*Run the tests' | wc -l)" -ge 2 ] && break; sleep 0.25; done
+	[ "$(plog | grep -o 'session_A1/send[^,]*Run the tests' | wc -l)" -ge 2 ] && ok "remote: double-tap fills in the suggestion" || bad "remote: double-tap fills in the suggestion"
+	pcurl "/debug/suggest?id=session_A1&text=" >/dev/null
+	ime_off
 	has 'Edit main.go' && ok "remote: tool row" || bad "remote: tool row"
 	adb_ shell cmd statusbar collapse >/dev/null 2>&1
 	tap_edit && nap 1
@@ -822,14 +881,14 @@ if [ -n "${PPORT:-}" ]; then
 	nap 1
 	pcurl "/debug/nohandoffs?on=0" >/dev/null
 	tap_any() { tap_text "$(echo "$1" | tr '[:lower:]' '[:upper:]')" >/dev/null 2>&1 || tap_text "$1" >/dev/null 2>&1; }
-	ime_off() { adb_ shell dumpsys input_method | grep -q 'mInputShown=true' && adb_ shell input keyevent KEYCODE_BACK && nap 1; }
 	side_on
 	lpress "Zomboid launcher" && nap 2
 	wait_for 'text="Rename..."' 5 && has 'text="End session"' && has 'text="Delete session..."' && ! has 'text="Set archive"' && ! has 'text="Move to folder..."' && ! has 'kmem name...' \
 		&& ok "remote: long-press menu has Quill Desktop's session actions" || bad "remote: long-press menu has Quill Desktop's session actions"
 	centered "End session" && ok "remote: session menu is centered" || bad "remote: session menu is centered"
-	tap_text "Rename..." && nap 2
-	tap_edit && nap 1
+	if ! tap_text "Rename..."; then bad "remote: rename from the menu" "menu did not open"; fi
+	nap 2
+	wait_for 'text="Rename session"' 5 && tap_edit && nap 1
 	adb_ shell input keyevent KEYCODE_MOVE_END
 	for i in $(seq 1 20); do adb_ shell input keyevent KEYCODE_DEL; done
 	adb_ shell input text "Launcher%s2"

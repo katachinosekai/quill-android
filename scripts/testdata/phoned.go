@@ -29,7 +29,7 @@ type item map[string]any
 
 type session struct {
 	ID, Title, Folder, Group, Status string
-	Kmem, Orig                       string
+	Kmem, Orig, Suggest              string
 	Epoch                            int
 	Rev                              int64
 	Items                            []item
@@ -97,6 +97,9 @@ func (s *server) sessionJSON(x *session) map[string]any {
 		m["renamed"] = true
 	}
 	m["project"] = x.Group
+	if x.Suggest != "" {
+		m["suggestion"] = x.Suggest
+	}
 	return m
 }
 
@@ -361,6 +364,17 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		defer s.mu.Unlock()
 		s.paused = q.Get("on") == "1"
 		s.emit(map[string]any{"type": "usage", "usage": s.usage()})
+		reply(w, 200, map[string]any{})
+	case p == "/debug/suggest":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		x.Suggest = q.Get("text")
+		s.touch(x, nil)
 		reply(w, 200, map[string]any{})
 	case p == "/debug/event":
 		s.mu.Lock()

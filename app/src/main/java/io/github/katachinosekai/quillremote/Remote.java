@@ -462,6 +462,7 @@ final class Remote implements ChatView.Actions {
 
     void statusLine(JSONObject s) {
         chat.setReadOnly(!control);
+        chat.setSuggestion(s == null ? "" : s.optString("suggestion"));
         if (s == null) {
             chat.setBusy(false, null);
             return;

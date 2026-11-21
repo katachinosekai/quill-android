@@ -325,7 +325,7 @@ class SessionBars {
         // The edge between the list and the chat; in portrait, hold it and drag to resize the list.
         android.widget.FrameLayout handle = new android.widget.FrameLayout(a);
         handle.setBackgroundColor(MainActivity.SIDE);
-        handle.setContentDescription("Resize session list");
+        handle.setContentDescription("Session list edge");
         View edge = new View(a);
         edge.setBackgroundColor(0xFF3A3A37);
         handle.addView(edge, new android.widget.FrameLayout.LayoutParams(a.dp(1), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
@@ -334,15 +334,16 @@ class SessionBars {
         g.setColor(0xFF5A5A55);
         g.setCornerRadius(a.dp(2));
         grip.setBackground(g);
-        handle.addView(grip, new android.widget.FrameLayout.LayoutParams(a.dp(3), a.dp(36), Gravity.CENTER));
+        handle.addView(grip, new android.widget.FrameLayout.LayoutParams(a.dp(5), a.dp(56), Gravity.CENTER));
         handle.setOnTouchListener(resizer());
         side.addView(handle, new LinearLayout.LayoutParams(a.dp(HANDLE_W), ViewGroup.LayoutParams.MATCH_PARENT));
         this.handle = handle;
+        excludeGestures();
         remote = a.phoneApi != null && a.phoneApi.available();
         loadTabs();
     }
 
-    static final int HANDLE_W = 10;
+    static final int HANDLE_W = 18;
     static final int MIN_SIDE_DP = 160;
     static final int MIN_CHAT_DP = 160;
     static final int SNAP_DP = 100;
@@ -373,24 +374,29 @@ class SessionBars {
     }
 
     /** Portrait only: hold the edge ~0.35 s (a short buzz), then drag left or right; the width is remembered for portrait. */
+    /** Portrait: drag the edge sideways (starts right away, or after a short hold), or tap it to open/close. Width remembered for portrait. */
     View.OnTouchListener resizer() {
         boolean[] armed = {false};
+        float[] down = {0, 0};
         Runnable[] arm = {null};
+        int slop = android.view.ViewConfiguration.get(a).getScaledTouchSlop();
         return (v, e) -> {
             switch (e.getActionMasked()) {
                 case android.view.MotionEvent.ACTION_DOWN:
-                    if (!portrait()) {
-                        return false;
-                    }
                     armed[0] = false;
-                    arm[0] = () -> {
-                        armed[0] = true;
-                        v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
-                        v.setBackgroundColor(0xFF4A3A33);
-                    };
-                    v.postDelayed(arm[0], 350);
+                    down[0] = e.getRawX();
+                    down[1] = e.getRawY();
+                    v.getParent().requestDisallowInterceptTouchEvent(true);
+                    arm[0] = () -> startDrag(v, armed);
+                    if (portrait()) {
+                        v.postDelayed(arm[0], 200);
+                    }
                     return true;
                 case android.view.MotionEvent.ACTION_MOVE:
+                    if (!armed[0] && portrait() && Math.abs(e.getRawX() - down[0]) > slop && Math.abs(e.getRawX() - down[0]) > Math.abs(e.getRawY() - down[1])) {
+                        v.removeCallbacks(arm[0]);
+                        startDrag(v, armed);
+                    }
                     if (armed[0]) {
                         int[] at = new int[2];
                         side.getLocationOnScreen(at);
@@ -401,33 +407,63 @@ class SessionBars {
                 case android.view.MotionEvent.ACTION_UP:
                 case android.view.MotionEvent.ACTION_CANCEL:
                     v.removeCallbacks(arm[0]);
-                    if (armed[0]) {
-                        armed[0] = false;
-                        v.setBackgroundColor(MainActivity.SIDE);
-                        int w = side.getWidth();
-                        float d = a.getResources().getDisplayMetrics().density;
-                        SharedPreferences.Editor ed = prefs.edit();
-                        if (w < a.dp(SNAP_DP)) {
-                            // Dragged to the left edge: closed (the last width is kept for the next open).
-                            ed.putBoolean("sideOpen", false);
-                            setSideWidth(0);
-                        } else if (w > screenW() - a.dp(SNAP_DP)) {
-                            // Dragged to the right edge: the list fills the screen.
-                            ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(screenW() / d));
-                            setSideWidth(screenW());
-                        } else {
-                            int c = clampSide(w);
-                            ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(c / d));
-                            setSideWidth(c);
+                    if (!armed[0]) {
+                        if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP && Math.abs(e.getRawX() - down[0]) <= slop) {
+                            toggleSide();
                         }
-                        ed.apply();
-                        syncArrow();
+                        return true;
                     }
+                    armed[0] = false;
+                    v.setBackgroundColor(MainActivity.SIDE);
+                    int w = side.getWidth();
+                    float d = a.getResources().getDisplayMetrics().density;
+                    SharedPreferences.Editor ed = prefs.edit();
+                    if (w < a.dp(SNAP_DP)) {
+                        // Dragged to the left edge: closed (the last width is kept for the next open).
+                        ed.putBoolean("sideOpen", false);
+                        setSideWidth(0);
+                    } else if (w > screenW() - a.dp(SNAP_DP)) {
+                        // Dragged to the right edge: the list fills the screen.
+                        ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(screenW() / d));
+                        setSideWidth(screenW());
+                    } else {
+                        int c = clampSide(w);
+                        ed.putBoolean("sideOpen", true).putInt("sideW.portrait", Math.round(c / d));
+                        setSideWidth(c);
+                    }
+                    ed.apply();
+                    syncArrow();
+                    a.syncTitle();
                     return true;
                 default:
                     return true;
             }
         };
+    }
+
+    void startDrag(View v, boolean[] armed) {
+        if (armed[0]) {
+            return;
+        }
+        armed[0] = true;
+        if (sideAnim != null) {
+            sideAnim.cancel();
+        }
+        v.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+        v.setBackgroundColor(0xFF4A3A33);
+    }
+
+    /** Keep Android's back-swipe from taking touches on the grip (it sits on the screen edge when the list is closed). */
+    void excludeGestures() {
+        if (android.os.Build.VERSION.SDK_INT < 29 || handle == null) {
+            return;
+        }
+        handle.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int h = b - t;
+            int band = Math.min(h, a.dp(200));
+            int top = Math.max(0, (h - band) / 2);
+            v.setSystemGestureExclusionRects(java.util.Collections.singletonList(new android.graphics.Rect(0, top, r - l, top + band)));
+        });
     }
 
     boolean wide() {
@@ -442,7 +478,7 @@ class SessionBars {
             sideAnim.cancel();
         }
         setSideWidth(vertical && prefs.getBoolean("sideOpen", true) ? sideFull() : 0);
-        a.sideArrow.setVisibility(View.VISIBLE);
+
         syncArrow();
         render();
         if (changed) {
@@ -472,8 +508,8 @@ class SessionBars {
         if (lp == null) {
             return;
         }
-        // In portrait a closed list keeps its edge strip, so it can be dragged open again.
-        if (portrait() && vertical && w < a.dp(HANDLE_W)) {
+        // A closed list keeps its edge strip (tap opens it; in portrait it can also be dragged open).
+        if (vertical && w < a.dp(HANDLE_W)) {
             w = a.dp(HANDLE_W);
         }
         lp.width = w;
@@ -488,6 +524,7 @@ class SessionBars {
         boolean open = !prefs.getBoolean("sideOpen", true);
         prefs.edit().putBoolean("sideOpen", open).apply();
         syncArrow();
+        a.syncTitle();
         int full = sideFull();
         int from = side.getVisibility() == View.VISIBLE ? side.getWidth() : 0;
         if (sideAnim != null) {
@@ -777,6 +814,7 @@ class SessionBars {
         if (vertical) {
             renderSide(groups);
         }
+        a.syncTitle();
     }
 
     View tabChip(String id, String title, boolean active) {
