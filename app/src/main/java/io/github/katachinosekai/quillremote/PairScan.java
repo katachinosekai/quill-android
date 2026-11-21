@@ -79,7 +79,7 @@ public class PairScan extends Activity implements SurfaceHolder.Callback {
         int pad = dp(14);
         bar.setPadding(pad, pad, pad, pad);
         hint = new TextView(this);
-        hint.setText("Point the camera at the QR code in Quill → Settings → Pair phone");
+        hint.setText("Point the camera at the QR code from the Phone button in the Quill Desktop top bar");
         hint.setTextColor(0xffeceae3);
         hint.setTextSize(16);
         hint.setGravity(Gravity.CENTER);
@@ -113,7 +113,7 @@ public class PairScan extends Activity implements SurfaceHolder.Callback {
         if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) {
             open();
         } else {
-            hint.setText("Quill needs the camera to scan the pairing code. Allow it in Android settings, or use Paste pairing link.");
+            hint.setText("Quill Android needs the camera to scan the pairing code. Allow it in Android settings, or use Paste pairing link.");
         }
     }
 
@@ -309,7 +309,7 @@ public class PairScan extends Activity implements SurfaceHolder.Callback {
             long now = System.currentTimeMillis();
             if (now - wrongAt > 3000) {
                 wrongAt = now;
-                runOnUiThread(() -> hint.setText("That QR code isn't a Quill pairing code. Use the one in Quill → Settings → Pair phone."));
+                runOnUiThread(() -> hint.setText("That QR code isn't a Quill Desktop pairing code. Use the one from the Phone button in the Quill Desktop top bar."));
             }
             return;
         }

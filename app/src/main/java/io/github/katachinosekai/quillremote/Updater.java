@@ -134,7 +134,7 @@ class Updater {
                 if (res != null && newer(res.version, current())) {
                     listener.onUpdate(res);
                 } else if (manual) {
-                    listener.onMessage(msg != null ? "Update check failed: " + msg : "Quill for Android " + current() + " is up to date");
+                    listener.onMessage(msg != null ? "Update check failed: " + msg : "Quill Android " + current() + " is up to date");
                 }
             });
         });
@@ -199,7 +199,7 @@ class Updater {
             return;
         }
         if (!a.getPackageManager().canRequestPackageInstalls()) {
-            listener.onMessage("Allow Quill to install updates, then tap Update again");
+            listener.onMessage("Allow Quill Android to install updates, then tap Update again");
             a.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + a.getPackageName())));
             return;
         }
@@ -286,7 +286,7 @@ class Updater {
         PackageManager pm = a.getPackageManager();
         PackageInfo got = pm.getPackageArchiveInfo(f.getPath(), PackageManager.GET_SIGNING_CERTIFICATES);
         if (got == null || got.signingInfo == null) {
-            throw new IOException("not a valid Quill APK");
+            throw new IOException("not a valid Quill Android APK");
         }
         if (!a.getPackageName().equals(got.packageName)) {
             throw new IOException("APK is for a different app");
@@ -296,7 +296,7 @@ class Updater {
             throw new IOException("APK is not newer than the installed app");
         }
         if (!certs(mine).equals(certs(got)) || certs(got).isEmpty()) {
-            throw new IOException("APK is not signed by the Quill for Android key");
+            throw new IOException("APK is not signed by the Quill Android key");
         }
     }
 

@@ -30,10 +30,25 @@ final class Remote implements ChatView.Actions {
     final String appVersion;
     final Handler ui = new Handler(Looper.getMainLooper());
     final ExecutorService work = Executors.newSingleThreadExecutor();
+    final java.util.concurrent.atomic.AtomicReference<Runnable> uiSessions = new java.util.concurrent.atomic.AtomicReference<>();
+    final java.util.concurrent.atomic.AtomicReference<Runnable> uiItems = new java.util.concurrent.atomic.AtomicReference<>();
+    final java.util.concurrent.atomic.AtomicBoolean fetchQueued = new java.util.concurrent.atomic.AtomicBoolean();
+
+    void postLatest(java.util.concurrent.atomic.AtomicReference<Runnable> slot, Runnable r) {
+        if (slot.getAndSet(r) == null) {
+            ui.post(() -> {
+                Runnable x = slot.getAndSet(null);
+                if (x != null) {
+                    x.run();
+                }
+            });
+        }
+    }
     Thread streamThread;
     volatile boolean running;
     volatile int gen;
     volatile boolean control = true;
+    volatile String deskVersion = "";
 
     String boot = "";
     long cursor;
@@ -97,8 +112,9 @@ final class Remote implements ChatView.Actions {
                 if (h.ok()) {
                     hello = true;
                     control = h.body.optBoolean("control", true);
+                    deskVersion = h.body.optString("quill", "");
                 } else if (h.code == 403 && "forbidden".equals(h.error())) {
-                    connection("This phone was removed in Quill. Pair it again from Quill → Settings → Pair phone.");
+                    connection("This phone was removed in Quill Desktop. Pair it again from the Phone button in the Quill Desktop top bar.");
                     sleep(15000);
                     continue;
                 }
@@ -114,7 +130,7 @@ final class Remote implements ChatView.Actions {
             }
             if (!r.ok()) {
                 fails++;
-                connection(r.code == 0 ? "Can't reach Quill. Retrying…" : "Quill replied " + r.error() + ". Retrying…");
+                connection(r.code == 0 ? "Can't reach Quill Desktop. Retrying…" : "Quill Desktop replied " + r.error() + ". Retrying…");
                 if (r.code == 0 || r.code >= 500) {
                     boot = "";
                 }
@@ -239,9 +255,14 @@ final class Remote implements ChatView.Actions {
         if (list) {
             publish();
         }
-        if (fetchCurrent) {
-            String id = current;
-            work.execute(() -> fetch(id, false));
+        if (fetchCurrent && fetchQueued.compareAndSet(false, true)) {
+            work.execute(() -> {
+                fetchQueued.set(false);
+                String id = current;
+                if (id != null) {
+                    fetch(id, false);
+                }
+            });
         }
     }
 
@@ -302,7 +323,7 @@ final class Remote implements ChatView.Actions {
         JSONObject cur = current == null ? null : session(current);
         boolean paused = usage != null && usage.optBoolean("paused");
         long until = usage == null ? 0 : usage.optLong("pausedUntilMs");
-        ui.post(() -> {
+        postLatest(uiSessions, () -> {
             host.onSessions(barsJson, usageJson);
             statusLine(cur);
             chat.setPause(paused, until);
@@ -345,6 +366,7 @@ final class Remote implements ChatView.Actions {
     }
 
     void statusLine(JSONObject s) {
+        chat.setReadOnly(!control);
         if (s == null) {
             chat.setBusy(false, null);
             return;
@@ -367,7 +389,7 @@ final class Remote implements ChatView.Actions {
             sb.append("  ·  ").append(s.optInt("background")).append(" background");
         }
         if (!control) {
-            sb.append("  ·  read only (turn on phone control in Quill)");
+            sb.append("  ·  read only (Quill Desktop → Settings → Sessions → Phone)");
         }
         chat.setBusy(s.optBoolean("busy"), sb.toString());
     }
@@ -407,7 +429,7 @@ final class Remote implements ChatView.Actions {
             list.add(ChatView.Item.from(it));
         }
         JSONArray q = queue;
-        ui.post(() -> {
+        postLatest(uiItems, () -> {
             if (id.equals(current)) {
                 chat.setItems(list);
                 chat.setQueue(q);
@@ -452,19 +474,19 @@ final class Remote implements ChatView.Actions {
             String msg;
             switch (code) {
                 case "control_off":
-                    msg = "Quill doesn't let this phone control sessions. Turn it on in Quill → Settings → Sessions → Phone.";
+                    msg = "Quill Desktop doesn't let this phone control sessions. Turn it on in Quill Desktop → Settings → Sessions → Phone.";
                     break;
                 case "stale":
                     msg = "Already answered on another device.";
                     break;
                 case "blocked":
-                    msg = "Quill can't take a message for this session right now.";
+                    msg = "Quill Desktop can't take a message for this session right now.";
                     break;
                 case "not_running":
                     msg = "Nothing is running in this session.";
                     break;
                 case "unreachable":
-                    msg = "Can't reach Quill; " + what + " not sent.";
+                    msg = "Can't reach Quill Desktop; " + what + " not sent.";
                     break;
                 default:
                     msg = what + " failed: " + code;

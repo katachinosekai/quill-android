@@ -47,7 +47,6 @@ public class MainActivity extends Activity {
     static final int SYNC_PICK = 8;
     static final int PAIR_SCAN = 10;
     Runnable pairStatus;
-    static final String QUILL_SYNCED = "0.1.8";
 
     WebView web;
     ProgressBar progress;
@@ -129,8 +128,8 @@ public class MainActivity extends Activity {
         }
         accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Update blocked by your phone's security")
-                .setMessage("Android stopped Quill from installing its update. This happens on every update for apps that don't come from a store:\n\n"
-                        + "• Samsung Auto Blocker: Settings → Security and privacy → Auto Blocker → turn it off, tap the Quill update banner to retry, then turn Auto Blocker back on.\n\n"
+                .setMessage("Android stopped Quill Android from installing its update. This happens on every update for apps that don't come from a store:\n\n"
+                        + "• Samsung Auto Blocker: Settings → Security and privacy → Auto Blocker → turn it off, tap the Quill Android update banner to retry, then turn Auto Blocker back on.\n\n"
                         + "• Google Play Protect: if it says the app is unsafe or unknown, tap \"More details\" → \"Install anyway\".\n\n"
                         + "The retry reuses the download and checks it again (same checksum and signing key) before installing."
                         + (detail.isEmpty() ? "" : "\n\nAndroid said: " + detail))
@@ -182,7 +181,7 @@ public class MainActivity extends Activity {
 
     void acceptPair(Uri data) {
         String name = FolderSync.pair(prefs, data);
-        android.widget.Toast.makeText(this, name == null ? "Not a valid Quill pairing link" : "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
+        android.widget.Toast.makeText(this, name == null ? "Not a valid Quill Desktop pairing link" : "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
         if (name != null && phoneApi != null && (remote != null) != phoneApi.available()) {
             recreate();
             return;
@@ -236,7 +235,7 @@ public class MainActivity extends Activity {
         }
         remote.folders(folders -> {
             if (folders.length() == 0) {
-                toast("Quill has no folders to start a session in.");
+                toast("Quill Desktop has no folders to start a session in.");
                 return;
             }
             LinearLayout col = new LinearLayout(this);
@@ -461,7 +460,7 @@ public class MainActivity extends Activity {
             public void onUpdate(Updater.Release r) {
                 android.util.Log.i("QuillUpdate", "available " + r.version);
                 pendingUpdate = r;
-                updateBanner.setText("Quill for Android " + r.version + " is available. Tap to update.");
+                updateBanner.setText("Quill Android " + r.version + " is available. Tap to update.");
                 updateBanner.setVisibility(View.VISIBLE);
             }
 
@@ -777,11 +776,12 @@ public class MainActivity extends Activity {
         box.addView(bg);
 
         section(box, "Sign-in", true);
-        box.addView(textButton("Open claude.ai links in Quill", v -> openLinkSettings()));
+        box.addView(textButton("Open claude.ai links in Quill Android", v -> openLinkSettings()));
         box.addView(textButton("Paste sign-in link", v -> pasteSignInLink()));
 
         section(box, "About", true);
-        box.addView(line("Quill for Android " + updater.current() + "  ·  Quill " + QUILL_SYNCED, MUTED));
+        String desk = remote != null ? remote.deskVersion : "";
+        box.addView(line("Quill Android " + updater.current() + (desk.isEmpty() || "dev".equals(desk) ? "" : "  ·  Quill Desktop " + desk), MUTED));
         box.addView(textButton("Check for updates", v -> {
             toast("Checking for updates...");
             updater.check(true);
@@ -912,10 +912,10 @@ public class MainActivity extends Activity {
                 .setTitle("Sign in with email")
                 .setMessage("Google and Apple don't allow signing in inside apps, so that button can't work here.\n\n"
                         + "Use \"Continue with email\" with the same address (your Gmail address works) and you get the same Claude account and sessions.\n\n"
-                        + "If the email has a code, type it here. If it has a link, either allow Quill to open claude.ai links (button below, once), "
+                        + "If the email has a code, type it here. If it has a link, either allow Quill Android to open claude.ai links (button below, once), "
                         + "or copy the link and use ⚙ → Paste sign-in link.")
                 .setPositiveButton("OK", null)
-                .setNeutralButton("Open claude.ai links in Quill", (d, w) -> openLinkSettings())
+                .setNeutralButton("Open claude.ai links in Quill Android", (d, w) -> openLinkSettings())
                 .show());
     }
 

@@ -203,7 +203,7 @@ class FolderSync {
             Data result = best;
             String src = source;
             ui.post(() -> {
-                status = st != null ? "Reaching Quill via " + st : "Quill not reachable, using last copy";
+                status = st != null ? "Reaching Quill Desktop via " + st : "Quill Desktop not reachable, using last copy";
                 if (result == null) {
                     return;
                 }
@@ -307,7 +307,7 @@ class FolderSync {
             @Override
             public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
                 if (chain == null || chain.length == 0 || !fp.equals(sha256(chain[0].getEncoded()))) {
-                    throw new CertificateException("certificate does not match the paired Quill");
+                    throw new CertificateException("certificate does not match the paired Quill Desktop");
                 }
             }
 
@@ -388,7 +388,7 @@ class FolderSync {
 
     String describe() {
         if (!paired()) {
-            return "Not paired  ·  Quill → Settings → Pair phone";
+            return "Not paired  ·  pair from the Phone button in the Quill Desktop top bar";
         }
         long at = prefs.getLong("folders.at", 0);
         String src = prefs.getString("folders.source", "");

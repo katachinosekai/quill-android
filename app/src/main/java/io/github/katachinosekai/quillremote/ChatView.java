@@ -7,6 +7,7 @@ import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
@@ -114,6 +115,9 @@ final class ChatView extends LinearLayout {
     final Set<String> picked = new LinkedHashSet<>();
     List<Item> items = new ArrayList<>();
     boolean busy;
+    boolean follow = true;
+    boolean touching;
+    long touchEnd;
 
     ChatView(Context c) {
         super(c);
@@ -126,6 +130,31 @@ final class ChatView extends LinearLayout {
         list.setPadding(dp(14), dp(10), dp(14), dp(16));
         scroll.addView(list);
         addView(scroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+        scroll.setOnTouchListener((v, e) -> {
+            int a = e.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_MOVE) {
+                touching = true;
+            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                touching = false;
+                touchEnd = android.os.SystemClock.uptimeMillis();
+            }
+            return false;
+        });
+        scroll.setOnScrollChangeListener((v, x, y, ox, oy) -> {
+            boolean user = touching || android.os.SystemClock.uptimeMillis() - touchEnd < 2000;
+            if (!scroll.canScrollVertically(1)) {
+                follow = true;
+            } else if (user && y < oy) {
+                follow = false;
+            }
+        });
+        View.OnLayoutChangeListener keep = (v, l, t, r, b, ol, ot, or, ob) -> {
+            if (follow && b - t != ob - ot) {
+                scroll.post(this::toBottom);
+            }
+        };
+        list.addOnLayoutChangeListener(keep);
+        scroll.addOnLayoutChangeListener(keep);
 
         status = new TextView(c);
         status.setTextColor(MainActivity.MUTED);
@@ -222,11 +251,19 @@ final class ChatView extends LinearLayout {
         return g;
     }
 
+    void toBottom() {
+        if (follow) {
+            scroll.scrollTo(0, Math.max(0, list.getHeight() - scroll.getHeight()));
+        }
+    }
+
     void submit() {
         String t = box.getText().toString();
         if (t.trim().isEmpty() || actions == null) {
             return;
         }
+        follow = true;
+        scroll.post(this::toBottom);
         actions.send(t);
         box.setText("");
         box.requestFocus();
@@ -239,6 +276,20 @@ final class ChatView extends LinearLayout {
         send.setContentDescription(b ? "Stop" : "Send");
         status.setText(line == null ? "" : line);
         status.setVisibility(line == null || line.isEmpty() ? GONE : VISIBLE);
+    }
+
+    boolean readOnly;
+
+    void setReadOnly(boolean ro) {
+        if (ro == readOnly) {
+            return;
+        }
+        readOnly = ro;
+        box.setEnabled(!ro);
+        box.setHint(ro ? "Read only  ·  turn on phone control in Quill Desktop" : "Message Quill");
+        box.setAlpha(ro ? 0.6f : 1f);
+        send.setEnabled(!ro);
+        send.setAlpha(ro ? 0.35f : 1f);
     }
 
     void setPause(boolean paused, long untilMs) {
@@ -319,12 +370,12 @@ final class ChatView extends LinearLayout {
         sigs.clear();
         expanded.clear();
         items = new ArrayList<>();
+        follow = true;
         setQueue(null);
     }
 
     void setItems(List<Item> next) {
         boolean typing = box.hasFocus();
-        boolean atEnd = !scroll.canScrollVertically(1);
         Map<Integer, Item> bySeq = new HashMap<>();
         for (Item it : next) {
             bySeq.put(it.seq, it);
@@ -362,8 +413,8 @@ final class ChatView extends LinearLayout {
         if (typing && !box.hasFocus()) {
             box.requestFocus();
         }
-        if (atEnd) {
-            scroll.post(() -> scroll.scrollTo(0, Math.max(0, list.getHeight() - scroll.getHeight())));
+        if (follow) {
+            scroll.post(this::toBottom);
         }
     }
 

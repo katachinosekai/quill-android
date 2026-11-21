@@ -44,7 +44,7 @@ class Notifier {
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm.getNotificationChannel(CHANNEL) == null) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Session alerts", NotificationManager.IMPORTANCE_HIGH);
-            ch.setDescription("Approvals, questions, plans, finished turns and errors from Quill");
+            ch.setDescription("Approvals, questions, plans, finished turns and errors from Quill Desktop");
             nm.createNotificationChannel(ch);
         }
     }

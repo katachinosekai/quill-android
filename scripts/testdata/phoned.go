@@ -295,6 +295,12 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		}
 		s.touch(x, nil)
 		reply(w, 200, map[string]any{})
+	case p == "/debug/control":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.control = q.Get("on") == "1"
+		s.emit(map[string]any{"type": "control", "control": s.control})
+		reply(w, 200, map[string]any{})
 	case p == "/debug/pause":
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -349,7 +355,7 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if p == "/phone/hello" {
-		reply(w, 200, map[string]any{"phoneId": "a1b2c3d4", "control": s.control, "boot": s.boot})
+		reply(w, 200, map[string]any{"phoneId": "a1b2c3d4", "control": s.control, "boot": s.boot, "quill": "9.9.9"})
 		return
 	}
 	if !s.control {

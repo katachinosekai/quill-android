@@ -35,7 +35,7 @@ public class NotifyService extends Service {
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm.getNotificationChannel(CHANNEL) == null) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Background watching", NotificationManager.IMPORTANCE_MIN);
-            ch.setDescription("Shown while Quill watches for approvals in the background");
+            ch.setDescription("Shown while Quill Android watches for approvals in the background");
             nm.createNotificationChannel(ch);
         }
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, NotifyService.class).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE);

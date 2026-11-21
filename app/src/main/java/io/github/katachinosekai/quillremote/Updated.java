@@ -27,7 +27,7 @@ public class Updated extends BroadcastReceiver {
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm.getNotificationChannel(CHANNEL) == null) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Updates", NotificationManager.IMPORTANCE_DEFAULT);
-            ch.setDescription("Tells you when Quill has finished updating");
+            ch.setDescription("Tells you when Quill Android has finished updating");
             nm.createNotificationChannel(ch);
         }
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -35,7 +35,7 @@ public class Updated extends BroadcastReceiver {
         Notification n = new Notification.Builder(c, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle("Quill updated to " + version)
-                .setContentText("The update finished installing. Tap to open Quill.")
+                .setContentText("The update finished installing. Tap to open Quill Android.")
                 .setContentIntent(pi)
                 .setAutoCancel(true)
                 .build();
