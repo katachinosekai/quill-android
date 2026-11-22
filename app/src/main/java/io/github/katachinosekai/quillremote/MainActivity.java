@@ -871,6 +871,7 @@ public class MainActivity extends Activity {
         if (state != null && !bars.remote) {
             web.restoreState(state);
         }
+        Net.init(this);
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
         fgNotifier = new Notifier(this);
         if (chat != null) {
@@ -1895,7 +1896,9 @@ public class MainActivity extends Activity {
                 bars.render();
             }
         }
-        if (sync != null) {
+        // Paired with Quill Desktop's phone API: folders and usage come with the session list (Remote), so the old
+        // folders.json/usage.json polling stays off (0.9.22; it doubled the requests and got 401 with a device password).
+        if (sync != null && remote == null) {
             sync.start();
         }
         if (remote != null) {

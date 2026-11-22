@@ -54,6 +54,7 @@ public class NotifyService extends Service {
             startForeground(ID, n);
         }
         if (notifier == null) {
+            Net.init(this);
             notifier = new Notifier(this);
         }
         notifier.start(25);

@@ -50,8 +50,6 @@ final class PhoneApi {
     final SecureRandom random = new SecureRandom();
     /** Quill Desktop's paired-device unlock token (POST /phone/unlock), memory only; sent as X-Quill-Unlock. */
     static volatile String unlockToken;
-    SSLContext ctx;
-    String ctxFp;
 
     PhoneApi(SharedPreferences prefs) {
         this.prefs = prefs;
@@ -81,41 +79,11 @@ final class PhoneApi {
     }
 
     List<String> hosts() {
-        List<String> out = new ArrayList<>();
-        String last = prefs.getString("pair.lastHost", "");
-        for (String h : prefs.getString("pair.hosts", "").split(",")) {
-            if (!h.isEmpty()) {
-                out.add(h);
-            }
-        }
-        if (out.remove(last)) {
-            out.add(0, last);
-        }
-        List<String> ips = new ArrayList<>();
-        List<String> names = new ArrayList<>();
-        for (String h : out) {
-            (ipLiteral(h) ? ips : names).add(h);
-        }
-        ips.addAll(names);
-        return ips;
+        return Net.hosts(prefs);
     }
 
     static boolean ipLiteral(String h) {
         return h.matches("[0-9.]+") || (h.contains(":") && h.matches("[\\[\\]0-9a-fA-F:.%]+"));
-    }
-
-    synchronized SSLContext ssl(String fp) throws IOException {
-        if (ctx == null || !fp.equals(ctxFp)) {
-            try {
-                SSLContext c = SSLContext.getInstance("TLS");
-                c.init(null, new TrustManager[]{FolderSync.pinned(fp)}, null);
-                ctx = c;
-                ctxFp = fp;
-            } catch (Exception e) {
-                throw new IOException(e);
-            }
-        }
-        return ctx;
     }
 
     Reply get(String path, int readTimeoutMs) {
@@ -150,9 +118,9 @@ final class PhoneApi {
         if (key.isEmpty() || fp.isEmpty() || port <= 0) {
             return new Reply(0, null, false);
         }
-        SSLContext c;
+        javax.net.ssl.SSLSocketFactory factory;
         try {
-            c = ssl(fp);
+            factory = Net.factory(fp);
         } catch (IOException e) {
             return new Reply(0, null, false);
         }
@@ -160,10 +128,10 @@ final class PhoneApi {
         for (String host : hosts()) {
             HttpsURLConnection conn = null;
             try {
-                String h = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
-                conn = (HttpsURLConnection) new URL("https://" + h + ":" + port + path).openConnection();
-                conn.setSSLSocketFactory(c.getSocketFactory());
-                conn.setHostnameVerifier((name, session) -> true);
+                Net.log("api", method, path);
+                conn = (HttpsURLConnection) new URL(Net.url(host, port, path)).openConnection();
+                conn.setSSLSocketFactory(factory);
+                conn.setHostnameVerifier(Net.ANY_HOST);
                 conn.setConnectTimeout(2000);
                 conn.setReadTimeout(readTimeoutMs);
                 conn.setRequestMethod(method);
@@ -201,12 +169,10 @@ final class PhoneApi {
                     } catch (JSONException | NumberFormatException ignored) {
                     }
                 }
-                if (!host.equals(prefs.getString("pair.lastHost", ""))) {
-                    prefs.edit().putString("pair.lastHost", host).apply();
-                }
+                Net.answered(prefs, host);
                 return new Reply(code, json, "true".equals(conn.getHeaderField("Idempotent-Replay")));
             } catch (IOException ignored) {
-            } finally {
+                // No disconnect() after a reply was read in full: the connection goes back to the pool for reuse.
                 if (conn != null) {
                     conn.disconnect();
                 }

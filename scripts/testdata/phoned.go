@@ -54,6 +54,8 @@ type server struct {
 	noAPI     bool
 	downUntil time.Time
 	liveItem  item
+	conns     int
+	paths     map[string]int
 	noHandoff bool
 	lockOn    bool
 	unlockTok string
@@ -182,6 +184,27 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "locked")
 		return
 	}
+	if r.URL.Path == "/debug/conns" {
+		// new TCP connections and requests per path since the last ?reset=1
+		s.mu.Lock()
+		out := map[string]any{"conns": s.conns, "paths": s.paths}
+		if r.URL.Query().Get("reset") == "1" {
+			s.conns, s.paths = 0, map[string]int{}
+		}
+		s.mu.Unlock()
+		reply(w, 200, out)
+		return
+	}
+	s.mu.Lock()
+	if s.paths == nil {
+		s.paths = map[string]int{}
+	}
+	s.paths[r.Method+" "+r.URL.Path]++
+	unlockSent := r.Header.Get("X-Quill-Unlock") != ""
+	if strings.HasSuffix(r.URL.Path, ".json") && !unlockSent && s.lockOn {
+		s.paths["NO-UNLOCK "+r.URL.Path]++
+	}
+	s.mu.Unlock()
 	if r.URL.Path == "/debug/down" {
 		// drop every /phone/ connection for ?s= seconds (Quill Desktop unreachable, e.g. away from home)
 		n, _ := strconv.Atoi(r.URL.Query().Get("s"))
@@ -924,7 +947,16 @@ func main() {
 		panic(err)
 	}
 	fmt.Println(ln.Addr().(*net.TCPAddr).Port, fp)
-	go http.Serve(ln, s)
+	// Like Quill Desktop's server (folders.go): ReadTimeout 10 s, so idle keep-alive connections close after 10 s.
+	// ConnState counts new connections for /debug/conns (connection reuse check, 0.9.22).
+	srv := &http.Server{Handler: s, ReadTimeout: 10 * time.Second, ConnState: func(c net.Conn, st http.ConnState) {
+		if st == http.StateNew {
+			s.mu.Lock()
+			s.conns++
+			s.mu.Unlock()
+		}
+	}}
+	go srv.Serve(ln)
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt)
 	<-ch

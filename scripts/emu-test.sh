@@ -1176,6 +1176,18 @@ if [ -n "${PPORT:-}" ]; then
 	wait_for 'Still typing half bo' 15 && ! dump | grep -q 'text="[^"]*\*\*' && has 'item two' && ok "stream: formatted while streaming, no raw **" || bad "stream: formatted while streaming, no raw **" "$(dump | grep -o 'text="[^"]*\(Still\|Intro\)[^"]*"' | head -3 | tr '\n' ' ')"
 	pcurl "/debug/streamend?id=session_A1" >/dev/null
 	wait_for 'Still typing half bold done.' 15 && ! dump | grep -q 'text="[^"]*\*\*' && ok "stream: finished reply rendered" || bad "stream: finished reply rendered"
+	# Connection reuse (0.9.22): with a session open and nothing happening, few new TLS connections and no
+	# folders.json/usage.json polling in paired mode
+	popen session_A1
+	a1_open 15
+	nap 3
+	pcurl "/debug/conns?reset=1" >/dev/null
+	sleep 40
+	CONNS=$(pcurl "/debug/conns")
+	NC=$(echo "$CONNS" | python3 -I -c 'import json,sys;print(json.load(sys.stdin)["conns"])')
+	log "INFO  idle 40 s: $CONNS"
+	[ "$NC" -le 6 ] && ok "net: connections reused while idle ($NC new in 40 s)" || bad "net: connections reused while idle" "$NC new in 40 s"
+	echo "$CONNS" | grep -q 'folders.json\|usage.json' && bad "net: no folders/usage polling in paired mode" "$CONNS" || ok "net: no folders/usage polling in paired mode"
 	# Unreachable Quill Desktop: after 2 failed tries the line suggests the VPN, with a help link
 	pcurl "/debug/down?s=45" >/dev/null
 	wait_for 'Not at home? Turn on your VPN' 45 && has 'VPN help' && ok "vpn: hint when Quill Desktop can't be reached" || bad "vpn: hint when Quill Desktop can't be reached"

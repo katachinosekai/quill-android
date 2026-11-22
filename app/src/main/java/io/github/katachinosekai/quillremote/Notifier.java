@@ -89,26 +89,25 @@ class Notifier {
         if (key.isEmpty() || fp.isEmpty() || port <= 0) {
             return false;
         }
-        SSLContext ctx;
+        javax.net.ssl.SSLSocketFactory factory;
         try {
-            ctx = SSLContext.getInstance("TLS");
-            ctx.init(null, new TrustManager[]{FolderSync.pinned(fp)}, null);
-        } catch (Exception e) {
+            factory = Net.factory(fp);
+        } catch (java.io.IOException e) {
             return false;
         }
         long since = prefs.getLong("events.since", 0);
         if (prefs.getString("events.boot", "").isEmpty()) {
             waitSeconds = 0;
         }
-        for (String host : prefs.getString("pair.hosts", "").split(",")) {
-            if (host.isEmpty() || !running) {
+        for (String host : Net.hosts(prefs)) {
+            if (!running) {
                 continue;
             }
             try {
-                String h = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
-                HttpsURLConnection conn = (HttpsURLConnection) new URL("https://" + h + ":" + port + "/events?since=" + since + "&wait=" + waitSeconds).openConnection();
-                conn.setSSLSocketFactory(ctx.getSocketFactory());
-                conn.setHostnameVerifier((n, s) -> true);
+                Net.log("events", "GET", "/events");
+                HttpsURLConnection conn = (HttpsURLConnection) new URL(Net.url(host, port, "/events?since=" + since + "&wait=" + waitSeconds)).openConnection();
+                conn.setSSLSocketFactory(factory);
+                conn.setHostnameVerifier(Net.ANY_HOST);
                 conn.setConnectTimeout(2500);
                 conn.setReadTimeout((waitSeconds + 10) * 1000);
                 conn.setRequestProperty("X-Quill-Key", key);
@@ -120,6 +119,7 @@ class Notifier {
                 if (body == null) {
                     continue;
                 }
+                Net.answered(prefs, host);
                 handle(new JSONObject(body));
                 return true;
             } catch (Exception ignored) {

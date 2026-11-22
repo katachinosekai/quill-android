@@ -268,27 +268,29 @@ class FolderSync {
         if (key.isEmpty() || fp.isEmpty() || port <= 0) {
             return null;
         }
-        SSLContext ctx;
+        javax.net.ssl.SSLSocketFactory factory;
         try {
-            ctx = SSLContext.getInstance("TLS");
-            ctx.init(null, new TrustManager[]{pinned(fp)}, null);
-        } catch (Exception e) {
+            factory = Net.factory(fp);
+        } catch (IOException e) {
             return null;
         }
-        for (String host : prefs.getString("pair.hosts", "").split(",")) {
-            if (host.isEmpty()) {
-                continue;
-            }
+        for (String host : Net.hosts(prefs)) {
             try {
-                String h = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
-                HttpsURLConnection c = (HttpsURLConnection) new URL("https://" + h + ":" + port + path).openConnection();
-                c.setSSLSocketFactory(ctx.getSocketFactory());
-                c.setHostnameVerifier((name, session) -> true);
+                Net.log("folders", "GET", path);
+                HttpsURLConnection c = (HttpsURLConnection) new URL(Net.url(host, port, path)).openConnection();
+                c.setSSLSocketFactory(factory);
+                c.setHostnameVerifier(Net.ANY_HOST);
                 c.setConnectTimeout(2500);
                 c.setReadTimeout(4000);
                 c.setRequestProperty("X-Quill-Key", key);
+                // Every paired device needs Quill Desktop's device password; without the token this got 401 (0.9.22).
+                String unlock = PhoneApi.unlockToken;
+                if (unlock != null) {
+                    c.setRequestProperty("X-Quill-Unlock", unlock);
+                }
                 String body = read(c);
                 if (body != null) {
+                    Net.answered(prefs, host);
                     return body;
                 }
             } catch (IOException ignored) {
