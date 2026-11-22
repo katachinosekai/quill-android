@@ -49,6 +49,12 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## 0.9.25 (one notification watcher, 2026-11-22)
+- Bug: Notifier.stop() only cleared `running` and interrupted the thread, but a thread blocked in its 25 s /events long-poll can't be interrupted; when the app resumed, start() set `running` again and the old thread went on polling next to the new one (the emulator log showed up to 5 polling threads in a 50 s window; a leftover thread could also post a notification twice).
+- Fix: a generation counter (start() = new generation; loop and pollOnce stop when theirs is old; a reply that arrives for an old generation is dropped) and stop() disconnects the waiting long-poll on a helper thread.
+- The watcher is not a timer: /events is a long-poll that Quill Desktop answers the moment a session needs the user (25 s cap only to notice dead connections). In-app and background watchers are exclusive (MainActivity.syncNotifier).
+- Emulator check: 3 pause/resume cycles, then an idle session makes at most 3 /events in 50 s (measured 2).
+
 ## 0.9.24 (centered columns, lettered lists, 2026-11-22)
 - Port of Quill Desktop 1be563f/22c277a/acf74d3 plus the user's rule f5c0dd9 (a list keeps its formatting and is centered as one column only when centering is on). Columns.java = balance.go (1.5x overlong line wraps balanced, 35% floor, 75% cap for groups wider than the chat), ColumnView applies it on every measure (rotation, resize, pinch).
 - MarkdownView, centering on: a run of list items is one column (items left-aligned, markers lined up); in a run of paragraphs an overlong one wraps balanced. Centering off: unchanged, left-aligned.

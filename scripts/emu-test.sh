@@ -1225,6 +1225,15 @@ if [ -n "${PPORT:-}" ]; then
 	else
 		bad "layout: list markers line up when centered" "no layout message"
 	fi
+	# One notification watcher at a time (0.9.25): pause/resume the app a few times, then an idle session makes at
+	# most one /events long-poll at a time (25 s each: <= 3 in 50 s; leftover watchers made several at once)
+	for k in 1 2 3; do adb_ shell input keyevent KEYCODE_HOME; sleep 2; launch; sleep 3; done
+	a1_open 15
+	pcurl "/debug/conns?reset=1" >/dev/null
+	sleep 50
+	EV=$(pcurl "/debug/conns" | python3 -I -c 'import json,sys;print(json.load(sys.stdin)["paths"].get("GET /events",0))')
+	log "INFO  /events in 50 s idle after 3 pause/resume cycles: $EV"
+	[ "$EV" -le 3 ] && ok "net: one notification watcher after pause/resume ($EV /events in 50 s)" || bad "net: one notification watcher after pause/resume" "$EV /events in 50 s"
 	# Unreachable Quill Desktop: after 2 failed tries the line suggests the VPN, with a help link
 	pcurl "/debug/down?s=45" >/dev/null
 	wait_for 'Not at home? Turn on your VPN' 45 && has 'VPN help' && ok "vpn: hint when Quill Desktop can't be reached" || bad "vpn: hint when Quill Desktop can't be reached"

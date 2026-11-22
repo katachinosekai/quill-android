@@ -53,27 +53,46 @@ class Notifier {
         return TYPES.contains(type) && prefs.getBoolean("notify." + type, true);
     }
 
+    /**
+     * One watcher at a time (0.9.25): each start() is a new generation, and a thread from an older one stops at its
+     * next check. Before, a thread still waiting in its 25 s long-poll when the app paused and resumed saw
+     * running == true again and kept polling next to the new one (up to 5 at once in the emulator log), which could
+     * also show a notification twice. stop() also ends the long-poll at once (disconnect).
+     */
+    volatile int gen;
+    volatile HttpsURLConnection waiting;
+
     synchronized void start(int waitSeconds) {
         if (running) {
             return;
         }
         running = true;
-        thread = new Thread(() -> loop(waitSeconds), "quill-events");
+        int g = ++gen;
+        thread = new Thread(() -> loop(waitSeconds, g), "quill-events");
         thread.setDaemon(true);
         thread.start();
     }
 
     synchronized void stop() {
         running = false;
+        gen++;
         if (thread != null) {
             thread.interrupt();
             thread = null;
         }
+        HttpsURLConnection w = waiting;
+        if (w != null) {
+            new Thread(w::disconnect, "quill-events-stop").start(); // not on the UI thread: disconnect can block
+        }
     }
 
-    void loop(int waitSeconds) {
-        while (running) {
-            boolean ok = pollOnce(waitSeconds);
+    boolean current(int g) {
+        return running && g == gen;
+    }
+
+    void loop(int waitSeconds, int g) {
+        while (current(g)) {
+            boolean ok = pollOnce(waitSeconds, g);
             try {
                 Thread.sleep(ok ? 300 : 15000);
             } catch (InterruptedException e) {
@@ -83,6 +102,10 @@ class Notifier {
     }
 
     boolean pollOnce(int waitSeconds) {
+        return pollOnce(waitSeconds, gen);
+    }
+
+    boolean pollOnce(int waitSeconds, int g) {
         String key = prefs.getString("pair.key", "");
         String fp = prefs.getString("pair.fp", "");
         int port = prefs.getInt("pair.port", -1);
@@ -100,7 +123,7 @@ class Notifier {
             waitSeconds = 0;
         }
         for (String host : Net.hosts(prefs)) {
-            if (!running) {
+            if (!current(g)) {
                 continue;
             }
             try {
@@ -115,7 +138,16 @@ class Notifier {
                 if (unlock != null) {
                     conn.setRequestProperty("X-Quill-Unlock", unlock);
                 }
-                String body = FolderSync.read(conn);
+                waiting = conn;
+                String body;
+                try {
+                    body = FolderSync.read(conn);
+                } finally {
+                    waiting = null;
+                }
+                if (!current(g)) {
+                    return false; // stopped or restarted meanwhile: a newer watcher handles events
+                }
                 if (body == null) {
                     continue;
                 }
