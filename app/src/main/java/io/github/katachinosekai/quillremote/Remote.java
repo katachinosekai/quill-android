@@ -749,6 +749,12 @@ final class Remote implements ChatView.Actions {
                 if (extra.has("text")) {
                     body.put("text", extra.optString("text"));
                 }
+                if (extra.has("choice")) {
+                    body.put("choice", extra.optInt("choice"));
+                }
+                if (extra.has("planAnswers")) {
+                    body.put("planAnswers", extra.get("planAnswers"));
+                }
             }
             body.put("action", action);
         } catch (JSONException e) {
@@ -760,20 +766,51 @@ final class Remote implements ChatView.Actions {
     @Override
     public void queueOp(String op, int index, String text) {
         String id = current;
-        if (id != null) {
-            write("delete".equals(op) ? "remove" : "send now", () -> {
-                PhoneApi.Reply r = api.queue(id, op, index, text);
-                if (r.ok() && r.body.has("queue")) {
-                    JSONArray q = r.body.optJSONArray("queue");
-                    ui.post(() -> {
-                        if (id.equals(current)) {
-                            chat.setQueue(q);
-                        }
-                    });
-                }
-                return r;
-            });
+        if (id == null) {
+            return;
         }
+        // Optimistic queue actions (user 2026-11-21): the phone already hid the entry. Requests run one after another on
+        // `work`, and each one looks up the entry's CURRENT index by its text right before sending, so earlier taps that
+        // shifted the queue can't make a later one hit the wrong entry. Already gone = done. A failure brings it back.
+        work.execute(() -> {
+            int at = -1;
+            synchronized (Remote.this) {
+                for (int i = 0; queue != null && i < queue.length(); i++) {
+                    JSONObject e = queue.optJSONObject(i);
+                    if (e != null && text.equals(e.optString("text"))) {
+                        at = e.optInt("index", i);
+                        break;
+                    }
+                }
+            }
+            if (at < 0) {
+                ui.post(() -> chat.queueDone(text));
+                return;
+            }
+            PhoneApi.Reply r = api.queue(id, op, at, text);
+            if (r.ok() && r.body.has("queue")) {
+                JSONArray q = r.body.optJSONArray("queue");
+                synchronized (Remote.this) {
+                    if (id.equals(current)) {
+                        queue = q;
+                    }
+                }
+                ui.post(() -> {
+                    chat.queueDone(text);
+                    if (id.equals(current)) {
+                        chat.setQueue(q);
+                    }
+                });
+            } else if (!r.ok()) {
+                ui.post(() -> {
+                    chat.queueFailed(text);
+                    host.toast(("delete".equals(op) ? "Couldn't remove" : "Couldn't send") + " the queued message (" + r.error() + "); it's back in the list.");
+                });
+                fetch(id, false);
+            } else {
+                ui.post(() -> chat.queueDone(text));
+            }
+        });
     }
 
     @Override

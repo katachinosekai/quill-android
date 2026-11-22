@@ -528,14 +528,13 @@ public class MainActivity extends Activity {
                     none.setPadding(0, 0, 0, dp(4));
                     col.addView(none);
                 }
-                java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MMM d H:mm", java.util.Locale.getDefault());
                 for (int i = 0; i < handoffs.length(); i++) {
                     org.json.JSONObject h = handoffs.optJSONObject(i);
                     if (h == null) {
                         continue;
                     }
                     String hn = h.optString("name");
-                    String saved = h.optLong("savedMs") > 0 ? " · saved " + fmt.format(new java.util.Date(h.optLong("savedMs"))) : "";
+                    String saved = h.optLong("savedMs") > 0 ? " · saved " + TimeFmt.format("MMM d ", h.optLong("savedMs")) : "";
                     org.json.JSONObject open = h.optJSONObject("openIn");
                     if (open != null) {
                         TextView t = new TextView(this);
@@ -703,6 +702,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("quill", MODE_PRIVATE);
+        TimeFmt.h24 = android.text.format.DateFormat.is24HourFormat(this);
         applyOrientation();
         debuggable = (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         skin = asset("quill.js");
@@ -1788,6 +1788,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        boolean h24 = android.text.format.DateFormat.is24HourFormat(this);
+        if (h24 != TimeFmt.h24) {
+            TimeFmt.h24 = h24;
+            if (bars != null) {
+                bars.render();
+            }
+        }
         if (sync != null) {
             sync.start();
         }

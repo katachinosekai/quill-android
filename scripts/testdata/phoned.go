@@ -410,6 +410,41 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		it := s.add(x, item{"kind": "assistant", "text": "", "healText": "Healed reply after a lost update."})
 		s.touch(x, it)
 		reply(w, 200, map[string]any{})
+	case p == "/debug/planq":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		qs := []any{
+			map[string]any{"id": 1, "text": "Should rule 21 stay as it is?", "kind": "yesno", "recommended": -1},
+			map[string]any{"id": 2, "text": "Which channel?", "kind": "single", "options": []string{"Stable", "Beta"}, "recommended": 1},
+			map[string]any{"id": 3, "text": "Which parts?", "kind": "multi", "options": []string{"a: Plan-first", "b: Auto mode"}, "recommended": -1},
+			map[string]any{"id": 4, "text": "Anything else?", "kind": "text", "recommended": -1},
+		}
+		s.add(x, item{"kind": "plan", "text": "1. Do it\n\nQuestions:\n1. Should rule 21 stay as it is?", "request": map[string]any{"id": "req_planq", "state": "pending", "questions": qs}})
+		x.Status = "waiting"
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
+	case p == "/debug/plan":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		req := map[string]any{"id": "req_plan" + q.Get("n"), "state": "pending", "choices": []string{"Ship as v0.1.18", "Replace the v0.1.17 files"}}
+		if q.Get("rec") != "" {
+			r, _ := strconv.Atoi(q.Get("rec"))
+			req["recommended"] = r
+		}
+		s.add(x, item{"kind": "plan", "text": "1. Build\n2. Publish\n\nShip as v0.1.18 (recommended), or replace the v0.1.17 files?", "request": req})
+		x.Status = "waiting"
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
 	case p == "/debug/suggest":
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -636,6 +671,14 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 			if req["state"] != "pending" {
 				fail(w, 409, "stale")
 				return
+			}
+			if c, has := body["choice"]; has {
+				opts, _ := req["choices"].([]string)
+				ci, isNum := c.(float64)
+				if action != "approvePlan" || !isNum || int(ci) < 0 || int(ci) >= len(opts) {
+					fail(w, 422, "bad_request")
+					return
+				}
 			}
 			states := map[string]string{"allow": "allowed", "allowAlways": "allowedAlways", "deny": "denied", "approvePlan": "allowed",
 				"rejectPlan": "denied", "answer": "allowed", "rotate": "allowed", "dismiss": "denied"}

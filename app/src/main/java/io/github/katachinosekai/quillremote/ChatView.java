@@ -57,6 +57,11 @@ final class ChatView extends LinearLayout {
         boolean canAllowAlways = true;
         JSONArray questions;
         JSONArray choices;
+        /** Plan approval options (request.choices) and the recommended index (request.recommended, -1 = none). */
+        JSONArray planChoices;
+        int planRecommended = -1;
+        /** A plan's open questions (request.questions on plan items): [{id, text, kind yesno|single|multi|text, options, recommended}]. */
+        JSONArray planQuestions;
         boolean choicesOpen;
         JSONObject diff;
         int rev;
@@ -86,6 +91,11 @@ final class ChatView extends LinearLayout {
             }
             it.questions = req != null && req.has("questions") ? req.optJSONArray("questions") : o.optJSONArray("questions");
             it.choices = o.optJSONArray("choices");
+            if (req != null && "plan".equals(it.kind)) {
+                it.planChoices = req.optJSONArray("choices");
+                it.planQuestions = req.optJSONArray("questions");
+                it.planRecommended = req.has("recommended") ? req.optInt("recommended", -1) : -1;
+            }
             it.choicesOpen = o.optBoolean("choicesOpen", it.choices != null);
             it.diff = o.optJSONObject("diff");
             return it;
@@ -271,6 +281,7 @@ final class ChatView extends LinearLayout {
         box.setTextColor(MainActivity.TEXT);
         box.setHintTextColor(MainActivity.MUTED);
         box.setHint("Message Quill");
+        box.setContentDescription("Message box");
         box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         box.setMaxLines(8);
         box.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_AUTO_CORRECT);
@@ -450,7 +461,7 @@ final class ChatView extends LinearLayout {
 
     void setPause(boolean paused, long untilMs) {
         if (paused) {
-            String until = untilMs > 0 ? " until " + new java.text.SimpleDateFormat("H:mm", java.util.Locale.getDefault()).format(new java.util.Date(untilMs)) : "";
+            String until = untilMs > 0 ? " until " + TimeFmt.time(untilMs) : "";
             pauseText.setText("Sessions are paused near the 5-hour limit" + until + ".");
         }
         pauseBar.setVisibility(paused ? VISIBLE : GONE);
@@ -458,17 +469,80 @@ final class ChatView extends LinearLayout {
 
     String queueSig = "";
 
+    /** Queued texts the user acted on (edit, Send now, ✕) that are hidden until Quill Desktop confirms; a multiset. */
+    final List<String> hiding = new ArrayList<>();
+    JSONArray lastQueue;
+
+    void queueDone(String text) {
+        // Keep it hidden until the next queue from the server no longer has it (reconciled in setQueue).
+    }
+
+    void queueFailed(String text) {
+        if (hiding.remove(text)) {
+            queueSig = null;
+            setQueue(lastQueue);
+        }
+    }
+
+    /** Hide a queued entry right away; returns false if this tap is a repeat on an entry already being handled. */
+    boolean hideQueued(String text) {
+        int shown = 0;
+        int hid = 0;
+        for (int i = 0; lastQueue != null && i < lastQueue.length(); i++) {
+            JSONObject e = lastQueue.optJSONObject(i);
+            if (e != null && text.equals(e.optString("text"))) {
+                shown++;
+            }
+        }
+        for (String h : hiding) {
+            if (h.equals(text)) {
+                hid++;
+            }
+        }
+        if (hid >= shown) {
+            return false;
+        }
+        hiding.add(text);
+        queueSig = null;
+        setQueue(lastQueue);
+        return true;
+    }
+
     void setQueue(JSONArray q) {
-        String sig = q == null ? "" : q.toString();
+        lastQueue = q;
+        // Entries that left the server's queue are done: stop hiding them.
+        Map<String, Integer> left = new HashMap<>();
+        for (int i = 0; q != null && i < q.length(); i++) {
+            JSONObject e = q.optJSONObject(i);
+            if (e != null) {
+                left.merge(e.optString("text"), 1, Integer::sum);
+            }
+        }
+        List<String> keep = new ArrayList<>();
+        for (String h : hiding) {
+            Integer n = left.get(h);
+            if (n != null && n > 0) {
+                keep.add(h);
+                left.put(h, n - 1);
+            }
+        }
+        hiding.clear();
+        hiding.addAll(keep);
+        String sig = (q == null ? "" : q.toString()) + "|" + hiding;
         if (sig.equals(queueSig)) {
             return;
         }
         queueSig = sig;
+        Map<String, Integer> skip = new HashMap<>();
+        for (String h : hiding) {
+            skip.merge(h, 1, Integer::sum);
+        }
         boolean typing = box.hasFocus();
         queueBox.removeAllViews();
         int n = q == null ? 0 : q.length();
-        if (n > 0) {
-            TextView h = label(n == 1 ? "1 queued message" : n + " queued messages", MainActivity.MUTED, 12);
+        int visible = n - hiding.size();
+        if (visible > 0) {
+            TextView h = label(visible == 1 ? "1 queued message" : visible + " queued messages", MainActivity.MUTED, 12);
             h.setPadding(dp(4), 0, 0, dp(2));
             queueBox.addView(h);
         }
@@ -479,6 +553,11 @@ final class ChatView extends LinearLayout {
             }
             int index = e.optInt("index", i);
             String text = e.optString("text");
+            Integer sk = skip.get(text);
+            if (sk != null && sk > 0) {
+                skip.put(text, sk - 1);
+                continue;
+            }
             LinearLayout row = new LinearLayout(getContext());
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(dp(10), dp(4), dp(4), dp(4));
@@ -491,7 +570,7 @@ final class ChatView extends LinearLayout {
             // (like editing a queued message on Quill Desktop). Text already in the box is kept after it.
             t.setContentDescription("Edit queued message: " + text);
             t.setOnClickListener(v -> {
-                if (actions == null) {
+                if (actions == null || !hideQueued(text)) {
                     return;
                 }
                 actions.queueOp("delete", index, text);
@@ -508,7 +587,7 @@ final class ChatView extends LinearLayout {
             now.setTypeface(Typeface.DEFAULT_BOLD);
             now.setPadding(dp(10), dp(8), dp(10), dp(8));
             now.setOnClickListener(v -> {
-                if (actions != null) {
+                if (actions != null && hideQueued(text)) {
                     actions.queueOp("send-now", index, text);
                 }
             });
@@ -517,7 +596,7 @@ final class ChatView extends LinearLayout {
             del.setContentDescription("Remove from queue");
             del.setPadding(dp(10), dp(6), dp(10), dp(6));
             del.setOnClickListener(v -> {
-                if (actions != null) {
+                if (actions != null && hideQueued(text)) {
                     actions.queueOp("delete", index, text);
                 }
             });
@@ -592,7 +671,9 @@ final class ChatView extends LinearLayout {
             box.requestFocus();
         }
         if (follow) {
-            scroll.post(this::toBottom);
+            // Same as after a heal reload: a new card (plan, question) can make the ScrollView jump after the first
+            // toBottom, so keep following for a moment (only while following and untouched).
+            stickToBottom();
         }
     }
 
@@ -949,9 +1030,45 @@ final class ChatView extends LinearLayout {
             fb.setHintTextColor(MainActivity.MUTED);
             fb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
             c.addView(fb);
-            LinearLayout row = buttons(c);
-            addButton(row, "Approve", GREEN, v -> act(it, "approvePlan", extraText(fb)));
-            addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+            JSONArray opts = it.planChoices;
+            int n = opts == null ? 0 : opts.length();
+            if (it.planQuestions != null && it.planQuestions.length() > 0) {
+                planQuestions(c, it, fb);
+            } else if (n > 0) {
+                // Like Quill Desktop's plan card: approve with the answer to the plan's question.
+                int rec = it.planRecommended >= 0 && it.planRecommended < n ? it.planRecommended : -1;
+                LinearLayout col = new LinearLayout(getContext());
+                col.setOrientation(VERTICAL);
+                c.addView(col);
+                LinearLayout others = new LinearLayout(getContext());
+                others.setOrientation(VERTICAL);
+                for (int k = 0; k < n; k++) {
+                    int index = k;
+                    TextView b = button("Approve: " + opts.optString(k), GREEN);
+                    b.setOnClickListener(v -> act(it, "approvePlan", choiceExtra(index)));
+                    LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+                    lp.topMargin = dp(8);
+                    (rec < 0 || k == rec ? col : others).addView(b, lp);
+                }
+                if (rec >= 0 && n > 1) {
+                    TextView more = button("Other answers…", MainActivity.MUTED);
+                    others.setVisibility(GONE);
+                    more.setOnClickListener(v -> {
+                        others.setVisibility(VISIBLE);
+                        more.setVisibility(GONE);
+                    });
+                    LayoutParams ml = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+                    ml.topMargin = dp(8);
+                    col.addView(more, ml);
+                    col.addView(others);
+                }
+                LinearLayout row = buttons(c);
+                addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+            } else {
+                LinearLayout row = buttons(c);
+                addButton(row, "Approve", GREEN, v -> act(it, "approvePlan", extraText(fb)));
+                addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+            }
         }
         return spaced(c, 12);
     }
@@ -959,6 +1076,134 @@ final class ChatView extends LinearLayout {
     static String planTitle(String text) {
         String last = lastLine(text).replace("**", "").replace("__", "").replace("`", "").replaceAll("^[#>*\\-_ ]+", "").trim();
         return last.contains("?") && last.length() <= 300 ? last : "Approve this plan?";
+    }
+
+    /**
+     * The plan's open questions, each with its own control (like Quill Desktop): yesno → Yes/No (nothing picked),
+     * single → radio buttons with the recommended option picked, multi → checkboxes, text → a text field.
+     * "Approve plan & send answers" sends planAnswers {id: value}; unanswered questions are left out ("no answer").
+     */
+    void planQuestions(LinearLayout c, Item it, EditText fb) {
+        JSONArray qs = it.planQuestions;
+        List<java.util.function.Supplier<Object>> values = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < qs.length(); i++) {
+            JSONObject q = qs.optJSONObject(i);
+            if (q == null) {
+                continue;
+            }
+            String qid = String.valueOf(q.opt("id"));
+            TextView qt = label((i + 1) + ". " + q.optString("text"), MainActivity.TEXT, 15);
+            qt.setPadding(0, dp(12), 0, dp(4));
+            c.addView(qt);
+            JSONArray os = q.optJSONArray("options");
+            int rec = q.optInt("recommended", -1);
+            String kind = q.optString("kind");
+            ids.add(qid);
+            switch (kind) {
+                case "yesno": {
+                    android.widget.RadioGroup g = new android.widget.RadioGroup(getContext());
+                    g.setOrientation(HORIZONTAL);
+                    String[] yn = {"Yes", "No"};
+                    for (int k = 0; k < 2; k++) {
+                        android.widget.RadioButton rb = new android.widget.RadioButton(getContext());
+                        rb.setText(yn[k]);
+                        rb.setTextColor(MainActivity.TEXT);
+                        rb.setTag(k == 0 ? "yes" : "no");
+                        rb.setId(View.generateViewId());
+                        g.addView(rb);
+                    }
+                    c.addView(g);
+                    values.add(() -> {
+                        View v = g.findViewById(g.getCheckedRadioButtonId());
+                        return v == null ? null : v.getTag();
+                    });
+                    break;
+                }
+                case "single": {
+                    android.widget.RadioGroup g = new android.widget.RadioGroup(getContext());
+                    for (int k = 0; os != null && k < os.length(); k++) {
+                        android.widget.RadioButton rb = new android.widget.RadioButton(getContext());
+                        rb.setText(os.optString(k) + (k == rec ? "  (recommended)" : ""));
+                        rb.setTextColor(MainActivity.TEXT);
+                        rb.setTag(k);
+                        rb.setId(View.generateViewId());
+                        g.addView(rb);
+                        if (k == rec) {
+                            rb.setChecked(true);
+                        }
+                    }
+                    c.addView(g);
+                    values.add(() -> {
+                        View v = g.findViewById(g.getCheckedRadioButtonId());
+                        return v == null ? null : v.getTag();
+                    });
+                    break;
+                }
+                case "multi": {
+                    List<android.widget.CheckBox> boxes = new ArrayList<>();
+                    for (int k = 0; os != null && k < os.length(); k++) {
+                        android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
+                        cb.setText(os.optString(k));
+                        cb.setTextColor(MainActivity.TEXT);
+                        boxes.add(cb);
+                        c.addView(cb);
+                    }
+                    values.add(() -> {
+                        JSONArray picked = new JSONArray();
+                        for (int k = 0; k < boxes.size(); k++) {
+                            if (boxes.get(k).isChecked()) {
+                                picked.put(k);
+                            }
+                        }
+                        return picked.length() == 0 ? null : picked;
+                    });
+                    break;
+                }
+                default: {
+                    EditText e = new EditText(getContext());
+                    e.setHint("Your answer");
+                    e.setContentDescription("Answer " + (i + 1));
+                    e.setTextColor(MainActivity.TEXT);
+                    e.setHintTextColor(MainActivity.MUTED);
+                    e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                    c.addView(e);
+                    values.add(() -> {
+                        String t = e.getText().toString().trim();
+                        return t.isEmpty() ? null : t;
+                    });
+                }
+            }
+        }
+        TextView note = label("Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
+        note.setPadding(0, dp(8), 0, 0);
+        c.addView(note);
+        LinearLayout row = buttons(c);
+        addButton(row, "Approve plan & send answers", GREEN, v -> {
+            JSONObject extra = new JSONObject();
+            JSONObject answers = new JSONObject();
+            try {
+                for (int k = 0; k < ids.size(); k++) {
+                    Object val = values.get(k).get();
+                    if (val != null) {
+                        answers.put(ids.get(k), val);
+                    }
+                }
+                extra.put("planAnswers", answers);
+            } catch (org.json.JSONException ignored) {
+            }
+            act(it, "approvePlan", extra);
+        });
+        addButton(row, "Don't run", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+    }
+
+    static JSONObject choiceExtra(int index) {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("choice", index);
+        } catch (org.json.JSONException ignored) {
+        }
+        return o;
     }
 
     JSONObject extraText(EditText e) {

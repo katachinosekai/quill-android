@@ -779,6 +779,9 @@ fi
 if [ -n "${PPORT:-}" ]; then
 	pcurl() { curl -sk -H "X-Quill-Key: $PKEY" "https://127.0.0.1:$PPORT$1"; }
 	plog() { pcurl /debug/log; }
+	# A1 open natively: the app's last opened session is A1 and the native message box is on screen (A1's first message
+	# may be scrolled away once its history grows, so don't rely on it)
+	a1_open() { local i; for i in $(seq 1 $((${1:-10} * 4))); do DIRTY=1; pref_has 'name="remote.last">session_A1<' && has 'content-desc="Message box' && return 0; sleep 0.25; done; return 1; }
 	wait_log() { local i; for i in $(seq 1 40); do plog | grep -q "$1" && return 0; sleep 0.25; done; return 1; }
 	ime_off() { adb_ shell dumpsys input_method | grep -q 'mInputShown=true' && adb_ shell input keyevent KEYCODE_BACK && nap 1; }
 	popen() { adb_ shell am start -W -f 0x24000000 -n "$PKG/$ACT" --es quill.openQuill "$1" >/dev/null 2>&1; }
@@ -802,6 +805,22 @@ if [ -n "${PPORT:-}" ]; then
 		nap 1
 	done
 	echo "$U_SEEN" | grep -q 'tok · ctx 23%' && echo "$U_SEEN" | grep -q 'Today 5.6M · 7d 42.0M' && echo "$U_SEEN" | grep -q '"available"' && ok "remote: usage shows This session, All sessions, credits" || bad "remote: usage shows This session, All sessions, credits" "$U_SEEN"
+	adb_ shell settings put system time_12_24 12
+	adb_ shell input keyevent KEYCODE_HOME
+	nap 1
+	launch
+	side_on
+	for i in $(seq 1 20); do DIRTY=1; dump | grep -q -E 'resets [A-Za-z]* ?[0-9]+:[0-9]{2} ?(AM|PM|am|pm)' && break; sleep 0.5; done
+	DIRTY=1
+	dump | grep -q -E 'resets [A-Za-z]* ?[0-9]+:[0-9]{2} ?(AM|PM|am|pm)' && ok "remote: reset times follow the device's 12-hour clock" || bad "remote: reset times follow the device's 12-hour clock" "$(dump | grep -o 'resets [^"]*' | head -1)"
+	adb_ shell settings put system time_12_24 24
+	adb_ shell input keyevent KEYCODE_HOME
+	nap 1
+	launch
+	side_on
+	for i in $(seq 1 20); do DIRTY=1; dump | grep -q -E 'resets [A-Za-z]* ?[0-9]{1,2}:[0-9]{2}["· ]' && ! dump | grep -q -E 'resets [A-Za-z]* ?[0-9]+:[0-9]{2} ?(AM|PM)' && break; sleep 0.5; done
+	DIRTY=1
+	! dump | grep -q -E 'resets [A-Za-z]* ?[0-9]+:[0-9]{2} ?(AM|PM|am|pm)' && dump | grep -q -E 'resets [A-Za-z]* ?[0-9]{1,2}:[0-9]{2}' && ok "remote: reset times follow the device's 24-hour clock" || bad "remote: reset times follow the device's 24-hour clock" "$(dump | grep -o 'resets [^"]*' | head -1)"
 	side_off
 	has 'content-desc="New session"' && ok "remote: + New session in the top bar" || bad "remote: + New session in the top bar"
 	popen session_A1
@@ -843,6 +862,36 @@ if [ -n "${PPORT:-}" ]; then
 	else
 		bad "remote: an empty reply heals itself (full reload)"
 	fi
+	pcurl "/debug/plan?id=session_B2&rec=0&n=1" >/dev/null
+	if wait_for 'text="Approve: Ship as v0.1.18"' 15; then
+		has 'text="Other answers…"' && ! has 'text="Approve: Replace the v0.1.17 files"' && ok "remote: plan card: recommended option is the main button" || bad "remote: plan card: recommended option is the main button"
+		tap_text "Other answers…" && nap 1
+		wait_for 'text="Approve: Replace the v0.1.17 files"' 5 && ok "remote: plan card: Other answers shows the rest" || bad "remote: plan card: Other answers shows the rest"
+		tap_text "Approve: Ship as v0.1.18" && nap 1
+		wait_log 'req_plan1[^]]*choice[^0-9]*0' && ok "remote: plan card approves with the chosen option" || bad "remote: plan card approves with the chosen option" "$(plog | grep -o 'req_plan1[^]]*' | tail -1)"
+	else
+		bad "remote: plan card: recommended option is the main button" "no option buttons"
+	fi
+	pcurl "/debug/planq?id=session_B2" >/dev/null
+	if wait_for 'text="Approve plan &amp; send answers"' 15; then
+		has 'Unanswered questions are sent as' && ok "remote: plan questions card with its controls" || bad "remote: plan questions card with its controls"
+		# The card can be taller than a phone screen: scroll up to its first controls when needed
+		tap_up() { local i; read -r UW UH <<< "$(scr)"; for i in 1 2 3 4 5; do tap_text "$1" && return 0; adb_ shell input swipe $((UW * 2 / 3)) $((UH * 2 / 5)) $((UW * 2 / 3)) $((UH * 3 / 5)) 300; nap 1; DIRTY=1; done; return 1; }
+		tap_up "Yes" && nap 1
+		tap_up "a: Plan-first" && nap 1
+		tap_scroll "Approve plan &amp; send answers" && nap 1
+		wait_log 'req_planq[^]]*planAnswers' && plog | grep -o 'req_planq[^]]*' | tail -1 | grep -q 'yes' && plog | grep -o 'req_planq[^]]*' | tail -1 | grep -q '"2\\":1' && ok "remote: plan answers go with the approval (yes/no, recommended pick, unanswered left out)" || bad "remote: plan answers go with the approval (yes/no, recommended pick, unanswered left out)" "$(plog | grep -o 'req_planq[^]]*' | tail -1)"
+	else
+		bad "remote: plan questions card with its controls" "no card"
+	fi
+	pcurl "/debug/plan?id=session_B2&n=2" >/dev/null
+	if wait_for 'text="Approve: Replace the v0.1.17 files"' 15; then
+		ok "remote: plan card without a recommendation: one button per option"
+		tap_text "Approve: Replace the v0.1.17 files" && nap 1
+		wait_log 'req_plan2[^]]*choice[^0-9]*1' && ok "remote: plan card sends the second option" || bad "remote: plan card sends the second option"
+	else
+		bad "remote: plan card without a recommendation: one button per option"
+	fi
 	popen session_A1
 	wait_for 'text="Rename the greeting"' 10
 	has 'Edit main.go' && ok "remote: tool row" || bad "remote: tool row"
@@ -876,6 +925,20 @@ if [ -n "${PPORT:-}" ]; then
 	for i in $(seq 1 20); do plog | grep -q 'queue/delete' && break; sleep 0.25; done
 	plog | grep -q 'queue/send-now' && plog | grep -q 'queue/delete' && ok "remote: queue Send now and remove" || bad "remote: queue Send now and remove"
 	gone 'queued message' 8 && ok "remote: queue empty afterwards" || bad "remote: queue empty afterwards"
+	tap_edit && nap 1
+	adb_ shell input text queued_four
+	adb_ shell input keyevent KEYCODE_ENTER
+	wait_for 'text="1 queued message"' 8
+	before=$(plog | grep -o 'queue/send-now' | wc -l)
+	nb=$(bounds_of "Send now")
+	if [ -n "$nb" ]; then
+		read -r n1 n2 n3 n4 <<< "$nb"
+		adb_ shell "input tap $(((n1 + n3) / 2)) $(((n2 + n4) / 2)); input tap $(((n1 + n3) / 2)) $(((n2 + n4) / 2)); input tap $(((n1 + n3) / 2)) $(((n2 + n4) / 2))"
+	fi
+	for i in $(seq 1 20); do [ "$(plog | grep -o 'queue/send-now' | wc -l)" -gt "$before" ] && break; sleep 0.25; done
+	nap 2
+	after=$(plog | grep -o 'queue/send-now' | wc -l)
+	[ "$after" = $((before + 1)) ] && gone 'queued message' 5 && ok "remote: repeated taps on Send now send once and hide it at once" || bad "remote: repeated taps on Send now send once and hide it at once" "$before -> $after"
 	tap_edit && nap 1
 	adb_ shell input text queued_three
 	adb_ shell input keyevent KEYCODE_ENTER
@@ -948,7 +1011,7 @@ if [ -n "${PPORT:-}" ]; then
 	wait_for 'Resumed kmem handoff zomboid-fps' 15 && ok "remote: resume a kmem handoff from the phone" || bad "remote: resume a kmem handoff from the phone"
 	tap_desc "New session" && nap 2
 	tap_part "quill-tester · saved" && nap 2
-	wait_for 'text="Rename the greeting"' 10 && ok "remote: handoff open elsewhere opens that session" || bad "remote: handoff open elsewhere opens that session"
+	a1_open 10 && ok "remote: handoff open elsewhere opens that session" || bad "remote: handoff open elsewhere opens that session"
 	pcurl "/debug/nohandoffs?on=1" >/dev/null
 	tap_desc "New session" && nap 2
 	wait_for 'text="Folder"' 10 && ! has 'content-desc="Session name"' && ok "remote: older Quill Desktop: dialog without the kmem part" || bad "remote: older Quill Desktop: dialog without the kmem part"
@@ -1044,7 +1107,7 @@ if [ -n "${PPORT:-}" ]; then
 	tap_any "Unlock" && nap 1
 	gone 'text="Unlock Quill Desktop"' 10 && wait_log '/phone/unlock ' && ok "remote: right password unlocks" || bad "remote: right password unlocks"
 	popen session_A1
-	wait_for 'text="Rename the greeting"' 20 && ok "remote: sessions load again after unlocking" || bad "remote: sessions load again after unlocking"
+	a1_open 20 && ok "remote: sessions load again after unlocking" || bad "remote: sessions load again after unlocking"
 	pcurl "/debug/relock" >/dev/null
 	tap_desc "Reconnect" && nap 2
 	wait_for 'text="Unlock Quill Desktop"' 20 && ok "remote: asks again once Quill Desktop drops the unlock" || bad "remote: asks again once Quill Desktop drops the unlock"
@@ -1081,7 +1144,7 @@ if [ -n "${PPORT:-}" ]; then
 	adb_ shell input keyevent KEYCODE_HOME
 	nap 1
 	launch
-	wait_for 'text="Rename the greeting"' 30 && ok "remote: switches back once the API answers" || bad "remote: switches back once the API answers"
+	a1_open 30 && ok "remote: switches back once the API answers" || bad "remote: switches back once the API answers"
 	crashed && bad "remote: no crash" "$(adb_ logcat -d -b crash | grep -m1 -A2 'FATAL')" || ok "remote: no crash"
 	plog > "$OUT/phoned-requests.json" 2>/dev/null
 	kill "$PHONE_PID" 2>/dev/null

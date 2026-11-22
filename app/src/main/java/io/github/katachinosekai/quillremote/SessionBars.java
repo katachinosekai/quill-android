@@ -97,8 +97,8 @@ class SessionBars {
         if (t == 0) {
             return "";
         }
-        String f = t * 1000 - System.currentTimeMillis() > 20 * 3600_000L ? "EEE H:mm" : "H:mm";
-        return " · resets " + new java.text.SimpleDateFormat(f, java.util.Locale.getDefault()).format(new java.util.Date(t * 1000));
+        boolean far = t * 1000 - System.currentTimeMillis() > 20 * 3600_000L;
+        return " · resets " + TimeFmt.format(far ? "EEE " : "", t * 1000);
     }
 
     static final class UsageItem {
