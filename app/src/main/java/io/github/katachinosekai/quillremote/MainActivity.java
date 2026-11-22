@@ -846,6 +846,7 @@ public class MainActivity extends Activity {
         if (bars.remote) {
             chat = new ChatView(this);
             chat.showTimes = prefs.getBoolean("messageTimes", true);
+            chat.animate = prefs.getBoolean("animateText", true);
             webFrame.addView(chat, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
             web.setVisibility(View.GONE);
         }
@@ -1185,6 +1186,14 @@ public class MainActivity extends Activity {
             }
         });
         box.addView(times);
+        CheckBox anim = check("Animate new text", prefs.getBoolean("animateText", true));
+        anim.setOnCheckedChangeListener((b, on) -> {
+            prefs.edit().putBoolean("animateText", on).apply();
+            if (chat != null) {
+                chat.animate = on;
+            }
+        });
+        box.addView(anim);
         TextView size = line("", TEXT);
         Runnable syncSize = () -> size.setText("Text size  " + prefs.getInt("zoom", 115) + "%  ·  pinch to change");
         syncSize.run();

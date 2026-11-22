@@ -20,6 +20,7 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 - Arrows to slide side panels away, as in Quill.
 - Email sign-in links open straight in the app.
 - Home screen (paired with Quill Desktop): long-press the app icon for New session and your recent sessions; long-press a session → Add to home screen; a Quill widget lists the sessions waiting for you first, then running and recent ones.
+- Replies are formatted while they stream in and appear smoothly, word by word (⚙ → Animate new text to turn the animation off).
 - Message times under each message, in your device's 12/24-hour style (⚙ → Message times to turn them off; needs Quill Desktop 0.1.22+).
 - Share to Quill: share text or a link from any app, pick a session (or a new one), and it lands in the message box to edit and send.
 

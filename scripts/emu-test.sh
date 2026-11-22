@@ -1171,6 +1171,11 @@ if [ -n "${PPORT:-}" ]; then
 	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 	nap 1
 	wait_for 'content-desc="Sent ' 8 && ok "times: back on" || bad "times: back on"
+	# Streaming replies are formatted while they arrive (open **bold** closed for now), finished text as before
+	pcurl "/debug/stream?id=session_A1" >/dev/null
+	wait_for 'Still typing half bo' 15 && ! dump | grep -q 'text="[^"]*\*\*' && has 'item two' && ok "stream: formatted while streaming, no raw **" || bad "stream: formatted while streaming, no raw **" "$(dump | grep -o 'text="[^"]*\(Still\|Intro\)[^"]*"' | head -3 | tr '\n' ' ')"
+	pcurl "/debug/streamend?id=session_A1" >/dev/null
+	wait_for 'Still typing half bold done.' 15 && ! dump | grep -q 'text="[^"]*\*\*' && ok "stream: finished reply rendered" || bad "stream: finished reply rendered"
 	# Unreachable Quill Desktop: after 2 failed tries the line suggests the VPN, with a help link
 	pcurl "/debug/down?s=45" >/dev/null
 	wait_for 'Not at home? Turn on your VPN' 45 && has 'VPN help' && ok "vpn: hint when Quill Desktop can't be reached" || bad "vpn: hint when Quill Desktop can't be reached"

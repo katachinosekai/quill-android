@@ -113,6 +113,10 @@ final class ChatView extends LinearLayout {
     static final int USER_BG = 0xFF3A3A37;
     static final String VPN_HELP = "https://github.com/katachinosekai/quill-android#away-from-home";
     boolean showTimes = true;
+    /** ⚙ Animate new text (pref animateText, like Quill Desktop): finished paragraphs fade in, the last one is revealed word by word. */
+    boolean animate = true;
+    /** Live views of replies that are still streaming, by seq (updated in place instead of re-rendered). */
+    final Map<Integer, StreamView> streams = new HashMap<>();
     static final int BLUE = 0xFF5BA8F5;
     static final int RED = 0xFFE55B5B;
     static final int GREEN = 0xFF6CC06C;
@@ -634,6 +638,10 @@ final class ChatView extends LinearLayout {
     }
 
     void clear() {
+        for (StreamView sv : streams.values()) {
+            sv.stop();
+        }
+        streams.clear();
         list.removeAllViews();
         views.clear();
         sigs.clear();
@@ -658,6 +666,10 @@ final class ChatView extends LinearLayout {
             if (!bySeq.containsKey(seq)) {
                 list.removeView(views.remove(seq));
                 sigs.remove(seq);
+                StreamView gone = streams.remove(seq);
+                if (gone != null) {
+                    gone.stop();
+                }
             }
         }
         Item lastAssistant = latestAnswerable(next);
@@ -665,6 +677,20 @@ final class ChatView extends LinearLayout {
             Item it = next.get(i);
             String sig = it.sig() + (it == lastAssistant ? "|choices" : "") + (expanded.contains(it.seq) ? "|open" : "");
             View old = views.get(it.seq);
+            StreamView sv = streams.get(it.seq);
+            if (old != null && sv != null && "assistant".equals(it.kind) && (it.streaming || !sv.caughtUp(it.text)) && !expanded.contains(it.seq)) {
+                if (list.indexOfChild(old) != i) {
+                    list.removeView(old);
+                    list.addView(old, i);
+                }
+                sv.update(it.text, it.streaming);
+                sigs.put(it.seq, sig);
+                continue;
+            }
+            if (sv != null) {
+                sv.stop();
+                streams.remove(it.seq);
+            }
             if (old != null && sig.equals(sigs.get(it.seq))) {
                 if (list.indexOfChild(old) != i) {
                     list.removeView(old);
@@ -874,14 +900,40 @@ final class ChatView extends LinearLayout {
     }
 
     View assistant(Item it, boolean answerable) {
+        if (it.streaming && !it.text.isEmpty()) {
+            StreamView sv = new StreamView(getContext());
+            StreamView prev = streams.put(it.seq, sv);
+            if (prev != null) {
+                prev.stop();
+            }
+            sv.update(it.text, true);
+            return spaced(sv, 14);
+        }
         LinearLayout col = new LinearLayout(getContext());
         col.setOrientation(VERTICAL);
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp;
         md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
         String shown = expanded.contains(it.seq) ? it.text : fold(it.text);
-        md.setMarkdown(shown);
-        col.addView(md);
+        // Paragraph by paragraph, the same layout a streaming reply has (Quill Desktop's markdownBlocks), so nothing
+        // re-flows when a reply ends.
+        StringBuilder liveBuf = new StringBuilder();
+        java.util.List<String> paras = StreamText.split(shown.replaceAll("\\n+$", ""), liveBuf);
+        if (!liveBuf.toString().trim().isEmpty()) {
+            paras.add(liveBuf.toString());
+        }
+        if (paras.size() <= 1) {
+            md.setMarkdown(shown);
+            col.addView(md);
+        } else {
+            for (int k = 0; k < paras.size(); k++) {
+                MarkdownView pm = new MarkdownView(getContext());
+                pm.sp = sp;
+                pm.gravity = md.gravity;
+                pm.setMarkdown(paras.get(k));
+                col.addView(pm, paraParams(k));
+            }
+        }
         if (shown.length() < it.text.length()) {
             int lines = lineCount(it.text);
             TextView more = button("Show all " + lines + " lines", MainActivity.ACCENT);
@@ -1418,5 +1470,130 @@ final class ChatView extends LinearLayout {
 
     static FrameLayout.LayoutParams fill() {
         return new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+    }
+
+    /** Space between paragraphs, the same while streaming and after (both lay a reply out paragraph by paragraph). */
+    LinearLayout.LayoutParams paraParams(int index) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        lp.topMargin = index == 0 ? 0 : dp(10);
+        return lp;
+    }
+
+    static final long STREAM_TICK = 16;
+
+    /**
+     * A reply that is still streaming (Quill Desktop's smooth streamView, 2026-11-22): laid out paragraph by paragraph
+     * like the finished reply; finished paragraphs are added once and never redrawn or faded; the growing last one is
+     * drawn with its open markup closed. With Animate new text on, one ~60 fps tick reveals 2–24 characters a frame,
+     * whole words, faster when behind, and stops when caught up (no idle timer). Off: text appears as it arrives.
+     * When the reply has ended and the reveal has caught up, the item is rendered the normal way, in the same layout.
+     */
+    final class StreamView extends LinearLayout {
+        final MarkdownView live;
+        String text = "";
+        boolean streaming = true;
+        int pos;
+        int done;
+        String shown = "";
+        boolean ticking;
+        boolean stopped;
+
+        StreamView(android.content.Context c) {
+            super(c);
+            setOrientation(VERTICAL);
+            live = md();
+            addView(live, paraParams(0));
+        }
+
+        MarkdownView md() {
+            MarkdownView m = new MarkdownView(getContext());
+            m.sp = sp;
+            m.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
+            return m;
+        }
+
+        boolean caughtUp(String t) {
+            return pos >= t.length();
+        }
+
+        void update(String t, boolean stillStreaming) {
+            if (!t.startsWith(text.substring(0, Math.min(pos, text.length())))) {
+                pos = 0; // the text was replaced, not extended: start over
+                done = 0;
+                shown = "";
+                removeAllViews();
+                addView(live, paraParams(0));
+            }
+            text = t;
+            streaming = stillStreaming;
+            if (!animate) {
+                pos = text.length();
+                draw();
+                finishIfDone();
+                return;
+            }
+            if (!ticking) {
+                ticking = true;
+                postDelayed(this::tick, STREAM_TICK);
+            }
+        }
+
+        void tick() {
+            if (stopped) {
+                ticking = false;
+                return;
+            }
+            if (pos < text.length()) {
+                pos = StreamText.nextReveal(text, pos, streaming);
+                draw();
+            }
+            if (pos >= text.length()) {
+                ticking = false;
+                finishIfDone();
+                return;
+            }
+            postDelayed(this::tick, STREAM_TICK);
+        }
+
+        /** The reply ended and everything is shown: render it the normal way (same layout, plus time and choices). */
+        void finishIfDone() {
+            if (!streaming && pos >= text.length() && !stopped) {
+                stopped = true;
+                post(() -> {
+                    for (Map.Entry<Integer, StreamView> e : streams.entrySet()) {
+                        if (e.getValue() == this) {
+                            sigs.remove(e.getKey());
+                            streams.remove(e.getKey());
+                            break;
+                        }
+                    }
+                    setItems(items);
+                });
+            }
+        }
+
+        void draw() {
+            StringBuilder liveText = new StringBuilder();
+            java.util.List<String> paras = StreamText.split(text.substring(0, pos), liveText);
+            if (paras.size() > done) {
+                for (int k = done; k < paras.size(); k++) {
+                    MarkdownView b = md();
+                    b.setMarkdown(paras.get(k));
+                    addView(b, getChildCount() - 1, paraParams(getChildCount() - 1));
+                }
+                done = paras.size();
+                live.setLayoutParams(paraParams(getChildCount() - 1));
+            }
+            String l = liveText.toString();
+            if (!l.equals(shown)) {
+                shown = l;
+                live.setMarkdown(l.trim().isEmpty() ? "" : StreamText.closeOpen(l));
+            }
+            toBottom();
+        }
+
+        void stop() {
+            stopped = true;
+        }
     }
 }

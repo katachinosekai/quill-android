@@ -53,6 +53,7 @@ type server struct {
 	paused    bool
 	noAPI     bool
 	downUntil time.Time
+	liveItem  item
 	noHandoff bool
 	lockOn    bool
 	unlockTok string
@@ -483,6 +484,49 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		s.add(x, item{"kind": "permission", "request": map[string]any{"id": q.Get("req"), "state": "pending", "tool": "Bash", "detail": "rm -rf build/", "canAllowAlways": true}})
 		x.Status = "waiting"
 		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
+	case p == "/debug/stream":
+		// a reply that streams markdown in steps and stays streaming (open **bold** at the end) until /debug/streamend
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		parts := []string{
+			"Intro paragraph with **bold",
+			"Intro paragraph with **bold** text.\n\n- item one\n- item",
+			"Intro paragraph with **bold** text.\n\n- item one\n- item two\n\nStill typing **half bo",
+		}
+		it := s.add(x, item{"kind": "assistant", "text": parts[0], "streaming": true})
+		s.liveItem = it
+		x.Status = "running"
+		s.touch(x, it)
+		go func() {
+			for _, t := range parts[1:] {
+				time.Sleep(500 * time.Millisecond)
+				s.mu.Lock()
+				it["text"] = t
+				s.touch(x, it)
+				s.mu.Unlock()
+			}
+		}()
+		reply(w, 200, map[string]any{})
+	case p == "/debug/streamend":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil || s.liveItem == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		s.liveItem["text"] = "Intro paragraph with **bold** text.\n\n- item one\n- item two\n\nStill typing **half bold** done."
+		s.liveItem["streaming"] = false
+		s.touch(x, s.liveItem)
+		x.Status = "idle"
+		s.touch(x, nil)
+		s.liveItem = nil
 		reply(w, 200, map[string]any{})
 	case p == "/debug/suggest":
 		s.mu.Lock()
