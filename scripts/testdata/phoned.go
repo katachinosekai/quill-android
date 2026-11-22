@@ -333,6 +333,26 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		} else {
 			items = x.Items
 		}
+		// /debug/blank: incremental fetches see an empty reply (a lost update); a full window has its text.
+		out := make([]item, 0, len(items))
+		for _, it := range items {
+			if full, ok := it["healText"].(string); ok {
+				c := item{}
+				for k, v := range it {
+					if k != "healText" {
+						c[k] = v
+					}
+				}
+				if q.Has("epoch") && !reset {
+					c["text"] = ""
+				} else {
+					c["text"] = full
+				}
+				it = c
+			}
+			out = append(out, it)
+		}
+		items = out
 		queue := []any{}
 		for i, t := range x.Queue {
 			queue = append(queue, map[string]any{"index": i, "text": t})
@@ -378,6 +398,17 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		}
 		s.add(x, item{"kind": "assistant", "text": "Newest filler message."})
 		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
+	case p == "/debug/blank":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		it := s.add(x, item{"kind": "assistant", "text": "", "healText": "Healed reply after a lost update."})
+		s.touch(x, it)
 		reply(w, 200, map[string]any{})
 	case p == "/debug/suggest":
 		s.mu.Lock()

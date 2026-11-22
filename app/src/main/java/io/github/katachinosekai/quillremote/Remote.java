@@ -497,6 +497,11 @@ final class Remote implements ChatView.Actions {
     }
 
     void fetch(String id, boolean fresh) {
+        fetch(id, fresh, false);
+    }
+
+    /** stick: a heal reload; if the chat was at the newest message, it stays there after the window is replaced. */
+    void fetch(String id, boolean fresh, boolean stick) {
         int ep;
         long since;
         synchronized (this) {
@@ -505,11 +510,15 @@ final class Remote implements ChatView.Actions {
         }
         PhoneApi.Reply r = fresh || ep < 0 ? api.items(id, -1, 0) : api.items(id, ep, since);
         if (r.ok()) {
-            apply(id, fresh, r.body);
+            apply(id, fresh, r.body, stick);
         }
     }
 
     synchronized void apply(String id, boolean fresh, JSONObject o) {
+        apply(id, fresh, o, false);
+    }
+
+    synchronized void apply(String id, boolean fresh, JSONObject o, boolean stick) {
         if (!id.equals(current)) {
             return;
         }
@@ -526,6 +535,7 @@ final class Remote implements ChatView.Actions {
             }
         }
         queue = o.optJSONArray("queue") == null ? new JSONArray() : o.optJSONArray("queue");
+        healBlanks(id, fresh);
         List<ChatView.Item> list = new ArrayList<>();
         for (JSONObject it : items.values()) {
             list.add(ChatView.Item.from(it));
@@ -533,10 +543,57 @@ final class Remote implements ChatView.Actions {
         JSONArray q = queue;
         postLatest(uiItems, () -> {
             if (id.equals(current)) {
+                boolean atEnd = chat.follow;
                 chat.setItems(list);
                 chat.setQueue(q);
+                if (stick && atEnd) {
+                    chat.stickToBottom();
+                }
             }
         });
+    }
+
+    long lastHeal;
+    final java.util.Set<String> healed = new java.util.HashSet<>();
+    static final long HEAL_EVERY = 10_000;
+
+    /**
+     * Blank self-heal (user 2026-11-21): after a lost connection a reply could stay as an empty bubble, because the phone
+     * kept its half-arrived copy and the later change never reached it. A text item (assistant/user) with no text that is
+     * not streaming any more, or still "streaming" while the session isn't running, triggers one fresh reload of the
+     * window (at most every 10 s, never from a fresh reload itself, so a really empty item can't loop).
+     */
+    void healBlanks(String id, boolean fresh) {
+        if (fresh) {
+            return;
+        }
+        JSONObject s = session(id);
+        boolean running = s != null && "running".equals(s.optString("status"));
+        // Each blank item gets one reload at most: some are really empty on Quill Desktop (a reply that was only tool
+        // calls), and those must not reload the chat every 10 s.
+        List<String> found = new ArrayList<>();
+        for (JSONObject it : items.values()) {
+            String k = it.optString("kind");
+            if (("assistant".equals(k) || "user".equals(k)) && it.optString("text").trim().isEmpty()
+                    && (!it.optBoolean("streaming") || !running)) {
+                String key = id + ":" + epoch + ":" + it.optInt("seq");
+                if (!healed.contains(key)) {
+                    found.add(key);
+                }
+            }
+        }
+        boolean blank = !found.isEmpty();
+        long now = System.currentTimeMillis();
+        if (blank && now - lastHeal >= HEAL_EVERY) {
+            healed.addAll(found);
+            if (healed.size() > 2000) {
+                healed.clear();
+                healed.addAll(found);
+            }
+            lastHeal = now;
+            android.util.Log.i("QuillHeal", "blank item in " + id + ", reloading the window");
+            work.execute(() -> fetch(id, true, true));
+        }
     }
 
     synchronized void open(String id) {

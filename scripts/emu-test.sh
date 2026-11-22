@@ -835,6 +835,14 @@ if [ -n "${PPORT:-}" ]; then
 	wait_for 'content-desc="Go to latest message"' 5 && ok "remote: ↓ button appears when scrolled up" || bad "remote: ↓ button appears when scrolled up"
 	tap_text "Go to latest message" && nap 2
 	wait_for 'text="Newest filler message."' 5 && gone 'content-desc="Go to latest message"' 5 && ok "remote: ↓ jumps to the newest message" || bad "remote: ↓ jumps to the newest message"
+	pcurl "/debug/blank?id=session_B2" >/dev/null
+	if wait_for 'text="Healed reply after a lost update."' 20; then
+		ok "remote: an empty reply heals itself (full reload)"
+	elif tap_text "Go to latest message" && wait_for 'text="Healed reply after a lost update."' 5; then
+		bad "remote: an empty reply heals itself (full reload)" "healed, but the chat didn't stay at the newest message"
+	else
+		bad "remote: an empty reply heals itself (full reload)"
+	fi
 	popen session_A1
 	wait_for 'text="Rename the greeting"' 10
 	has 'Edit main.go' && ok "remote: tool row" || bad "remote: tool row"
@@ -868,6 +876,17 @@ if [ -n "${PPORT:-}" ]; then
 	for i in $(seq 1 20); do plog | grep -q 'queue/delete' && break; sleep 0.25; done
 	plog | grep -q 'queue/send-now' && plog | grep -q 'queue/delete' && ok "remote: queue Send now and remove" || bad "remote: queue Send now and remove"
 	gone 'queued message' 8 && ok "remote: queue empty afterwards" || bad "remote: queue empty afterwards"
+	tap_edit && nap 1
+	adb_ shell input text queued_three
+	adb_ shell input keyevent KEYCODE_ENTER
+	wait_for 'text="1 queued message"' 8
+	tap_text "Edit queued message: queued_three" && nap 1
+	for i in $(seq 1 20); do [ "$(plog | grep -o 'queue/delete' | wc -l)" -ge 2 ] && break; sleep 0.25; done
+	DIRTY=1
+	[ "$(plog | grep -o 'queue/delete' | wc -l)" -ge 2 ] && dump | tr '>' '\n' | grep -F 'class="android.widget.EditText"' | grep -q 'text="queued_three"' && ok "remote: tapping a queued message puts it in the box to edit" || bad "remote: tapping a queued message puts it in the box to edit"
+	adb_ shell input keyevent KEYCODE_MOVE_END
+	for i in $(seq 1 14); do adb_ shell input keyevent KEYCODE_DEL; done
+	ime_off
 	pcurl "/debug/busy?id=session_A1&on=0" >/dev/null
 	pcurl "/debug/pause?on=1" >/dev/null
 	wait_for 'text="Resume now"' 10 && ok "remote: usage pause banner" || bad "remote: usage pause banner"

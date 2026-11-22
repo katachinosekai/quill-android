@@ -364,6 +364,23 @@ final class ChatView extends LinearLayout {
         return g;
     }
 
+    /**
+     * Keep following the newest message after the whole window was replaced (heal reload). Swapping item views can let
+     * the ScrollView jump near the top (focus moves to an earlier view), after the first toBottom already ran, so scroll
+     * down again over the next second while still following and not touched.
+     */
+    void stickToBottom() {
+        follow = true;
+        for (int ms : new int[]{0, 120, 400, 900}) {
+            postDelayed(() -> {
+                if (follow && !touching) {
+                    scroll.scrollTo(0, Math.max(0, col.getHeight() - scroll.getHeight()));
+                    syncLatest();
+                }
+            }, ms);
+        }
+    }
+
     void toBottom() {
         if (follow) {
             scroll.scrollTo(0, Math.max(0, col.getHeight() - scroll.getHeight()));
@@ -470,6 +487,23 @@ final class ChatView extends LinearLayout {
             t.setMaxLines(2);
             t.setEllipsize(android.text.TextUtils.TruncateAt.END);
             row.addView(t, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+            // Tap the text (user 2026-11-21): take it out of the queue and into the message box to edit or resend
+            // (like editing a queued message on Quill Desktop). Text already in the box is kept after it.
+            t.setContentDescription("Edit queued message: " + text);
+            t.setOnClickListener(v -> {
+                if (actions == null) {
+                    return;
+                }
+                actions.queueOp("delete", index, text);
+                String cur = box.getText().toString();
+                box.setText(cur.trim().isEmpty() ? text : text + "\n" + cur);
+                box.requestFocus();
+                box.setSelection(text.length());
+                android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager) getContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+                if (im != null) {
+                    im.showSoftInput(box, 0);
+                }
+            });
             TextView now = label("Send now", MainActivity.ACCENT, 13);
             now.setTypeface(Typeface.DEFAULT_BOLD);
             now.setPadding(dp(10), dp(8), dp(10), dp(8));
@@ -582,7 +616,30 @@ final class ChatView extends LinearLayout {
         return v;
     }
 
+    /** Items with nothing to show (a reply that was only tool calls, an empty notice or thinking block) take no space (user 2026-11-21: blank space in histories). */
+    static boolean empty(Item it) {
+        if (it.streaming || !it.text.trim().isEmpty()) {
+            return false;
+        }
+        switch (it.kind) {
+            case "assistant":
+                return it.choices == null || it.choices.length() == 0;
+            case "user":
+            case "thinking":
+            case "error":
+            case "notice":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     View render(Item it, boolean answerable) {
+        if (empty(it)) {
+            View none = new View(getContext());
+            none.setVisibility(GONE);
+            return none;
+        }
         switch (it.kind) {
             case "user":
                 return user(it);
