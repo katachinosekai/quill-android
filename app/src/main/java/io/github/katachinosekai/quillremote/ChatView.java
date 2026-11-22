@@ -685,9 +685,51 @@ final class ChatView extends LinearLayout {
             }
         }
         Item lastAssistant = latestAnswerable(next);
+        // Plan overlay: a pending plan's numbered questions answered in its reply (see PlanOverlay).
+        Map<Integer, Item> ovPlan = new HashMap<>();
+        Map<Integer, int[][]> ovMatch = new HashMap<>();
+        java.util.Set<Integer> hiddenPlans = new java.util.HashSet<>();
+        for (int i = 0; i < next.size(); i++) {
+            Item p = next.get(i);
+            if (!"plan".equals(p.kind) || !pending(p) || p.planQuestions == null || p.planQuestions.length() == 0) {
+                continue;
+            }
+            Item reply = null;
+            for (int j = i - 1; j >= 0 && reply == null; j--) {
+                Item x = next.get(j);
+                if ("user".equals(x.kind) || "plan".equals(x.kind)) {
+                    break;
+                }
+                if ("assistant".equals(x.kind) && !x.text.trim().isEmpty()) {
+                    reply = x;
+                }
+            }
+            if (reply == null || reply.streaming) {
+                continue;
+            }
+            int n = p.planQuestions.length();
+            int[] nums = new int[n];
+            String[] texts = new String[n];
+            for (int k = 0; k < n; k++) {
+                JSONObject q = p.planQuestions.optJSONObject(k);
+                nums[k] = q == null ? 0 : q.optInt("num", 0);
+                texts[k] = q == null ? "" : q.optString("text");
+            }
+            int[][] m = PlanOverlay.match(reply.text, nums, texts);
+            if (m != null) {
+                ovPlan.put(reply.seq, p);
+                ovMatch.put(reply.seq, m);
+                if (!planPlain.contains(p.seq)) {
+                    hiddenPlans.add(p.seq);
+                }
+            }
+        }
         for (int i = 0; i < next.size(); i++) {
             Item it = next.get(i);
-            String sig = it.sig() + (it == lastAssistant ? "|choices" : "") + (expanded.contains(it.seq) ? "|open" : "");
+            Item ovp = ovPlan.get(it.seq);
+            String sig = it.sig() + (it == lastAssistant ? "|choices" : "") + (expanded.contains(it.seq) ? "|open" : "")
+                    + (ovp == null ? "" : "|ov" + ovp.seq + ":" + planPlain.contains(ovp.seq) + ":" + ovp.sig())
+                    + (hiddenPlans.contains(it.seq) ? "|hidden" : "") + ("plan".equals(it.kind) && planPlain.contains(it.seq) ? "|plain" : "");
             View old = views.get(it.seq);
             StreamView sv = streams.get(it.seq);
             if (old != null && sv != null && "assistant".equals(it.kind) && (it.streaming || !sv.caughtUp(it.text)) && !expanded.contains(it.seq)) {
@@ -710,7 +752,8 @@ final class ChatView extends LinearLayout {
                 }
                 continue;
             }
-            View v = render(it, it == lastAssistant);
+            View v = ovp != null ? overlayReply(it, ovp, ovMatch.get(it.seq), it == lastAssistant)
+                    : hiddenPlans.contains(it.seq) ? gone() : render(it, it == lastAssistant);
             if (old != null) {
                 int at = list.indexOfChild(old);
                 list.removeView(old);
@@ -1200,19 +1243,17 @@ final class ChatView extends LinearLayout {
      */
     void planQuestions(LinearLayout c, Item it, EditText fb) {
         JSONArray qs = it.planQuestions;
+        Map<String, Object> ans = answers(it);
         // The questions form one column (Quill Desktop 1be563f): centered as a whole when centering is on, controls
         // left-aligned inside it; widths scale with the chat (Columns).
         LinearLayout qcol = new LinearLayout(getContext());
         qcol.setOrientation(VERTICAL);
         List<Columns.Words> qwords = new ArrayList<>();
-        List<java.util.function.Supplier<Object>> values = new ArrayList<>();
-        List<String> ids = new ArrayList<>();
         for (int i = 0; i < qs.length(); i++) {
             JSONObject q = qs.optJSONObject(i);
             if (q == null) {
                 continue;
             }
-            String qid = String.valueOf(q.opt("id"));
             // "num" = the question's own number in the plan (Quill Desktop, optional); else count from 1.
             int num = q.optInt("num", 0) > 0 ? q.optInt("num") : i + 1;
             TextView qt = label("", MainActivity.TEXT, 15);
@@ -1220,110 +1261,243 @@ final class ChatView extends LinearLayout {
             qt.setPadding(0, dp(12), 0, dp(4));
             qt.setGravity(Gravity.START);
             qwords.add(MarkdownView.words(qt.getPaint(), num + ". " + q.optString("text")));
-            qcol.addView(qt);
             JSONArray os = q.optJSONArray("options");
             for (int k = 0; os != null && k < os.length(); k++) {
                 qwords.add(MarkdownView.words(qt.getPaint(), os.optString(k) + "  (recommended)"));
             }
-            int rec = q.optInt("recommended", -1);
-            String kind = q.optString("kind");
-            ids.add(qid);
-            switch (kind) {
-                case "yesno": {
-                    android.widget.RadioGroup g = new android.widget.RadioGroup(getContext());
-                    g.setOrientation(HORIZONTAL);
-                    String[] yn = {"Yes", "No"};
-                    for (int k = 0; k < 2; k++) {
-                        android.widget.RadioButton rb = new android.widget.RadioButton(getContext());
-                        rb.setText(yn[k] + (k == rec ? "  (recommended)" : ""));
-                        rb.setTextColor(MainActivity.TEXT);
-                        rb.setTag(k == 0 ? "yes" : "no");
-                        rb.setId(View.generateViewId());
-                        g.addView(rb);
-                        if (k == rec) {
-                            rb.setChecked(true); // pre-picked like single (Quill Desktop: options ["Yes","No"] + recommended 0/1)
-                        }
-                    }
-                    qcol.addView(g);
-                    values.add(() -> {
-                        View v = g.findViewById(g.getCheckedRadioButtonId());
-                        return v == null ? null : v.getTag();
-                    });
-                    break;
-                }
-                case "single": {
-                    android.widget.RadioGroup g = new android.widget.RadioGroup(getContext());
-                    for (int k = 0; os != null && k < os.length(); k++) {
-                        android.widget.RadioButton rb = new android.widget.RadioButton(getContext());
-                        rb.setText(os.optString(k) + (k == rec ? "  (recommended)" : ""));
-                        rb.setTextColor(MainActivity.TEXT);
-                        rb.setTag(k);
-                        rb.setId(View.generateViewId());
-                        g.addView(rb);
-                        if (k == rec) {
-                            rb.setChecked(true);
-                        }
-                    }
-                    qcol.addView(g);
-                    values.add(() -> {
-                        View v = g.findViewById(g.getCheckedRadioButtonId());
-                        return v == null ? null : v.getTag();
-                    });
-                    break;
-                }
-                case "multi": {
-                    List<android.widget.CheckBox> boxes = new ArrayList<>();
-                    for (int k = 0; os != null && k < os.length(); k++) {
-                        android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
-                        cb.setText(os.optString(k));
-                        cb.setTextColor(MainActivity.TEXT);
-                        boxes.add(cb);
-                        qcol.addView(cb);
-                    }
-                    values.add(() -> {
-                        JSONArray picked = new JSONArray();
-                        for (int k = 0; k < boxes.size(); k++) {
-                            if (boxes.get(k).isChecked()) {
-                                picked.put(k);
-                            }
-                        }
-                        return picked.length() == 0 ? null : picked;
-                    });
-                    break;
-                }
-                default: {
-                    EditText e = new EditText(getContext());
-                    e.setHint("Your answer");
-                    e.setContentDescription("Answer " + (i + 1));
-                    e.setTextColor(MainActivity.TEXT);
-                    e.setHintTextColor(MainActivity.MUTED);
-                    e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-                    qcol.addView(e);
-                    values.add(() -> {
-                        String t = e.getText().toString().trim();
-                        return t.isEmpty() ? null : t;
-                    });
-                }
-            }
+            qcol.addView(qt);
+            planControl(qcol, q, i, ans);
         }
         Columns.Words[] qw = qwords.toArray(new Columns.Words[0]);
         c.addView(centerChat ? new ColumnView(getContext(), true, avail -> Columns.groupWidth(avail, qw, dp(48), dp(8)), qcol) : qcol);
+        planButtons(c, it, fb);
+    }
 
+    /** One plan's answers, shared by the card and the overlay (Quill Desktop: both views share one answers map). */
+    final Map<String, Map<String, Object>> planAns = new HashMap<>();
+    /** Plans the user switched to "Show as written" (the reply as written plus the card). */
+    final java.util.Set<Integer> planPlain = new java.util.HashSet<>();
+
+    Map<String, Object> answers(Item plan) {
+        return planAns.computeIfAbsent(plan.requestId == null ? "seq:" + plan.seq : plan.requestId, k -> new HashMap<>());
+    }
+
+    /**
+     * A question's control, reading and writing ans: yesno → Yes/No, single → radio buttons, multi → checkboxes,
+     * text → a text field; the recommended option starts picked (once, the first time this plan is drawn).
+     */
+    void planControl(LinearLayout into, JSONObject q, int index, Map<String, Object> ans) {
+        String qid = String.valueOf(q.opt("id"));
+        JSONArray os = q.optJSONArray("options");
+        int rec = q.optInt("recommended", -1);
+        String kind = q.optString("kind");
+        if (!ans.containsKey(qid) && !ans.containsKey("seen:" + qid)) {
+            ans.put("seen:" + qid, Boolean.TRUE);
+            if (rec >= 0 && "yesno".equals(kind)) {
+                ans.put(qid, rec == 0 ? "yes" : "no");
+            } else if (rec >= 0 && "single".equals(kind)) {
+                ans.put(qid, rec);
+            }
+        }
+        switch (kind) {
+            case "yesno":
+            case "single": {
+                android.widget.RadioGroup g = new android.widget.RadioGroup(getContext());
+                boolean yn = "yesno".equals(kind);
+                if (yn) {
+                    g.setOrientation(HORIZONTAL);
+                }
+                int n = yn ? 2 : os == null ? 0 : os.length();
+                for (int k = 0; k < n; k++) {
+                    android.widget.RadioButton rb = new android.widget.RadioButton(getContext());
+                    String label = yn ? (k == 0 ? "Yes" : "No") : os.optString(k);
+                    rb.setText(label + (k == rec ? "  (recommended)" : ""));
+                    rb.setTextColor(MainActivity.TEXT);
+                    Object value = yn ? (k == 0 ? "yes" : "no") : (Object) k;
+                    rb.setId(View.generateViewId());
+                    g.addView(rb);
+                    if (value.equals(ans.get(qid))) {
+                        rb.setChecked(true);
+                    }
+                    rb.setOnCheckedChangeListener((b, on) -> {
+                        if (on) {
+                            ans.put(qid, value);
+                        }
+                    });
+                }
+                into.addView(g);
+                break;
+            }
+            case "multi": {
+                Object cur = ans.get(qid);
+                java.util.TreeSet<Integer> picked = cur instanceof java.util.TreeSet ? castSet(cur) : new java.util.TreeSet<>();
+                for (int k = 0; os != null && k < os.length(); k++) {
+                    android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
+                    cb.setText(os.optString(k));
+                    cb.setTextColor(MainActivity.TEXT);
+                    cb.setChecked(picked.contains(k));
+                    int kk = k;
+                    cb.setOnCheckedChangeListener((b, on) -> {
+                        if (on) {
+                            picked.add(kk);
+                        } else {
+                            picked.remove(kk);
+                        }
+                        if (picked.isEmpty()) {
+                            ans.remove(qid);
+                        } else {
+                            ans.put(qid, picked);
+                        }
+                    });
+                    into.addView(cb);
+                }
+                break;
+            }
+            default: {
+                EditText e = new EditText(getContext());
+                e.setHint("Your answer");
+                e.setContentDescription("Answer " + (index + 1));
+                e.setTextColor(MainActivity.TEXT);
+                e.setHintTextColor(MainActivity.MUTED);
+                e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                Object cur = ans.get(qid);
+                if (cur instanceof String) {
+                    e.setText((String) cur);
+                }
+                e.addTextChangedListener(new android.text.TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence x, int a, int b, int c) {
+                    }
+
+                    @Override
+                    public void onTextChanged(CharSequence x, int a, int b, int c) {
+                    }
+
+                    @Override
+                    public void afterTextChanged(android.text.Editable x) {
+                        String t = x.toString().trim();
+                        if (t.isEmpty()) {
+                            ans.remove(qid);
+                        } else {
+                            ans.put(qid, t);
+                        }
+                    }
+                });
+                into.addView(e);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static java.util.TreeSet<Integer> castSet(Object o) {
+        return (java.util.TreeSet<Integer>) o;
+    }
+
+    /** The plan's answers as planAnswers {id: value}; unanswered questions are left out ("no answer"). */
+    JSONObject planAnswersJson(Item plan) {
+        JSONObject out = new JSONObject();
+        try {
+            for (Map.Entry<String, Object> e : answers(plan).entrySet()) {
+                if (e.getKey().startsWith("seen:")) {
+                    continue;
+                }
+                Object v = e.getValue();
+                if (v instanceof java.util.TreeSet) {
+                    JSONArray a = new JSONArray();
+                    for (Integer k : castSet(v)) {
+                        a.put(k);
+                    }
+                    v = a;
+                }
+                out.put(e.getKey(), v);
+            }
+        } catch (org.json.JSONException ignored) {
+        }
+        return out;
+    }
+
+    View gone() {
+        View v = new View(getContext());
+        v.setVisibility(GONE);
+        return v;
+    }
+
+    /**
+     * A plan's reply with its questions answered in place (Quill Desktop 596036f): each question's lines keep their
+     * text with the control right under them, and the card's caption, a changes field and Approve plan & send answers
+     * / Don't run close the reply. A toggle at the top switches to the reply as written plus the card.
+     */
+    View overlayReply(Item reply, Item plan, int[][] m, boolean answerable) {
+        boolean plain = planPlain.contains(plan.seq);
+        LinearLayout col = new LinearLayout(getContext());
+        col.setOrientation(VERTICAL);
+        TextView toggle = label(plain ? "☰  Answer in place" : "▤  Show as written", MainActivity.MUTED, 12);
+        toggle.setContentDescription(plain ? "Answer the plan's questions in place" : "Show the reply as written");
+        toggle.setPadding(0, dp(2), dp(8), dp(6));
+        toggle.setOnClickListener(v -> {
+            if (!planPlain.remove(plan.seq)) {
+                planPlain.add(plan.seq);
+            }
+            setItems(items);
+        });
+        col.addView(toggle, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        if (plain) {
+            col.addView(assistant(reply, answerable));
+            return spaced(col, 14);
+        }
+        Map<String, Object> ans = answers(plan);
+        int at = 0;
+        for (int k = 0; k < m.length; k++) {
+            JSONObject q = plan.planQuestions.optJSONObject(k);
+            String part = PlanOverlay.lines(reply.text, at, m[k][1]);
+            if (!part.trim().isEmpty()) {
+                col.addView(markdown(part));
+            }
+            LinearLayout ctl = new LinearLayout(getContext());
+            ctl.setOrientation(VERTICAL);
+            ctl.setPadding(dp(16), 0, 0, dp(6));
+            if (q != null) {
+                planControl(ctl, q, k, ans);
+            }
+            col.addView(ctl);
+            at = m[k][1];
+        }
+        String rest = PlanOverlay.lines(reply.text, at, Integer.MAX_VALUE);
+        if (!rest.trim().isEmpty()) {
+            col.addView(markdown(rest));
+        }
+        LinearLayout c = card(planTitle(plan.text), MainActivity.ACCENT);
+        EditText fb = new EditText(getContext());
+        fb.setHint("Changes (optional)");
+        fb.setTextColor(MainActivity.TEXT);
+        fb.setHintTextColor(MainActivity.MUTED);
+        fb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        c.addView(fb);
+        planButtons(c, plan, fb);
+        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        cl.topMargin = dp(10);
+        col.addView(c, cl);
+        return spaced(col, 14);
+    }
+
+    MarkdownView markdown(String text) {
+        MarkdownView md = new MarkdownView(getContext());
+        md.sp = sp;
+        md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
+        md.setMarkdown(text);
+        return md;
+    }
+
+    /** The note and the two buttons that close a plan with questions (card or overlay). */
+    void planButtons(LinearLayout c, Item it, EditText fb) {
         TextView note = label("Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
         note.setPadding(0, dp(8), 0, 0);
         c.addView(note);
         LinearLayout row = buttons(c);
         addButton(row, "Approve plan & send answers", GREEN, v -> {
             JSONObject extra = new JSONObject();
-            JSONObject answers = new JSONObject();
             try {
-                for (int k = 0; k < ids.size(); k++) {
-                    Object val = values.get(k).get();
-                    if (val != null) {
-                        answers.put(ids.get(k), val);
-                    }
-                }
-                extra.put("planAnswers", answers);
+                extra.put("planAnswers", planAnswersJson(it));
             } catch (org.json.JSONException ignored) {
             }
             act(it, "approvePlan", extra);

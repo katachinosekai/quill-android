@@ -63,6 +63,10 @@ final class Remote implements ChatView.Actions {
     JSONObject models = new JSONObject();
     JSONObject modes = new JSONObject();
     JSONArray projects = new JSONArray();
+    /** Quill Desktop's session switches ("Ask before building", "Coordinate with subagents"); null = not supported. */
+    volatile JSONObject settings;
+    /** Called on the UI thread when settings change (the open ⚙ sheet refreshes its switches). */
+    volatile Runnable onSettings;
     final java.util.Set<String> actions = new java.util.HashSet<>();
     volatile String current;
     int epoch = -1;
@@ -275,6 +279,7 @@ final class Remote implements ChatView.Actions {
         if (o.optJSONArray("projects") != null) {
             projects = o.optJSONArray("projects");
         }
+        setSettings(o.optJSONObject("settings"));
         actions.clear();
         JSONArray acts = o.optJSONArray("actions");
         for (int i = 0; acts != null && i < acts.length(); i++) {
@@ -350,6 +355,9 @@ final class Remote implements ChatView.Actions {
                     control = c.optBoolean("control");
                     list = true;
                     break;
+                case "settings":
+                    setSettings(c.optJSONObject("settings"));
+                    break;
                 default:
                     break;
             }
@@ -366,6 +374,33 @@ final class Remote implements ChatView.Actions {
                 }
             });
         }
+    }
+
+    void setSettings(JSONObject s) {
+        settings = s;
+        Runnable r = onSettings;
+        if (r != null) {
+            ui.post(r);
+        }
+    }
+
+    /** Switch one Quill Desktop setting; done gets null on success, else the message to show. Runs off the UI thread. */
+    void setSetting(String key, boolean on, java.util.function.Consumer<String> done) {
+        work.execute(() -> {
+            PhoneApi.Reply r = api.settings(PhoneApi.obj(key, on));
+            String msg = null;
+            if (r.ok() && r.body.optJSONObject("settings") != null) {
+                setSettings(r.body.optJSONObject("settings"));
+            } else if ("control_off".equals(r.error())) {
+                msg = "Quill Desktop doesn't let paired devices change settings. Turn on \"Let paired devices control sessions\" in Quill Desktop → Settings → Sessions → Devices.";
+            } else if ("unreachable".equals(r.error())) {
+                msg = "Can't reach Quill Desktop; the setting wasn't changed.";
+            } else {
+                msg = "Quill Desktop didn't change the setting (" + r.error() + ").";
+            }
+            String m = msg;
+            ui.post(() -> done.accept(m));
+        });
     }
 
     synchronized JSONObject session(String id) {

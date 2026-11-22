@@ -1247,6 +1247,59 @@ public class MainActivity extends Activity {
             syncStatus.run();
         }));
 
+        // Quill Desktop's session switches (Settings → General there), shown when the phone API has them.
+        CheckBox[] sessionChecks = new CheckBox[2];
+        if (remote != null) {
+            LinearLayout sessionBox = new LinearLayout(this);
+            sessionBox.setOrientation(LinearLayout.VERTICAL);
+            section(sessionBox, "Sessions (Quill Desktop)", true);
+            String[] keys = {"buildGate", "coordinator"};
+            String[] labels = {"Ask before building", "Coordinate with subagents"};
+            String[] hints = {"Sessions don't build after each change; they ask: more features, debug, secure, or build?",
+                    "The session you chat with stays free and hands each feature or fix to a background helper."};
+            boolean[] syncingS = {false};
+            for (int k = 0; k < 2; k++) {
+                String key = keys[k];
+                CheckBox c = check(labels[k], false);
+                c.setContentDescription(labels[k]);
+                c.setOnCheckedChangeListener((v, on) -> {
+                    if (syncingS[0]) {
+                        return;
+                    }
+                    v.setEnabled(false);
+                    remote.setSetting(key, on, msg -> {
+                        v.setEnabled(true);
+                        if (msg != null) {
+                            toast(msg);
+                            org.json.JSONObject st = remote.settings;
+                            syncingS[0] = true;
+                            v.setChecked(st != null && st.optBoolean(key, !on));
+                            syncingS[0] = false;
+                        }
+                    });
+                });
+                sessionChecks[k] = c;
+                sessionBox.addView(c);
+                TextView h = line(hints[k], MUTED);
+                h.setPadding(dp(32), 0, 0, dp(4));
+                sessionBox.addView(h);
+            }
+            Runnable syncSessions = () -> {
+                org.json.JSONObject st = remote.settings;
+                sessionBox.setVisibility(st == null ? View.GONE : View.VISIBLE);
+                if (st != null) {
+                    syncingS[0] = true;
+                    for (int k = 0; k < 2; k++) {
+                        sessionChecks[k].setChecked(st.optBoolean(keys[k], true));
+                    }
+                    syncingS[0] = false;
+                }
+            };
+            syncSessions.run();
+            remote.onSettings = syncSessions;
+            box.addView(sessionBox);
+        }
+
         section(box, "Notifications", true);
         for (int i = 0; i < Notifier.TYPES.size(); i++) {
             String key = "notify." + Notifier.TYPES.get(i);
@@ -1278,11 +1331,17 @@ public class MainActivity extends Activity {
             updater.check(true);
         }));
 
-        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog settingsDlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Settings")
                 .setView(scroll(box))
                 .setPositiveButton("Done", null)
-                .show());
+                .show();
+        accent(settingsDlg);
+        settingsDlg.setOnDismissListener(d -> {
+            if (remote != null) {
+                remote.onSettings = null;
+            }
+        });
     }
 
     void section(LinearLayout box, String title, boolean divider) {

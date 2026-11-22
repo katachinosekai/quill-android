@@ -1234,6 +1234,57 @@ if [ -n "${PPORT:-}" ]; then
 	EV=$(pcurl "/debug/conns" | python3 -I -c 'import json,sys;print(json.load(sys.stdin)["paths"].get("GET /events",0))')
 	log "INFO  /events in 50 s idle after 3 pause/resume cycles: $EV"
 	[ "$EV" -le 3 ] && ok "net: one notification watcher after pause/resume ($EV /events in 50 s)" || bad "net: one notification watcher after pause/resume" "$EV /events in 50 s"
+	# Quill Desktop's session switches in ⚙ (phone API settings, Quill Desktop 5c19d7b)
+	checked_of() { dump | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | grep -o 'checked="[a-z]*"'; }
+	tap_text "Settings" && nap 2
+	tap_scroll "Ask before building" >/dev/null 2>&1; nap 1
+	DIRTY=1
+	if has 'text="Ask before building"'; then
+		ok "settings: Quill Desktop's session switches shown"
+		[ "$(checked_of 'Ask before building')" = 'checked="false"' ] && wait_log 'settings map\[buildGate:false\]' && ok "settings: switching sends POST /phone/settings" || bad "settings: switching sends POST /phone/settings" "$(checked_of 'Ask before building') $(plog | grep -o 'settings map[^"]*' | tail -1)"
+		pcurl "/debug/settings?coordinator=0" >/dev/null
+		for k in $(seq 1 20); do DIRTY=1; [ "$(checked_of 'Coordinate with subagents')" = 'checked="false"' ] && break; sleep 0.5; done
+		[ "$(checked_of 'Coordinate with subagents')" = 'checked="false"' ] && ok "settings: a change on the PC updates the switch" || bad "settings: a change on the PC updates the switch" "$(checked_of 'Coordinate with subagents')"
+		pcurl "/debug/control?on=0" >/dev/null
+		nap 2
+		tap_text "Coordinate with subagents" && nap 3
+		DIRTY=1
+		[ "$(checked_of 'Coordinate with subagents')" = 'checked="false"' ] && ok "settings: switch flips back when control is off" || bad "settings: switch flips back when control is off" "$(checked_of 'Coordinate with subagents')"
+		pcurl "/debug/control?on=1" >/dev/null
+		pcurl "/debug/settings?buildGate=1&coordinator=1" >/dev/null
+	else
+		bad "settings: Quill Desktop's session switches shown"
+	fi
+	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+	nap 2
+	# Portrait session rows show tokens and context, like Quill Desktop's portrait list (941a3cf)
+	if [ "$(width_dp)" -lt 600 ]; then
+		side_on
+		DIRTY=1
+		[ "$(dump | tr '>' '\n' | grep -c ' tok · ctx ')" -ge 2 ] && ok "rows: tokens and context in portrait session rows" || bad "rows: tokens and context in portrait session rows"
+		side_off
+	fi
+	# Plan card overlay (Quill Desktop 596036f): the plan's numbered questions get their controls in the reply
+	popen session_A1
+	a1_open 15
+	pcurl "/debug/planover?id=session_A1" >/dev/null
+	if wait_for 'Show as written' 15; then
+		has 'Which channel for the overlay build' && has 'Yes  (recommended)' && ! has 'text="1. Should the overlay tag go out too? Yes or no?"' && ok "overlay: questions answered in the reply, no separate card" || bad "overlay: questions answered in the reply, no separate card"
+		tap_toggle() { local k; read -r UW UH <<< "$(scr)"; for k in 1 2 3 4; do DIRTY=1; tap_part "$1" && return 0; adb_ shell input swipe $((UW / 2)) $((UH * 2 / 5)) $((UW / 2)) $((UH * 3 / 5)) 300; nap 1; done; return 1; }
+		tap_toggle "▤  Show as written"; nap 2
+		DIRTY=1
+		AIP=no
+		for k in 1 2 3 4 5; do DIRTY=1; has 'Answer in place' && AIP=yes && break; read -r UW UH <<< "$(scr)"; adb_ shell input swipe $((UW / 2)) $((UH * 2 / 5)) $((UW / 2)) $((UH * 3 / 5)) 300; nap 1; done
+		CARD=no
+		for k in 1 2 3 4 5 6; do DIRTY=1; has 'text="1. Should the overlay tag go out too? Yes or no?"' && CARD=yes && break; read -r UW UH <<< "$(scr)"; adb_ shell input swipe $((UW / 2)) $((UH * 3 / 5)) $((UW / 2)) $((UH * 2 / 5)) 300; nap 1; done
+		[ "$AIP" = yes ] && [ "$CARD" = yes ] && ok "overlay: Show as written brings back the card" || bad "overlay: Show as written brings back the card" "toggle=$AIP card=$CARD"
+		tap_toggle "☰  Answer in place"; nap 2
+		DIRTY=1
+		tap_scroll "Approve plan &amp; send answers" && nap 1
+		wait_log 'req_planover[^}]*planAnswers' && plog | grep -o 'req_planover[^}]*}' | tail -1 | grep -q '"1\\":\\"yes' && plog | grep -o 'req_planover[^}]*}' | tail -1 | grep -q '"2\\":1' && ok "overlay: approve sends the in-place answers (recommended picks)" || bad "overlay: approve sends the in-place answers (recommended picks)" "$(plog | grep -o 'req_planover[^}]*}' | tail -1)"
+	else
+		bad "overlay: questions answered in the reply, no separate card" "no overlay toggle"
+	fi
 	# Unreachable Quill Desktop: after 2 failed tries the line suggests the VPN, with a help link
 	pcurl "/debug/down?s=45" >/dev/null
 	wait_for 'Not at home? Turn on your VPN' 45 && has 'VPN help' && ok "vpn: hint when Quill Desktop can't be reached" || bad "vpn: hint when Quill Desktop can't be reached"

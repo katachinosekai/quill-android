@@ -55,6 +55,7 @@ type server struct {
 	noAPI     bool
 	downUntil time.Time
 	liveItem  item
+	settings  map[string]bool
 	conns     int
 	paths     map[string]int
 	noHandoff bool
@@ -66,6 +67,13 @@ type server struct {
 	nextID    int64
 	idem      map[string][2]string
 	log       []string
+}
+
+func (s *server) settingsJSON() map[string]bool {
+	if s.settings == nil {
+		s.settings = map[string]bool{"buildGate": true, "coordinator": true}
+	}
+	return s.settings
 }
 
 func (s *server) find(id string) *session {
@@ -309,6 +317,7 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 			"modes":    map[string]any{"online": []string{"default", "acceptEdits", "plan", "auto"}, "local": []string{"default"}},
 			"projects": s.projects(),
 			"actions":  []string{"rename", "resume", "end", "delete", "project"},
+			"settings": s.settingsJSON(),
 			"sessions": list})
 	case p == "/phone/handoffs":
 		s.mu.Lock()
@@ -355,7 +364,7 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		if out == nil {
 			out = []any{}
 		}
-		reply(w, 200, map[string]any{"boot": s.boot, "cursor": s.cursor, "reset": cur > s.cursor, "changes": out})
+		reply(w, 200, map[string]any{"boot": s.boot, "cursor": s.cursor, "reset": cur > s.cursor, "changes": out, "settings": s.settingsJSON()})
 	case strings.HasPrefix(p, "/phone/session/") && strings.HasSuffix(p, "/items"):
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/phone/session/"), "/items")
 		s.mu.Lock()
@@ -605,6 +614,35 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		s.add(x, item{"kind": "assistant", "text": "`go test` runs before every release.\n\n- one\n- two items\n- a third item that is much longer than the others and keeps going so the column has to wrap it into balanced lines\n\nShort end.\n\na. first choice\n\nb) second choice"})
 		s.touch(x, nil)
 		reply(w, 200, map[string]any{})
+	case p == "/debug/settings":
+		// change a setting "on the PC": ?buildGate=0|1&coordinator=0|1; ?off=1 drops the field (older Quill Desktop)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, k := range []string{"buildGate", "coordinator"} {
+			if v := q.Get(k); v != "" {
+				s.settings[k] = v == "1"
+			}
+		}
+		s.emit(map[string]any{"type": "settings", "settings": s.settingsJSON()})
+		reply(w, 200, map[string]any{})
+	case p == "/debug/planover":
+		// a reply ending with numbered questions and its pending plan (the plan card overlay)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		s.add(x, item{"kind": "assistant", "text": "Plan for the overlay.\n\n1. Build\n2. Test\n\nOpen questions:\n1. Should the overlay tag go out too? Yes (recommended) or no?\n2. Which channel for the overlay build? Stable or beta?\n\nApprove?"})
+		qs := []any{
+			map[string]any{"id": 1, "num": 1, "text": "Should the overlay tag go out too? Yes or no?", "kind": "yesno", "options": []string{"Yes", "No"}, "recommended": 0},
+			map[string]any{"id": 2, "num": 2, "text": "Which channel for the overlay build? Stable or beta?", "kind": "single", "options": []string{"Stable", "Beta"}, "recommended": 1},
+		}
+		s.add(x, item{"kind": "plan", "text": "1. Build\n2. Test", "request": map[string]any{"id": "req_planover", "state": "pending", "questions": qs}})
+		x.Status = "waiting"
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
 	case p == "/debug/suggest":
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -686,6 +724,26 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 	}
 	if !s.control {
 		fail(w, 403, "control_off")
+		return
+	}
+	if p == "/phone/settings" {
+		// like Quill Desktop 5c19d7b: booleans buildGate/coordinator only; 400 for empty, unknown keys or non-bools
+		if len(body) == 0 {
+			fail(w, 400, "bad_request")
+			return
+		}
+		for k, v := range body {
+			if _, ok := v.(bool); !ok || (k != "buildGate" && k != "coordinator") {
+				fail(w, 400, "bad_request")
+				return
+			}
+		}
+		for k, v := range body {
+			s.settings[k] = v.(bool)
+		}
+		s.log = append(s.log, fmt.Sprintf("settings %v", body))
+		s.emit(map[string]any{"type": "settings", "settings": s.settingsJSON()})
+		reply(w, 200, map[string]any{"v": 1, "settings": s.settingsJSON()})
 		return
 	}
 	if p == "/phone/usage/resume" {

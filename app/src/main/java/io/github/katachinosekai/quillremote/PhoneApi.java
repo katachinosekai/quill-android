@@ -265,6 +265,11 @@ final class PhoneApi {
         return post("/phone/session/" + enc(id) + "/queue/" + op, obj("index", index, "text", text));
     }
 
+    /** Quill Desktop's session settings (POST /phone/settings): {"buildGate": bool} and/or {"coordinator": bool}. */
+    Reply settings(JSONObject body) {
+        return post("/phone/settings", body);
+    }
+
     Reply resume() {
         return post("/phone/usage/resume", new JSONObject());
     }

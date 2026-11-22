@@ -75,6 +75,19 @@ class SessionBars {
         render();
     }
 
+    /** "12.3k tok · ctx 42%" from a session's meta; context only when known; "" without usage. */
+    static String rowUsage(JSONObject m) {
+        if (!m.has("tokens")) {
+            return "";
+        }
+        String out = tok(m.optLong("tokens")) + " tok";
+        long used = m.optLong("context"), max = m.optLong("contextMax");
+        if (max > 0) {
+            out += " · ctx " + Math.round(100.0 * used / max) + "%";
+        }
+        return out;
+    }
+
     static String tok(long n) {
         if (n >= 1_000_000_000L) {
             return String.format(java.util.Locale.ROOT, "%.1fB", n / 1e9);
@@ -255,6 +268,12 @@ class SessionBars {
             int at = sb.length() + (txt.isEmpty() ? 0 : 5);
             sb.append(txt.isEmpty() ? "" : "  ·  ").append(kmem);
             sb.setSpan(new android.text.style.ForegroundColorSpan(MainActivity.ACCENT), at, sb.length(), 0);
+        }
+        // Portrait (the usage panel shows only the open session): each row says its tokens and context, like
+        // Quill Desktop's portrait session list (941a3cf): "12.3k tok · ctx 42%".
+        String usage = rowUsage(m);
+        if (!usage.isEmpty() && a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+            sb.append(sb.length() == 0 ? "" : "  ·  ").append(usage);
         }
         return sb;
     }
