@@ -55,4 +55,13 @@ public class StreamTextTest {
         assertEquals(2, StreamText.nextReveal("ab", 0, false)); // a finished reply shows its last word at once
         assertEquals(3, StreamText.nextReveal("a\uD83D\uDE00b", 0, true)); // never between a surrogate pair
     }
+
+    @Test
+    public void blankLinesBetweenListItemsDontSplit() {
+        StringBuilder live = new StringBuilder();
+        assertEquals(java.util.List.of("1. one\n\n2. two"), StreamText.split("1. one\n\n2. two\n\nAfter", live));
+        assertEquals("After", live.toString());
+        assertEquals(java.util.List.of("a. one\n\nb) two"), StreamText.split("a. one\n\nb) two\n\nAfter", live));
+        assertEquals(java.util.List.of("- x"), StreamText.split("- x\n\nText", live));
+    }
 }

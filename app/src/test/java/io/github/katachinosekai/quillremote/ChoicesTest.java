@@ -32,4 +32,12 @@ public class ChoicesTest {
         org.junit.Assert.assertEquals("Approve? Once you do, I'll start.", ChatView.planTitle("Steps\n\n**Approve?** Once you do, I'll start."));
         org.junit.Assert.assertEquals("Approve this plan?", ChatView.planTitle("Steps\n1. a\n2. b"));
     }
+
+    @Test
+    public void continuationStaysWithItsOption() {
+        // Quill Desktop 22c277a: "all of them, with X (recommended), or Y?" is 2 options, not 3
+        assertArrayEquals(new String[]{"Do all of them, with single-action buttons getting their own row", "Only the first"},
+                Choices.parse("Should I do all of them, with single-action buttons getting their own row, or only the first?"));
+        assertArrayEquals(new String[]{"Red", "Green", "Blue"}, Choices.parse("Red, green, or blue?"));
+    }
 }

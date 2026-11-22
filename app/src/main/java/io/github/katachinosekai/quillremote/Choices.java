@@ -8,6 +8,9 @@ final class Choices {
     static final String[] STEMS = {"do you want me to ", "would you like me to ", "should i ", "shall i ", "should we ", "shall we ", "do you want to ", "want me to ", "should it ", "do i "};
     static final int MAX_WORDS = 12;
     static final int MAX_OPTIONS = 4;
+    static final java.util.regex.Pattern CONTINUATION = java.util.regex.Pattern.compile(
+            "^(?:with|without|including|plus|so|so that|which|that|where|while|because|but|then|except|unless|since|using|via|like|such as|e\\.g\\.|i\\.e\\.)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
 
     static String[] parse(String line) {
         String clean = (line == null ? "" : line).replace("**", "").replace("__", "").replace("`", "").replaceAll("^[#>*\\-_ ]+", "").trim();
@@ -36,6 +39,12 @@ final class Choices {
         List<String> opts = new ArrayList<>();
         if (list && a.contains(", ")) {
             for (String p : a.split(", ")) {
+                // A comma part that goes on with the option before it ("all of them, with X") stays with it
+                // (Quill Desktop's mergeContinuations, 22c277a).
+                if (!opts.isEmpty() && CONTINUATION.matcher(p.trim()).find()) {
+                    opts.set(opts.size() - 1, opts.get(opts.size() - 1) + ", " + p.trim());
+                    continue;
+                }
                 opts.add(p.trim());
             }
         } else {

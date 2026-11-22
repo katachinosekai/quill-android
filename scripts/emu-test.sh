@@ -1192,6 +1192,39 @@ if [ -n "${PPORT:-}" ]; then
 	log "INFO  idle 40 s: $CONNS"
 	[ "$NC" -le 6 ] && ok "net: connections reused while idle ($NC new in 40 s)" || bad "net: connections reused while idle" "$NC new in 40 s"
 	echo "$CONNS" | grep -q 'folders.json\|usage.json' && bad "net: no folders/usage polling in paired mode" "$CONNS" || ok "net: no folders/usage polling in paired mode"
+	# Centered columns (0.9.24, Quill Desktop 1be563f + user rule f5c0dd9): a centered list keeps its markers lined up
+	# and sits centered as one column; with Chat text centering off it is left-aligned
+	pcurl "/debug/layout?id=session_A1" >/dev/null
+	if wait_for 'second choice' 15; then
+		nap 1
+		DIRTY=1
+		b1=$(bounds_of "• one"); b2=$(bounds_of "• two items")
+		set -- $b1; L1=$1; R1=$3; set -- $b2; L2=$1
+		[ -n "$b1" ] && [ -n "$b2" ] && [ "$L1" = "$L2" ] && ok "layout: list markers line up when centered" || bad "layout: list markers line up when centered" "$b1 | $b2"
+		# centered in the chat area (on a tablet the session sidebar takes the left side): compare with the
+		# full-width paragraph below the list
+		b4=$(bounds_of "Short end."); set -- $b4; CC=$((($1 + $3) / 2)); CW=$(($3 - $1)); LC=$(((L1 + R1) / 2))
+		[ -n "$b4" ] && [ $(( (LC - CC) * (LC - CC) * 400 )) -le $(( CW * CW )) ] && [ $((R1 - L1)) -lt "$CW" ] && ok "layout: the list is one centered column" || bad "layout: the list is one centered column" "list $b1, chat $b4"
+		ba=$(bounds_of "a. first choice"); bb=$(bounds_of "b) second choice")
+		set -- $ba; LA=$1; set -- $bb; LB=$1
+		[ -n "$ba" ] && [ -n "$bb" ] && [ "$LA" = "$LB" ] && ok "layout: lettered items with blank lines between are one list" || bad "layout: lettered items with blank lines between are one list" "$ba | $bb"
+		shot 20-centered-layout
+		CL=$L1
+		tap_text "Settings" && nap 2
+		tap_text "Chat text" && nap 1
+		tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+		nap 2
+		DIRTY=1
+		b3=$(bounds_of "• one"); set -- $b3
+		[ -n "$b3" ] && [ "$1" -lt "$CL" ] && ok "layout: left-aligned list with centering off" || bad "layout: left-aligned list with centering off" "$b3 (centered left $CL)"
+		shot 21-left-layout
+		tap_text "Settings" && nap 2
+		tap_text "Chat text" && nap 1
+		tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+		nap 2
+	else
+		bad "layout: list markers line up when centered" "no layout message"
+	fi
 	# Unreachable Quill Desktop: after 2 failed tries the line suggests the VPN, with a help link
 	pcurl "/debug/down?s=45" >/dev/null
 	wait_for 'Not at home? Turn on your VPN' 45 && has 'VPN help' && ok "vpn: hint when Quill Desktop can't be reached" || bad "vpn: hint when Quill Desktop can't be reached"

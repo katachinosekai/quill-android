@@ -548,6 +548,10 @@ final class ChatView extends LinearLayout {
         }
         boolean typing = box.hasFocus();
         queueBox.removeAllViews();
+        // Queued messages follow centering (Quill Desktop 1be563f): one centered column, text centered and wrapped.
+        LinearLayout rows = new LinearLayout(getContext());
+        rows.setOrientation(VERTICAL);
+        List<Columns.Words> qtexts = new ArrayList<>();
         int n = q == null ? 0 : q.length();
         int visible = n - hiding.size();
         if (visible > 0) {
@@ -572,8 +576,12 @@ final class ChatView extends LinearLayout {
             row.setPadding(dp(10), dp(4), dp(4), dp(4));
             row.setBackground(round(CARD, 10));
             TextView t = label(text, MainActivity.TEXT, 14);
-            t.setMaxLines(2);
+            t.setMaxLines(centerChat ? 4 : 2);
             t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            if (centerChat) {
+                t.setGravity(Gravity.CENTER_HORIZONTAL);
+            }
+            qtexts.add(MarkdownView.words(t.getPaint(), text));
             row.addView(t, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
             // Tap the text (user 2026-11-21): take it out of the queue and into the message box to edit or resend
             // (like editing a queued message on Quill Desktop). Text already in the box is kept after it.
@@ -612,8 +620,12 @@ final class ChatView extends LinearLayout {
             row.addView(del);
             LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
             lp.bottomMargin = dp(4);
-            queueBox.addView(row, lp);
+            rows.addView(row, lp);
         }
+        Columns.Words[] qw = qtexts.toArray(new Columns.Words[0]);
+        queueBox.addView(centerChat && qw.length > 0
+                ? new ColumnView(getContext(), true, avail -> Columns.groupWidth(avail, qw, dp(130), dp(8)), rows)
+                : rows, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         queueBox.setVisibility(n > 0 ? VISIBLE : GONE);
         if (typing && !box.hasFocus()) {
             box.requestFocus();
@@ -884,7 +896,7 @@ final class ChatView extends LinearLayout {
         }
         TextView t = label(TimeFmt.stamp(it.timeMs, System.currentTimeMillis()), MainActivity.MUTED, 11);
         t.setGravity(gravity);
-        t.setPadding(0, dp(3), 0, 0);
+        t.setPadding(0, dp(5), 0, 0); // about a third of the way to the next message (Quill Desktop 1be563f)
         t.setContentDescription("Sent " + t.getText());
         return t;
     }
@@ -1188,6 +1200,11 @@ final class ChatView extends LinearLayout {
      */
     void planQuestions(LinearLayout c, Item it, EditText fb) {
         JSONArray qs = it.planQuestions;
+        // The questions form one column (Quill Desktop 1be563f): centered as a whole when centering is on, controls
+        // left-aligned inside it; widths scale with the chat (Columns).
+        LinearLayout qcol = new LinearLayout(getContext());
+        qcol.setOrientation(VERTICAL);
+        List<Columns.Words> qwords = new ArrayList<>();
         List<java.util.function.Supplier<Object>> values = new ArrayList<>();
         List<String> ids = new ArrayList<>();
         for (int i = 0; i < qs.length(); i++) {
@@ -1198,10 +1215,16 @@ final class ChatView extends LinearLayout {
             String qid = String.valueOf(q.opt("id"));
             // "num" = the question's own number in the plan (Quill Desktop, optional); else count from 1.
             int num = q.optInt("num", 0) > 0 ? q.optInt("num") : i + 1;
-            TextView qt = label(num + ". " + q.optString("text"), MainActivity.TEXT, 15);
+            TextView qt = label("", MainActivity.TEXT, 15);
+            qt.setText(MarkdownView.inline(getContext(), num + ". " + q.optString("text"))); // keeps inline code
             qt.setPadding(0, dp(12), 0, dp(4));
-            c.addView(qt);
+            qt.setGravity(Gravity.START);
+            qwords.add(MarkdownView.words(qt.getPaint(), num + ". " + q.optString("text")));
+            qcol.addView(qt);
             JSONArray os = q.optJSONArray("options");
+            for (int k = 0; os != null && k < os.length(); k++) {
+                qwords.add(MarkdownView.words(qt.getPaint(), os.optString(k) + "  (recommended)"));
+            }
             int rec = q.optInt("recommended", -1);
             String kind = q.optString("kind");
             ids.add(qid);
@@ -1221,7 +1244,7 @@ final class ChatView extends LinearLayout {
                             rb.setChecked(true); // pre-picked like single (Quill Desktop: options ["Yes","No"] + recommended 0/1)
                         }
                     }
-                    c.addView(g);
+                    qcol.addView(g);
                     values.add(() -> {
                         View v = g.findViewById(g.getCheckedRadioButtonId());
                         return v == null ? null : v.getTag();
@@ -1241,7 +1264,7 @@ final class ChatView extends LinearLayout {
                             rb.setChecked(true);
                         }
                     }
-                    c.addView(g);
+                    qcol.addView(g);
                     values.add(() -> {
                         View v = g.findViewById(g.getCheckedRadioButtonId());
                         return v == null ? null : v.getTag();
@@ -1255,7 +1278,7 @@ final class ChatView extends LinearLayout {
                         cb.setText(os.optString(k));
                         cb.setTextColor(MainActivity.TEXT);
                         boxes.add(cb);
-                        c.addView(cb);
+                        qcol.addView(cb);
                     }
                     values.add(() -> {
                         JSONArray picked = new JSONArray();
@@ -1275,7 +1298,7 @@ final class ChatView extends LinearLayout {
                     e.setTextColor(MainActivity.TEXT);
                     e.setHintTextColor(MainActivity.MUTED);
                     e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-                    c.addView(e);
+                    qcol.addView(e);
                     values.add(() -> {
                         String t = e.getText().toString().trim();
                         return t.isEmpty() ? null : t;
@@ -1283,6 +1306,9 @@ final class ChatView extends LinearLayout {
                 }
             }
         }
+        Columns.Words[] qw = qwords.toArray(new Columns.Words[0]);
+        c.addView(centerChat ? new ColumnView(getContext(), true, avail -> Columns.groupWidth(avail, qw, dp(48), dp(8)), qcol) : qcol);
+
         TextView note = label("Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
         note.setPadding(0, dp(8), 0, 0);
         c.addView(note);
@@ -1572,11 +1598,21 @@ final class ChatView extends LinearLayout {
             }
         }
 
+        final java.util.List<String> drawn = new ArrayList<>();
+
         void draw() {
             StringBuilder liveText = new StringBuilder();
             java.util.List<String> paras = StreamText.split(text.substring(0, pos), liveText);
+            if (paras.size() < drawn.size() || !paras.subList(0, drawn.size()).equals(drawn)) {
+                // A later list item joined finished paragraphs into one list: redraw them once.
+                removeAllViews();
+                addView(live, paraParams(0));
+                drawn.clear();
+                done = 0;
+            }
             if (paras.size() > done) {
                 for (int k = done; k < paras.size(); k++) {
+                    drawn.add(paras.get(k));
                     MarkdownView b = md();
                     b.setMarkdown(paras.get(k));
                     addView(b, getChildCount() - 1, paraParams(getChildCount() - 1));

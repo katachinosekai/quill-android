@@ -49,6 +49,15 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## 0.9.24 (centered columns, lettered lists, 2026-11-22)
+- Port of Quill Desktop 1be563f/22c277a/acf74d3 plus the user's rule f5c0dd9 (a list keeps its formatting and is centered as one column only when centering is on). Columns.java = balance.go (1.5x overlong line wraps balanced, 35% floor, 75% cap for groups wider than the chat), ColumnView applies it on every measure (rotation, resize, pinch).
+- MarkdownView, centering on: a run of list items is one column (items left-aligned, markers lined up); in a run of paragraphs an overlong one wraps balanced. Centering off: unchanged, left-aligned.
+- Lettered lines ("a. …", "b) …"): two or more in a row, blank lines between allowed, become a NUMBERED list with the letter as marker (hanging indent); one alone stays a paragraph (Quill Desktop 1b23803 does the same). StreamText.split doesn't cut at a blank line between two list items; a streaming reply redraws its paragraphs once when a later item merges them.
+- Plan card: questions in one column (centered when centering is on), question text keeps inline code (MarkdownView.inline). Choices: a comma part starting with "with/without/including/…" stays with the option before it.
+- Queued messages: centered column, centered text, up to 4 lines, when centering is on. Message times sit 5 dp below (about a third of the way to the next message).
+- Inline code at the start of a centered line: Android's TextView centers the whole line, no fix needed.
+- Tests: ColumnsTest (desktop's cases), ChoicesTest, MarkdownTest, StreamTextTest; mock /debug/layout; emulator checks for markers lining up, the centered column (against the chat area, not the screen, for the tablet sidebar), lettered items with blank lines, left alignment with centering off.
+
 ## 0.9.23 (streaming deltas, 2026-11-22)
 - Uses Quill Desktop 0.1.24's opt-in deltas (quill docs/phone-api.md, 3f1b8a5): Remote.fetch adds delta=1&have=<seq>:<code points>:<crc32 hex of the UTF-8 text> for replies still streaming (assistant/thinking, at most 16) on incremental /items fetches; a 400 falls back to a plain incremental fetch.
 - Remote.apply: an item with textFrom is appended to our copy (Delta.append checks textFrom and textLen in code points); any mismatch keeps our copy and reloads the session once (fetch fresh). Older Quill Desktop ignores delta=1 and sends whole items, as before.

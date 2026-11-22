@@ -59,6 +59,8 @@ final class Markdown {
     static final Pattern FENCE = Pattern.compile("^ {0,3}(```+|~~~+)\\s*([^`\\s]*).*$");
     static final Pattern HEADING = Pattern.compile("^ {0,3}(#{1,6})\\s+(.*?)\\s*#*\\s*$");
     static final Pattern BULLET = Pattern.compile("^(\\s*)[-*+]\\s+(.*)$");
+    /** Lettered plan lines ("a. …", "b) …"): a list only when two or more come in a row (Quill Desktop f08786c). */
+    static final Pattern LETTERED = Pattern.compile("^(\\s*)([a-zA-Z])([.)])\\s+(.*)$");
     static final Pattern NUMBERED = Pattern.compile("^(\\s*)(\\d{1,9})[.)]\\s+(.*)$");
     static final Pattern QUOTE = Pattern.compile("^ {0,3}>\\s?(.*)$");
     static final Pattern RULE = Pattern.compile("^ {0,3}([-*_])(\\s*\\1){2,}\\s*$");
@@ -68,6 +70,7 @@ final class Markdown {
         List<Block> out = new ArrayList<>();
         String[] lines = (src == null ? "" : src.replace("\r\n", "\n")).split("\n", -1);
         StringBuilder para = new StringBuilder();
+        boolean lettered = false; // the line before was a lettered list item
         int i = 0;
         while (i < lines.length) {
             String line = lines[i];
@@ -134,6 +137,15 @@ final class Markdown {
                 out.add(new Block(Type.BULLET, indent(m.group(1)), "•", null, body, inline(body)));
                 continue;
             }
+            if ((m = LETTERED.matcher(line)).matches() && (lettered || LETTERED.matcher(nextNonBlank(lines, i + 1)).matches())) {
+                flush(out, para);
+                String body = continuation(lines, i, m.group(4));
+                i += 1 + extra(lines, i);
+                out.add(new Block(Type.NUMBERED, indent(m.group(1)), m.group(2) + m.group(3), null, body, inline(body)));
+                lettered = true;
+                continue;
+            }
+            lettered = false;
             if ((m = NUMBERED.matcher(line)).matches()) {
                 flush(out, para);
                 String body = continuation(lines, i, m.group(3));
@@ -149,6 +161,15 @@ final class Markdown {
         }
         flush(out, para);
         return out;
+    }
+
+    static String nextNonBlank(String[] lines, int from) {
+        for (int k = from; k < lines.length; k++) {
+            if (!lines[k].trim().isEmpty()) {
+                return lines[k];
+            }
+        }
+        return "";
     }
 
     static int indent(String ws) {

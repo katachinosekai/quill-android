@@ -51,12 +51,105 @@ final class MarkdownView extends LinearLayout {
         shown = md;
         removeAllViews();
         List<Markdown.Block> blocks = Markdown.parse(md);
+        boolean centered = gravity != android.view.Gravity.START;
         for (int i = 0; i < blocks.size(); i++) {
-            View v = block(blocks.get(i));
+            Markdown.Block b = blocks.get(i);
             LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-            lp.topMargin = i == 0 ? 0 : gap(blocks.get(i - 1), blocks.get(i));
-            addView(v, lp);
+            lp.topMargin = i == 0 ? 0 : gap(blocks.get(i - 1), b);
+            if (centered && isList(b)) {
+                // Centered lists keep their formatting (user rule, 2026-11-22): markers line up, lines start at one
+                // left edge, and the list as a whole sits centered as one column that scales with the chat.
+                int j = i;
+                while (j < blocks.size() && isList(blocks.get(j))) {
+                    j++;
+                }
+                addView(listColumn(blocks.subList(i, j)), lp);
+                i = j - 1;
+                continue;
+            }
+            if (centered && b.type == Markdown.Type.PARAGRAPH) {
+                int j = i;
+                while (j < blocks.size() && blocks.get(j).type == Markdown.Type.PARAGRAPH) {
+                    j++;
+                }
+                List<View> views = paragraphRun(blocks.subList(i, j));
+                for (int k = 0; k < views.size(); k++) {
+                    LayoutParams pl = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+                    pl.topMargin = i + k == 0 ? 0 : gap(blocks.get(i + k - 1), blocks.get(i + k));
+                    addView(views.get(k), pl);
+                }
+                i = j - 1;
+                continue;
+            }
+            addView(block(b), lp);
         }
+    }
+
+    static boolean isList(Markdown.Block b) {
+        return b.type == Markdown.Type.BULLET || b.type == Markdown.Type.NUMBERED;
+    }
+
+    static String plainText(Markdown.Block b) {
+        StringBuilder sb = new StringBuilder(b.marker == null ? "" : b.marker + " ");
+        if (b.runs != null) {
+            for (Markdown.Run r : b.runs) {
+                sb.append(r.text);
+            }
+        }
+        return sb.toString();
+    }
+
+    static Columns.Words words(android.text.TextPaint p, String text) {
+        String[] w = text.trim().split("\\s+");
+        float[] ws = new float[w.length];
+        for (int i = 0; i < w.length; i++) {
+            ws[i] = p.measureText(w[i]);
+        }
+        return new Columns.Words(ws, p.measureText(" "));
+    }
+
+    /** A centered list: items left-aligned inside one centered column (Columns.groupWidth). */
+    View listColumn(List<Markdown.Block> items) {
+        LinearLayout col = new LinearLayout(getContext());
+        col.setOrientation(VERTICAL);
+        Columns.Words[] texts = new Columns.Words[items.size()];
+        int extra = 0;
+        for (int k = 0; k < items.size(); k++) {
+            Markdown.Block b = items.get(k);
+            TextView t = (TextView) block(b);
+            t.setGravity(android.view.Gravity.START);
+            texts[k] = words(t.getPaint(), plainText(b));
+            extra = Math.max(extra, dp(18) * b.level + dp(16) + dp(6));
+            LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            lp.topMargin = k == 0 ? 0 : gap(items.get(k - 1), b);
+            col.addView(t, lp);
+        }
+        final int ex = extra;
+        return new ColumnView(getContext(), true, avail -> Columns.groupWidth(avail, texts, ex, dp(8)), col);
+    }
+
+    /** A run of centered paragraphs: an overlong one wraps balanced (Quill Desktop's balancedParagraph). */
+    List<View> paragraphRun(List<Markdown.Block> run) {
+        List<View> out = new java.util.ArrayList<>();
+        float[] widths = new float[run.size()];
+        Columns.Words[] words = new Columns.Words[run.size()];
+        for (int k = 0; k < run.size(); k++) {
+            TextView t = (TextView) block(run.get(k));
+            words[k] = words(t.getPaint(), plainText(run.get(k)));
+            widths[k] = words[k].total;
+            out.add(t);
+        }
+        int idx = Columns.overlong(widths);
+        if (idx >= 0) {
+            float other = Columns.widestOther(widths, idx);
+            Columns.Words long_ = words[idx];
+            int pad = dp(4);
+            out.set(idx, new ColumnView(getContext(), true, avail -> {
+                float b = long_.balanced(other, Columns.FLOOR * avail - pad);
+                return b == 0 ? avail : b + dp(8) + pad;
+            }, out.get(idx)));
+        }
+        return out;
     }
 
     int gap(Markdown.Block prev, Markdown.Block cur) {
@@ -141,6 +234,14 @@ final class MarkdownView extends LinearLayout {
                 return t;
             }
         }
+    }
+
+    /** Inline markdown (bold, italic, `code`, links) as styled text, for labels outside a MarkdownView. */
+    static CharSequence inline(Context c, String md) {
+        MarkdownView m = new MarkdownView(c);
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        m.runs(sb, Markdown.inline(md));
+        return sb;
     }
 
     static boolean hasLink(List<Markdown.Run> runs) {

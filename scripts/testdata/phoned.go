@@ -593,6 +593,18 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		s.touch(x, nil)
 		s.liveItem = nil
 		reply(w, 200, map[string]any{})
+	case p == "/debug/layout":
+		// a reply with a list (one overlong item) and a line starting with inline code (centered layout checks)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		x := s.find(q.Get("id"))
+		if x == nil {
+			fail(w, 404, "not_found")
+			return
+		}
+		s.add(x, item{"kind": "assistant", "text": "`go test` runs before every release.\n\n- one\n- two items\n- a third item that is much longer than the others and keeps going so the column has to wrap it into balanced lines\n\nShort end.\n\na. first choice\n\nb) second choice"})
+		s.touch(x, nil)
+		reply(w, 200, map[string]any{})
 	case p == "/debug/suggest":
 		s.mu.Lock()
 		defer s.mu.Unlock()

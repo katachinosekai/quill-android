@@ -22,7 +22,7 @@ final class StreamText {
                 inFence = !inFence;
             }
             pos += l.length();
-            if (!inFence && l.trim().isEmpty() && !text.substring(pos).trim().isEmpty()) {
+            if (!inFence && l.trim().isEmpty() && !text.substring(pos).trim().isEmpty() && !betweenListItems(text, pos - l.length(), pos)) {
                 String p = text.substring(start, pos).trim();
                 if (!p.isEmpty()) {
                     done.add(p);
@@ -35,6 +35,32 @@ final class StreamText {
             live.append(text.substring(start).replaceAll("^\n+", ""));
         }
         return done;
+    }
+
+    /**
+     * A blank line between two list items (bullet, numbered, or lettered) doesn't end a paragraph: the items stay one
+     * list (one column when centered). While the reply streams, the next item may not be there yet; the view then
+     * redraws its paragraphs once when it arrives (Quill Desktop 1b23803).
+     */
+    static boolean betweenListItems(String text, int blankStart, int blankEnd) {
+        int prevEnd = blankStart;
+        while (prevEnd > 0 && text.charAt(prevEnd - 1) == '\n') {
+            prevEnd--;
+        }
+        int prevStart = text.lastIndexOf('\n', prevEnd - 1) + 1;
+        String prev = prevEnd > prevStart ? text.substring(prevStart, prevEnd) : "";
+        int nextStart = blankEnd;
+        while (nextStart < text.length() && text.charAt(nextStart) == '\n') {
+            nextStart++;
+        }
+        int nextEnd = text.indexOf('\n', nextStart);
+        String next = text.substring(nextStart, nextEnd < 0 ? text.length() : nextEnd);
+        return listItem(prev) && listItem(next);
+    }
+
+    static boolean listItem(String line) {
+        return (Markdown.BULLET.matcher(line).matches() && !Markdown.RULE.matcher(line).matches())
+                || Markdown.NUMBERED.matcher(line).matches() || Markdown.LETTERED.matcher(line).matches();
     }
 
     static final int REVEAL_MIN = 2, REVEAL_CATCH_UP = 12, REVEAL_MAX = 24;

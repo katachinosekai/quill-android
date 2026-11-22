@@ -53,4 +53,21 @@ public class MarkdownTest {
         assertEquals("PARAGRAPH: [use snake_case_name and 2 * 3 and **open]\n",
                 blocks("use snake_case_name and 2 * 3 and **open"));
     }
+
+    @Test
+    public void letteredLinesBecomeAListOnlyInARun() {
+        java.util.List<Markdown.Block> b = Markdown.parse("Options:\na. Ship now\nb) Wait for the release\nc. Hold");
+        assertEquals(4, b.size());
+        assertEquals(Markdown.Type.NUMBERED, b.get(1).type);
+        assertEquals("a.", b.get(1).marker);
+        assertEquals("b)", b.get(2).marker);
+        assertEquals("Hold", b.get(3).raw);
+        java.util.List<Markdown.Block> loose = Markdown.parse("a. first\n\nb) second");
+        assertEquals(2, loose.size());
+        assertEquals("a.", loose.get(0).marker);
+        assertEquals("b)", loose.get(1).marker);
+        java.util.List<Markdown.Block> one = Markdown.parse("a. single lettered line stays a paragraph");
+        assertEquals(1, one.size());
+        assertEquals(Markdown.Type.PARAGRAPH, one.get(0).type);
+    }
 }
