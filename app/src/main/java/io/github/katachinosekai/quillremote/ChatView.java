@@ -65,11 +65,14 @@ final class ChatView extends LinearLayout {
         boolean choicesOpen;
         JSONObject diff;
         int rev;
+        /** When the message was said (Quill Desktop 0.1.22+ "timeMs"), 0 = unknown. */
+        long timeMs;
 
         static Item from(JSONObject o) {
             Item it = new Item();
             it.seq = o.optInt("seq");
             it.rev = o.optInt("rev");
+            it.timeMs = Math.max(0, o.optLong("timeMs"));
             it.kind = o.optString("kind");
             it.text = o.optString("text");
             it.streaming = o.optBoolean("streaming");
@@ -108,6 +111,8 @@ final class ChatView extends LinearLayout {
 
     static final int CARD = 0xFF30302D;
     static final int USER_BG = 0xFF3A3A37;
+    static final String VPN_HELP = "https://github.com/katachinosekai/quill-android#away-from-home";
+    boolean showTimes = true;
     static final int BLUE = 0xFF5BA8F5;
     static final int RED = 0xFFE55B5B;
     static final int GREEN = 0xFF6CC06C;
@@ -612,8 +617,12 @@ final class ChatView extends LinearLayout {
     }
 
     void setConnection(String line) {
-        conn.setText(line == null ? "" : line);
+        // Lines that mention the VPN get a "VPN help" link (Quill Android's README, "Away from home").
+        boolean vpn = line != null && line.contains("VPN");
+        conn.setText(line == null ? "" : vpn ? line + "  ·  VPN help ›" : line);
         conn.setVisibility(line == null || line.isEmpty() ? GONE : VISIBLE);
+        conn.setOnClickListener(vpn ? v -> getContext().startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(VPN_HELP))) : null);
+        conn.setClickable(vpn);
     }
 
     /** Put shared text into the message box (after anything already typed), ready to edit and send. */
@@ -831,7 +840,37 @@ final class ChatView extends LinearLayout {
             lp.rightMargin = dp(48);
         }
         row.addView(t, lp);
-        return spaced(row, 16);
+        TextView when = stamp(it, centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.END);
+        if (when == null) {
+            return spaced(row, 16);
+        }
+        LinearLayout col = new LinearLayout(getContext());
+        col.setOrientation(VERTICAL);
+        col.addView(row);
+        col.addView(when);
+        return spaced(col, 16);
+    }
+
+    /** Message time under user/assistant messages (⚙ Message times), in the device's 12/24-hour style. */
+    TextView stamp(Item it, int gravity) {
+        if (!showTimes || it.timeMs <= 0 || it.streaming) {
+            return null;
+        }
+        TextView t = label(TimeFmt.stamp(it.timeMs, System.currentTimeMillis()), MainActivity.MUTED, 11);
+        t.setGravity(gravity);
+        t.setPadding(0, dp(3), 0, 0);
+        t.setContentDescription("Sent " + t.getText());
+        return t;
+    }
+
+    /** ⚙ Message times: re-render every message with or without its time. */
+    void setShowTimes(boolean on) {
+        if (on == showTimes) {
+            return;
+        }
+        showTimes = on;
+        sigs.clear();
+        setItems(items);
     }
 
     View assistant(Item it, boolean answerable) {
@@ -897,6 +936,10 @@ final class ChatView extends LinearLayout {
                 row.addView(b, lp);
             }
             col.addView(row);
+        }
+        TextView when = stamp(it, centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START);
+        if (when != null) {
+            col.addView(when);
         }
         return spaced(col, 14);
     }

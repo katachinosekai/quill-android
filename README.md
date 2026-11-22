@@ -20,6 +20,7 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 - Arrows to slide side panels away, as in Quill.
 - Email sign-in links open straight in the app.
 - Home screen (paired with Quill Desktop): long-press the app icon for New session and your recent sessions; long-press a session → Add to home screen; a Quill widget lists the sessions waiting for you first, then running and recent ones.
+- Message times under each message, in your device's 12/24-hour style (⚙ → Message times to turn them off; needs Quill Desktop 0.1.22+).
 - Share to Quill: share text or a link from any app, pick a session (or a new one), and it lands in the message box to edit and send.
 
 ## Install
@@ -43,6 +44,11 @@ In Quill (0.1.1 or newer), open Settings → Phone:
    - **Publish to a secret gist** (needs the GitHub CLI `gh` logged in on the computer): pair again afterwards so the link includes the gist. The gist is unlisted but readable by anyone with its link. It contains only claude.ai session ids and folder names.
 
 The app uses whichever source has the newest folders.
+
+## Away from home
+Quill Android talks to Quill Desktop directly, so away from your home network it needs a VPN to your computer. Quill Desktop's Setup (Settings → Setup, "Reach Quill from outside your network", Quill Desktop 0.1.22+) can install and connect one: Tailscale (recommended), NetBird, ZeroTier, Headscale or WireGuard. Turn the same VPN on on your phone, then pair again (Quill Desktop → Settings → Phone → Pair phone...) so the pairing link includes the VPN address. When Quill Desktop can't be reached, Quill Android says so and suggests turning the VPN on.
+
+Without a VPN you can still use claude.ai's own Remote Control in the app; folders and usage then show the last values Quill Android received.
 
 ## Notifications
 With Quill 0.1.5 or newer (paired as above), the app notifies you when a session needs approval, asks a question, has a plan to approve, finishes or hits an error, but not for the session you're looking at. Tap a notification to open that session. Approval notifications show the command and have Allow and Deny buttons, so you can answer without opening the app (if Quill Desktop wants this device's password, open the app once to unlock). Choose the types in ⚙ → Notifications.

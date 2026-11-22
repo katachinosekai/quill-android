@@ -52,6 +52,7 @@ type server struct {
 	control   bool
 	paused    bool
 	noAPI     bool
+	downUntil time.Time
 	noHandoff bool
 	lockOn    bool
 	unlockTok string
@@ -123,6 +124,9 @@ func (s *server) add(x *session, it item) item {
 		seq = x.Items[n-1]["seq"].(int) + 1
 	}
 	it["seq"] = seq
+	if k := it["kind"]; (k == "user" || k == "assistant") && it["timeMs"] == nil {
+		it["timeMs"] = time.Now().UnixMilli()
+	}
 	x.Items = append(x.Items, it)
 	s.touch(x, it)
 	return it
@@ -176,6 +180,27 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if locked && !strings.HasPrefix(r.URL.Path, "/debug/") && r.URL.Path != "/phone/hello" && r.URL.Path != "/phone/unlock" {
 		fail(w, 401, "locked")
 		return
+	}
+	if r.URL.Path == "/debug/down" {
+		// drop every /phone/ connection for ?s= seconds (Quill Desktop unreachable, e.g. away from home)
+		n, _ := strconv.Atoi(r.URL.Query().Get("s"))
+		s.mu.Lock()
+		s.downUntil = time.Now().Add(time.Duration(n) * time.Second)
+		s.mu.Unlock()
+		reply(w, 200, map[string]any{})
+		return
+	}
+	s.mu.Lock()
+	down := time.Now().Before(s.downUntil)
+	s.mu.Unlock()
+	if down && strings.HasPrefix(r.URL.Path, "/phone/") {
+		if hj, ok := w.(http.Hijacker); ok {
+			if c, _, err := hj.Hijack(); err == nil {
+				c.Close()
+				return
+			}
+		}
+		panic(http.ErrAbortHandler)
 	}
 	if r.URL.Path == "/debug/noapi" {
 		s.mu.Lock()

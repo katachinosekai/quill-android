@@ -1157,6 +1157,24 @@ if [ -n "${PPORT:-}" ]; then
 	wait_for 'text="New session"' 15 && ok "home: New session shortcut opens the dialog" || bad "home: New session shortcut opens the dialog"
 	tap_any "Cancel" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
 	nap 1
+	# Message times under messages, and the ⚙ switch
+	popen session_A1
+	a1_open 15
+	wait_for 'content-desc="Sent ' 10 && ok "times: messages show when they were sent" || bad "times: messages show when they were sent"
+	tap_text "Settings" && nap 2
+	tap_text "Message times" && nap 1
+	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+	nap 1
+	gone 'content-desc="Sent ' 8 && ok "times: Message times off hides them" || bad "times: Message times off hides them"
+	tap_text "Settings" && nap 2
+	tap_text "Message times" && nap 1
+	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+	nap 1
+	wait_for 'content-desc="Sent ' 8 && ok "times: back on" || bad "times: back on"
+	# Unreachable Quill Desktop: after 2 failed tries the line suggests the VPN, with a help link
+	pcurl "/debug/down?s=45" >/dev/null
+	wait_for 'Not at home? Turn on your VPN' 45 && has 'VPN help' && ok "vpn: hint when Quill Desktop can't be reached" || bad "vpn: hint when Quill Desktop can't be reached"
+	gone 'Not at home? Turn on your VPN' 60 && ok "vpn: hint goes away once reachable" || bad "vpn: hint goes away once reachable"
 	adb_ shell pm revoke "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
 	adb_ shell cmd appops set "$PKG" POST_NOTIFICATION ignore >/dev/null 2>&1
 	nap 1

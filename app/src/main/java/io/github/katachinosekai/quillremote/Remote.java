@@ -147,7 +147,7 @@ final class Remote implements ChatView.Actions {
             }
             if (!r.ok()) {
                 fails++;
-                connection(r.code == 0 ? "Can't reach Quill Desktop. Retrying…" : "Quill Desktop replied " + r.error() + ". Retrying…");
+                connection(r.code == 0 ? unreachable(fails) : "Quill Desktop replied " + r.error() + ". Retrying…");
                 if (r.code == 0 || r.code >= 500) {
                     boot = "";
                 }
@@ -246,6 +246,13 @@ final class Remote implements ChatView.Actions {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** After 2 failed tries in a row, suggest the VPN (Quill Desktop's Setup offers Tailscale, NetBird, ZeroTier, WireGuard). */
+    static String unreachable(int fails) {
+        return fails >= 2
+                ? "Can't reach Quill Desktop. Retrying… Not at home? Turn on your VPN (Tailscale, NetBird, ZeroTier or WireGuard), or join your home Wi-Fi."
+                : "Can't reach Quill Desktop. Retrying…";
     }
 
     void connection(String line) {
