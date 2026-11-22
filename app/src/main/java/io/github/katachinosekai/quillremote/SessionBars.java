@@ -77,8 +77,8 @@ class SessionBars {
 
     /** "12.3k tok · ctx 42%" from a session's meta; context only when known; "" without usage. */
     static String rowUsage(JSONObject m) {
-        if (!m.has("tokens")) {
-            return "";
+        if (!m.has("tokens") || m.optLong("tokens") <= 0) {
+            return ""; // nothing without usage, like Quill Desktop's caption
         }
         String out = tok(m.optLong("tokens")) + " tok";
         long used = m.optLong("context"), max = m.optLong("contextMax");
