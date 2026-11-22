@@ -4,9 +4,9 @@ An Android companion to [Quill](https://github.com/katachinosekai/quill), the de
 
 Quill for Android lets you control the Claude Code sessions running in Quill on your computer from your phone. It uses Claude Code's own Remote Control: no server of its own, no API key, no extra login. Quill turns Remote Control on for its sessions. This app opens claude.ai/code, where those sessions appear, and gives it Quill's look and organisation.
 
-<p><img src="docs/tablet.png" alt="Quill Android on a tablet: session list with usage on the left, a chat on the right (text blurred)" width="100%"></p>
+<p><img src="docs/tablet.png" alt="Quill Android on a tablet: session list with usage on the left, a chat on the right" width="100%"></p>
 
-*Quill Android on a tablet, paired with Quill Desktop: the session list with usage on the left, the open session on the right. Text is blurred.*
+*Quill Android on a tablet, paired with Quill Desktop: the session list with usage on the left, the open session on the right.*
 
 ## Features
 - Usage at a glance like Quill's strip: 5-hour and weekly limits, this session's tokens and context, today's total (needs Quill 0.1.8+ on the same network).
