@@ -460,6 +460,85 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Launcher "New session" shortcut and Share to Quill (ACTION_SEND text). True when the intent was one of those. */
+    boolean handleHome(Intent i) {
+        if (i == null) {
+            return false;
+        }
+        if (i.getBooleanExtra(Home.EXTRA_NEW, false)) {
+            i.removeExtra(Home.EXTRA_NEW);
+            if (remote == null) {
+                toast("New sessions from here need Quill Android paired with Quill Desktop (⚙ → Scan pairing QR code).");
+                return false;
+            }
+            newSessionDialog();
+            return true;
+        }
+        if (!Intent.ACTION_SEND.equals(i.getAction())) {
+            return false;
+        }
+        String text = shared(i);
+        i.setAction(Intent.ACTION_MAIN);
+        if (text.isEmpty()) {
+            toast("Quill Android can only take shared text and links.");
+            return true;
+        }
+        if (remote == null) {
+            android.content.ClipboardManager cm = getSystemService(android.content.ClipboardManager.class);
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Shared text", text));
+            toast("Copied. Paste it into the chat.");
+            return false;
+        }
+        shareDialog(text);
+        return true;
+    }
+
+    /** Shared text: subject (if not already in the text) + text, at most Quill Desktop's 32 KiB message limit. */
+    static String shared(Intent i) {
+        CharSequence t = i.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        String text = t == null ? "" : t.toString().trim();
+        String subj = i.getStringExtra(Intent.EXTRA_SUBJECT);
+        if (subj != null && !subj.trim().isEmpty() && !text.contains(subj.trim())) {
+            text = text.isEmpty() ? subj.trim() : subj.trim() + "\n" + text;
+        }
+        while (text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 32 * 1024) {
+            text = text.substring(0, text.length() * 9 / 10);
+        }
+        return text;
+    }
+
+    /** Share to Quill: pick a session (or a new one); the text lands in the message box to edit and send. */
+    void shareDialog(String text) {
+        java.util.List<org.json.JSONObject> list = new java.util.ArrayList<>();
+        synchronized (remote) {
+            list.addAll(remote.sessions);
+        }
+        if (list.isEmpty()) {
+            list.addAll(Home.cached(this));
+        }
+        String[] names = new String[list.size() + 1];
+        names[0] = "New session…";
+        for (int k = 0; k < list.size(); k++) {
+            org.json.JSONObject s = list.get(k);
+            String t = s.optString("title").trim();
+            String f = s.optString("project", s.optString("group", s.optString("folder", "")));
+            names[k + 1] = (t.isEmpty() ? "Session" : t) + (f.isEmpty() ? "" : "  ·  " + f);
+        }
+        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Send to…")
+                .setItems(names, (d, w) -> {
+                    if (w > 0) {
+                        remote.open(list.get(w - 1).optString("id"));
+                    }
+                    chat.draft(text);
+                    if (w == 0) {
+                        newSessionDialog();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show());
+    }
+
     String openTarget(Intent i) {
         String q = i == null ? null : i.getStringExtra(Notifier.EXTRA_OPEN_QUILL);
         return q != null && SessionBars.REMOTE_ID.matcher(q).matches() ? q : prefs.getString("remote.last", null);
@@ -875,6 +954,9 @@ public class MainActivity extends Activity {
             setZoom(pinchZoom(prefs.getInt("zoom", 115), f));
         }
         String test = testUrl(getIntent());
+        if (handleHome(getIntent())) {
+            return;
+        }
         if (remote != null) {
             return;
         }
@@ -1709,7 +1791,7 @@ public class MainActivity extends Activity {
             web.loadUrl(test);
             return;
         }
-        if (handleOpen(intent)) {
+        if (handleHome(intent) || handleOpen(intent)) {
             return;
         }
         Uri data = intent.getData();

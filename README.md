@@ -19,6 +19,8 @@ Quill for Android lets you control the Claude Code sessions running in Quill on 
 - Long-press a folder: Open all in tabs (and expand/collapse all in the sidebar).
 - Arrows to slide side panels away, as in Quill.
 - Email sign-in links open straight in the app.
+- Home screen (paired with Quill Desktop): long-press the app icon for New session and your recent sessions; long-press a session → Add to home screen; a Quill widget lists the sessions waiting for you first, then running and recent ones.
+- Share to Quill: share text or a link from any app, pick a session (or a new one), and it lands in the message box to edit and send.
 
 ## Install
 Quill (desktop) and Quill for Android are released together on [Quill's releases](https://github.com/katachinosekai/quill/releases); this repo's [releases](https://github.com/katachinosekai/quill-android/releases) carry the APK too and feed the in-app updater.
@@ -43,7 +45,7 @@ In Quill (0.1.1 or newer), open Settings → Phone:
 The app uses whichever source has the newest folders.
 
 ## Notifications
-With Quill 0.1.5 or newer (paired as above), the app notifies you when a session needs approval, asks a question, has a plan to approve, finishes or hits an error, but not for the session you're looking at. Tap a notification to open that session. Choose the types in ⚙ → Notifications.
+With Quill 0.1.5 or newer (paired as above), the app notifies you when a session needs approval, asks a question, has a plan to approve, finishes or hits an error, but not for the session you're looking at. Tap a notification to open that session. Approval notifications show the command and have Allow and Deny buttons, so you can answer without opening the app (if Quill Desktop wants this device's password, open the app once to unlock). Choose the types in ⚙ → Notifications.
 
 While the app is closed, turn on ⚙ → "Notify in background (local network)": Android then shows a small "Quill is watching for approvals" notification with a Stop button. Background alerts work on the same network as your computer (or over Tailscale/VPN). Notifications only carry session titles and folders, never chat content.
 

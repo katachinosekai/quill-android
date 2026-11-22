@@ -150,6 +150,9 @@ class Notifier {
             show(e);
         }
         prefs.edit().putString("events.boot", boot).putLong("events.since", o.optLong("next", since)).apply();
+        if (evs != null && evs.length() > 0 && !appVisible && Home.hasWidgets(c)) {
+            Home.refresh(c, () -> { });
+        }
     }
 
     void show(JSONObject e) {
@@ -183,19 +186,47 @@ class Notifier {
         }
         int id = (rc.isEmpty() ? e.optString("quill") : rc).hashCode();
         PendingIntent pi = PendingIntent.getActivity(c, id, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification n = new Notification.Builder(c, CHANNEL)
+        String head = label + (title.isEmpty() ? "" : ": " + title);
+        // Approvals get Allow / Deny buttons (remote mode): look up the pending permission request in the session.
+        ChatView.Item req = remote && type.equals("approval") && !quill.isEmpty() ? pendingPermission(new PhoneApi(prefs), quill) : null;
+        if (req != null) {
+            String what = !req.detail.isEmpty() ? req.detail : req.summary;
+            text = clip(req.toolName + (what.isEmpty() ? "" : ": " + what), 300);
+        }
+        Notification.Builder nb = new Notification.Builder(c, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notify)
-                .setContentTitle(label + (title.isEmpty() ? "" : ": " + title))
+                .setContentTitle(head)
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setContentIntent(pi)
                 .setAutoCancel(true)
-                .setCategory(type.equals("finished") ? Notification.CATEGORY_STATUS : Notification.CATEGORY_REMINDER)
-                .build();
+                .setCategory(type.equals("finished") ? Notification.CATEGORY_STATUS : Notification.CATEGORY_REMINDER);
+        if (req != null) {
+            nb.addAction(new Notification.Action.Builder(null, "Allow", NotifyAction.intent(c, id, quill, req.requestId, "allow", head)).build());
+            nb.addAction(new Notification.Action.Builder(null, "Deny", NotifyAction.intent(c, id, quill, req.requestId, "deny", head)).build());
+        }
+        Notification n = nb.build();
         try {
             c.getSystemService(NotificationManager.class).notify(id, n);
         } catch (SecurityException ignored) {
         }
+    }
+
+    /** The newest still-pending permission request in a Quill Desktop session, or null (none, or unreachable). */
+    static ChatView.Item pendingPermission(PhoneApi api, String session) {
+        PhoneApi.Reply r = api.items(session, -1, 0);
+        JSONArray arr = r.ok() ? r.body.optJSONArray("items") : null;
+        for (int i = arr == null ? -1 : arr.length() - 1; i >= 0; i--) {
+            JSONObject o = arr.optJSONObject(i);
+            if (o == null || !"permission".equals(o.optString("kind"))) {
+                continue;
+            }
+            ChatView.Item it = ChatView.Item.from(o);
+            if ((it.state.isEmpty() || "pending".equals(it.state)) && it.requestId != null && !it.requestId.isEmpty()) {
+                return it;
+            }
+        }
+        return null;
     }
 
     static String clip(String s, int n) {

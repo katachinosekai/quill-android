@@ -988,6 +988,13 @@ class SessionBars {
         if (s != null && r.can("rename") && s.optBoolean("renamed")) {
             m.add("Restore original name", () -> r.sessionAction("restore name", id, "rename", PhoneApi.obj("title", "")));
         }
+        if (s != null && Home.canPin(a)) {
+            m.add("Add to home screen", () -> {
+                if (!Home.pin(a, id, title)) {
+                    a.toast("This launcher can't add shortcuts.");
+                }
+            });
+        }
         String kmem = s == null ? "" : s.optString("kmem");
         showMenu(kmem.isEmpty() || kmem.equals(title) ? title : title + "  ·  kmem " + kmem, m);
     }

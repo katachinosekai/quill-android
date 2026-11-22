@@ -31,6 +31,8 @@ final class Remote implements ChatView.Actions {
     final ChatView chat;
     final Host host;
     final String appVersion;
+    /** For Home (shortcuts, widget); taken once on the UI thread, since View calls are UI-thread only. */
+    final android.content.Context appContext;
     final Handler ui = new Handler(Looper.getMainLooper());
     final ExecutorService work = Executors.newSingleThreadExecutor();
     final java.util.concurrent.atomic.AtomicReference<Runnable> uiSessions = new java.util.concurrent.atomic.AtomicReference<>();
@@ -73,6 +75,7 @@ final class Remote implements ChatView.Actions {
         this.chat = chat;
         this.host = host;
         this.appVersion = appVersion;
+        this.appContext = chat.getContext().getApplicationContext();
         this.current = last;
         chat.actions = this;
     }
@@ -413,6 +416,7 @@ final class Remote implements ChatView.Actions {
             bars.put("items", its).put("order", order).put("current", current == null ? "" : current);
         } catch (JSONException ignored) {
         }
+        Home.sessions(appContext, sessions);
         String usageJson = usageJson(meta);
         String barsJson = bars.toString();
         JSONObject cur = current == null ? null : session(current);

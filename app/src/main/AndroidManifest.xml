@@ -46,6 +46,11 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="quillpair" android:host="pair" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <activity
             android:name=".PairScan"
@@ -58,6 +63,20 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Watches the user's own Quill desktop app on the local network for session approvals and questions, so they can answer from the phone." />
         </service>
+        <receiver
+            android:name=".NotifyAction"
+            android:exported="false" />
+        <receiver
+            android:name=".QuillWidget"
+            android:exported="false"
+            android:label="Quill sessions">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
         <receiver
             android:name=".InstallStatus"
             android:exported="false" />

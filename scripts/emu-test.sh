@@ -881,6 +881,7 @@ if [ -n "${PPORT:-}" ]; then
 		tap_up "a: Plan-first" && nap 1
 		tap_scroll "Approve plan &amp; send answers" && nap 1
 		wait_log 'req_planq[^]]*planAnswers' && plog | grep -o 'req_planq[^]]*' | tail -1 | grep -q 'yes' && plog | grep -o 'req_planq[^]]*' | tail -1 | grep -q '"2\\":1' && ok "remote: plan answers go with the approval (yes/no, recommended pick, unanswered left out)" || bad "remote: plan answers go with the approval (yes/no, recommended pick, unanswered left out)" "$(plog | grep -o 'req_planq[^]]*' | tail -1)"
+		plog | grep -o 'req_planq[^}]*}' | tail -1 | grep -q '"5\\":\\"no' && ok "remote: plan yes/no question pre-picks the recommended answer" || bad "remote: plan yes/no question pre-picks the recommended answer" "$(plog | grep -o 'req_planq[^}]*}' | tail -1)"
 	else
 		bad "remote: plan questions card with its controls" "no card"
 	fi
@@ -1024,6 +1025,7 @@ if [ -n "${PPORT:-}" ]; then
 	wait_for 'text="Rename..."' 5 && has 'text="End session"' && has 'text="Delete session..."' && ! has 'text="Set archive"' && ! has 'text="Move to folder..."' && ! has 'kmem name...' \
 		&& ok "remote: long-press menu has Quill Desktop's session actions" || bad "remote: long-press menu has Quill Desktop's session actions"
 	centered "End session" && ok "remote: session menu is centered" || bad "remote: session menu is centered"
+	has 'text="Add to home screen"' && ok "home: long-press menu offers Add to home screen" || bad "home: long-press menu offers Add to home screen"
 	if ! tap_text "Rename..."; then bad "remote: rename from the menu" "menu did not open"; fi
 	nap 2
 	wait_for 'text="Rename session"' 5 && tap_edit && nap 1
@@ -1122,6 +1124,39 @@ if [ -n "${PPORT:-}" ]; then
 	for i in $(seq 1 40); do [ "$(pnotif 'Approval needed: Zomboid launcher')" -ge 1 ] && break; sleep 0.5; done
 	[ "$(pnotif 'Approval needed: Zomboid launcher')" -ge 1 ] && ok "remote: notification for another session" || bad "remote: notification for another session"
 	[ "$(pnotif 'Finished: Fix edits')" = 0 ] && ok "remote: silent for the session on screen" || bad "remote: silent for the session on screen"
+	# Home screen: launcher shortcuts (New session + recent sessions) from Quill Desktop's list
+	sc=$(adb_ shell dumpsys shortcut 2>/dev/null | grep -A400 "Package: $PKG" | grep -o 'id=[^, ]*' | tr '\n' ' ')
+	echo "$sc" | grep -q 'id=new' && echo "$sc" | grep -q 'id=s:session_' && ok "home: launcher shortcuts (New session + recent sessions)" || bad "home: launcher shortcuts (New session + recent sessions)" "$sc"
+	pref_has 'home.sessions' && ok "home: session list cached for the widget" || bad "home: session list cached for the widget"
+	# Approval notification with Allow / Deny that answers from the shade
+	pcurl "/debug/perm?id=session_C3&req=req_notif" >/dev/null
+	nap 1
+	pcurl "/debug/event?id=session_C3&type=approval" >/dev/null
+	for i in $(seq 1 40); do [ "$(pnotif 'rm -rf build/')" -ge 1 ] && break; sleep 0.5; done
+	ndump=$(adb_ shell dumpsys notification --noredact 2>/dev/null)
+	echo "$ndump" | grep -q 'Bash: rm -rf build/' && echo "$ndump" | grep -q '"Allow"' && echo "$ndump" | grep -q '"Deny"' && ok "notify: approval shows the command with Allow / Deny" || bad "notify: approval shows the command with Allow / Deny"
+	adb_ shell cmd statusbar expand-notifications >/dev/null 2>&1
+	nap 2
+	DIRTY=1
+	tap_text "Allow" >/dev/null 2>&1 || { tap_text "Approval needed: Zomboid launcher" >/dev/null 2>&1; }
+	wait_log 'req_notif[^]]*allow' && ok "notify: Allow answers from the notification" || bad "notify: Allow answers from the notification" "$(plog | grep -o 'req_notif[^]]*' | tail -1)"
+	for i in $(seq 1 20); do [ "$(pnotif 'rm -rf build/')" = 0 ] && break; sleep 0.5; done
+	[ "$(pnotif 'rm -rf build/')" = 0 ] && ok "notify: answered notification goes away" || bad "notify: answered notification goes away"
+	adb_ shell cmd statusbar collapse >/dev/null 2>&1
+	nap 1
+	# Share to Quill: shared text goes into the picked session's message box
+	adb_ shell am start -W -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "'Shared from the emulator'" -n "$PKG/$ACT" >/dev/null 2>&1
+	wait_for 'text="Send to…"' 15 && ok "share: Send to… picker" || bad "share: Send to… picker"
+	tap_part "Zomboid launcher" && nap 2
+	DIRTY=1
+	dump | grep -q 'text="Shared from the emulator"' && pref_has 'name="remote.last">session_C3<' && ok "share: text lands in the chosen session's message box" || bad "share: text lands in the chosen session's message box"
+	adb_ shell input keyevent KEYCODE_BACK
+	nap 1
+	# Launcher shortcut "New session" opens the new session dialog
+	adb_ shell am start -W -a android.intent.action.VIEW -n "$PKG/$ACT" --ez quill.newSession true >/dev/null 2>&1
+	wait_for 'text="New session"' 15 && ok "home: New session shortcut opens the dialog" || bad "home: New session shortcut opens the dialog"
+	tap_any "Cancel" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+	nap 1
 	adb_ shell pm revoke "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
 	adb_ shell cmd appops set "$PKG" POST_NOTIFICATION ignore >/dev/null 2>&1
 	nap 1

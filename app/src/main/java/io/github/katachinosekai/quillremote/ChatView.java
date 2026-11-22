@@ -616,6 +616,14 @@ final class ChatView extends LinearLayout {
         conn.setVisibility(line == null || line.isEmpty() ? GONE : VISIBLE);
     }
 
+    /** Put shared text into the message box (after anything already typed), ready to edit and send. */
+    void draft(String text) {
+        String now = box.getText().toString();
+        box.setText(now.trim().isEmpty() ? text : now + "\n" + text);
+        box.setSelection(box.getText().length());
+        box.requestFocus();
+    }
+
     void clear() {
         list.removeAllViews();
         views.clear();
@@ -1093,7 +1101,9 @@ final class ChatView extends LinearLayout {
                 continue;
             }
             String qid = String.valueOf(q.opt("id"));
-            TextView qt = label((i + 1) + ". " + q.optString("text"), MainActivity.TEXT, 15);
+            // "num" = the question's own number in the plan (Quill Desktop, optional); else count from 1.
+            int num = q.optInt("num", 0) > 0 ? q.optInt("num") : i + 1;
+            TextView qt = label(num + ". " + q.optString("text"), MainActivity.TEXT, 15);
             qt.setPadding(0, dp(12), 0, dp(4));
             c.addView(qt);
             JSONArray os = q.optJSONArray("options");
@@ -1107,11 +1117,14 @@ final class ChatView extends LinearLayout {
                     String[] yn = {"Yes", "No"};
                     for (int k = 0; k < 2; k++) {
                         android.widget.RadioButton rb = new android.widget.RadioButton(getContext());
-                        rb.setText(yn[k]);
+                        rb.setText(yn[k] + (k == rec ? "  (recommended)" : ""));
                         rb.setTextColor(MainActivity.TEXT);
                         rb.setTag(k == 0 ? "yes" : "no");
                         rb.setId(View.generateViewId());
                         g.addView(rb);
+                        if (k == rec) {
+                            rb.setChecked(true); // pre-picked like single (Quill Desktop: options ["Yes","No"] + recommended 0/1)
+                        }
                     }
                     c.addView(g);
                     values.add(() -> {
