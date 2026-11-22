@@ -1172,8 +1172,12 @@ if [ -n "${PPORT:-}" ]; then
 	nap 1
 	wait_for 'content-desc="Sent ' 8 && ok "times: back on" || bad "times: back on"
 	# Streaming replies are formatted while they arrive (open **bold** closed for now), finished text as before
+	pcurl "/debug/conns?reset=1" >/dev/null
 	pcurl "/debug/stream?id=session_A1" >/dev/null
 	wait_for 'Still typing half bo' 15 && ! dump | grep -q 'text="[^"]*\*\*' && has 'item two' && ok "stream: formatted while streaming, no raw **" || bad "stream: formatted while streaming, no raw **" "$(dump | grep -o 'text="[^"]*\(Still\|Intro\)[^"]*"' | head -3 | tr '\n' ' ')"
+	DS=$(pcurl "/debug/conns")
+	echo "$DS" | grep -q '"DELTA sent":[1-9]' && ok "delta: streaming reply fetched as deltas" || bad "delta: streaming reply fetched as deltas" "$DS"
+	log "INFO  stream deltas: $(echo "$DS" | grep -o '"DELTA[^,}]*' | tr '\n' ' ')"
 	pcurl "/debug/streamend?id=session_A1" >/dev/null
 	wait_for 'Still typing half bold done.' 15 && ! dump | grep -q 'text="[^"]*\*\*' && ok "stream: finished reply rendered" || bad "stream: finished reply rendered"
 	# Connection reuse (0.9.22): with a session open and nothing happening, few new TLS connections and no

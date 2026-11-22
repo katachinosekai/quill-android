@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"math/big"
 	"net"
@@ -402,6 +403,47 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 			out = append(out, it)
 		}
 		items = out
+		// Streaming deltas, like Quill Desktop 0.1.24 (docs/phone-api.md): delta=1&have=seq:n:crc, epoch + since only.
+		if q.Get("delta") == "1" && q.Has("epoch") && !reset && q.Get("have") != "" {
+			have := map[int][2]uint64{}
+			for _, e := range strings.Split(q.Get("have"), ",") {
+				f := strings.Split(e, ":")
+				if len(f) != 3 {
+					fail(w, 400, "bad_request")
+					return
+				}
+				seq, err1 := strconv.Atoi(f[0])
+				n, err2 := strconv.ParseUint(f[1], 10, 32)
+				crc, err3 := strconv.ParseUint(f[2], 16, 32)
+				if err1 != nil || err2 != nil || err3 != nil {
+					fail(w, 400, "bad_request")
+					return
+				}
+				have[seq] = [2]uint64{n, crc}
+			}
+			s.paths["DELTA asked"]++
+			out := make([]item, 0, len(items))
+			for _, it := range items {
+				h, ok := have[it["seq"].(int)]
+				k, _ := it["kind"].(string)
+				text, _ := it["text"].(string)
+				r := []rune(text)
+				if ok && (k == "assistant" || k == "thinking") && h[0] > 0 && int(h[0]) <= len(r) && uint64(crc32.ChecksumIEEE([]byte(string(r[:h[0]])))) == h[1] {
+					c := item{}
+					for kk, v := range it {
+						c[kk] = v
+					}
+					c["text"] = string(r[h[0]:])
+					c["textFrom"] = h[0]
+					c["textLen"] = len(r)
+					s.paths["DELTA sent"]++
+					s.paths["DELTA bytes saved"] += len(string(r[:h[0]]))
+					it = c
+				}
+				out = append(out, it)
+			}
+			items = out
+		}
 		queue := []any{}
 		for i, t := range x.Queue {
 			queue = append(queue, map[string]any{"index": i, "text": t})

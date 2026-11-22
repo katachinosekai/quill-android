@@ -515,11 +515,25 @@ final class Remote implements ChatView.Actions {
     void fetch(String id, boolean fresh, boolean stick) {
         int ep;
         long since;
+        StringBuilder have = new StringBuilder();
         synchronized (this) {
             ep = epoch;
             since = rev;
+            // Streaming deltas: name the replies still streaming, so only their new text comes back.
+            int n = 0;
+            for (JSONObject it : items.descendingMap().values()) {
+                String k = it.optString("kind");
+                String t = it.optString("text");
+                if (n < Delta.MAX_HAVE && it.optBoolean("streaming") && ("assistant".equals(k) || "thinking".equals(k)) && !t.isEmpty()) {
+                    have.append(have.length() == 0 ? "" : ",").append(Delta.entry(it.optInt("seq"), t));
+                    n++;
+                }
+            }
         }
-        PhoneApi.Reply r = fresh || ep < 0 ? api.items(id, -1, 0) : api.items(id, ep, since);
+        PhoneApi.Reply r = fresh || ep < 0 ? api.items(id, -1, 0) : api.items(id, ep, since, have.toString());
+        if (!fresh && r.code == 400 && have.length() > 0) {
+            r = api.items(id, ep, since); // a server that refuses the have list: plain incremental fetch
+        }
         if (r.ok()) {
             apply(id, fresh, r.body, stick);
         }
@@ -539,11 +553,32 @@ final class Remote implements ChatView.Actions {
         epoch = o.optInt("epoch");
         rev = Math.max(rev, o.optLong("rev"));
         JSONArray arr = o.optJSONArray("items");
+        boolean broken = false;
         for (int i = 0; arr != null && i < arr.length(); i++) {
             JSONObject it = arr.optJSONObject(i);
-            if (it != null) {
-                items.put(it.optInt("seq"), it);
+            if (it == null) {
+                continue;
             }
+            if (it.has("textFrom")) {
+                JSONObject old = items.get(it.optInt("seq"));
+                String all = old == null ? null : Delta.append(old.optString("text"), it.optInt("textFrom"), it.optString("text"), it.optInt("textLen", -1));
+                if (all == null) {
+                    broken = true; // our copy and the server's disagree: keep ours, reload the session below
+                    continue;
+                }
+                try {
+                    it.put("text", all);
+                } catch (JSONException e) {
+                    broken = true;
+                    continue;
+                }
+                it.remove("textFrom");
+                it.remove("textLen");
+            }
+            items.put(it.optInt("seq"), it);
+        }
+        if (broken && !fresh) {
+            work.execute(() -> fetch(id, true));
         }
         queue = o.optJSONArray("queue") == null ? new JSONArray() : o.optJSONArray("queue");
         healBlanks(id, fresh);

@@ -49,6 +49,12 @@ Since Quill e0d62ee, Remote Control names are plain titles, so folders come from
 - Last run on qfold (unfolded 841dp, folded 411dp): 29/30. The remaining failure was the closed JS drawer still being in the accessibility tree; fixed in 0.6.1 (visibility hidden + aria-hidden when closed). Fold testing is paused at the user's request; qphone and qtab have not been run yet.
 - Bugs found by these runs: none in the app's logic. Launch, vertical sidebar, arrow, fold/unfold switching, tab bar, folder bar and drop-down, text size, settings, pairing over the pinned local network, cached folders with Quill offline, Unpair, invalid pairing link, rotation, renderer-crash recovery and back all passed.
 
+## 0.9.23 (streaming deltas, 2026-11-22)
+- Uses Quill Desktop 0.1.24's opt-in deltas (quill docs/phone-api.md, 3f1b8a5): Remote.fetch adds delta=1&have=<seq>:<code points>:<crc32 hex of the UTF-8 text> for replies still streaming (assistant/thinking, at most 16) on incremental /items fetches; a 400 falls back to a plain incremental fetch.
+- Remote.apply: an item with textFrom is appended to our copy (Delta.append checks textFrom and textLen in code points); any mismatch keeps our copy and reloads the session once (fetch fresh). Older Quill Desktop ignores delta=1 and sends whole items, as before.
+- Delta.java + DeltaTest (crc of "hello" = 3610a686, emoji/surrogates, mismatches). Mock implements the same rules and counts "DELTA asked/sent/bytes saved" in /debug/conns; emulator check that the streaming reply is fetched as deltas and ends with the exact text.
+- Estimate for a 3 KB reply streamed over ~30 s (~60 fetches): ~90 KB of repeated text before, ~3 KB of text plus per-request overhead with deltas.
+
 ## 0.9.22 (connection reuse, slow networks, 2026-11-22)
 - Measured first (kmem f4c9e1e): every request made a fresh TCP + TLS connection (PhoneApi called getSocketFactory() and built a HostnameVerifier lambda per request, both part of the pool key; Notifier/FolderSync built a new SSLContext per poll), ~49 new connections per idle minute.
 - Net.java: one SSLSocketFactory and one HostnameVerifier (ANY_HOST; the certificate is pinned by FolderSync.pinned) per pairing, shared by PhoneApi, Notifier and FolderSync; no disconnect() after a reply was read in full, so the connection goes back to the pool. Net.hosts: last answering address first, then IPs, then names (Notifier and FolderSync now use it too). Debug builds log method + path (tag QuillNet).

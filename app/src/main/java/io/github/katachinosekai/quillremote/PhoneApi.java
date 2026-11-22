@@ -228,7 +228,12 @@ final class PhoneApi {
     }
 
     Reply items(String id, int epoch, long since) {
-        String q = epoch >= 0 ? "?epoch=" + epoch + "&since=" + since : "";
+        return items(id, epoch, since, "");
+    }
+
+    /** have: streaming deltas (Delta.entry list, comma separated); only with epoch + since. */
+    Reply items(String id, int epoch, long since, String have) {
+        String q = epoch >= 0 ? "?epoch=" + epoch + "&since=" + since + (have.isEmpty() ? "" : "&delta=1&have=" + enc(have)) : "";
         return get("/phone/session/" + enc(id) + "/items" + q, 10000);
     }
 
