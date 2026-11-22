@@ -25,6 +25,9 @@ final class Remote implements ChatView.Actions {
 
         /** Quill Desktop wants a password for this device (hello "unlock", or 401 "locked"). */
         void onLocked();
+
+        /** Show the phone's own unlock prompt (screen lock or fingerprint); done gets true when it succeeded. */
+        void screenLock(java.util.function.Consumer<Boolean> done);
     }
 
     final PhoneApi api;
@@ -176,7 +179,78 @@ final class Remote implements ChatView.Actions {
     }
 
     /** Drop everything loaded (like Quill Desktop's client), ask for the password, and wait until unlocked. */
+    /** The unlock token came from the device password (only such a session may register the home-network key). */
+    volatile boolean passwordSession;
+    /** Why the last home-network unlock didn't work ("" = it did, or wasn't tried), shown in the password prompt. */
+    volatile String lanNote = "";
+
+    /**
+     * Home-network unlock (user 2026-11-22, Quill Desktop b12fad1): when Quill Desktop says this device may use its key
+     * here (hello lanUnlock, only on its home network and for devices switched on in Devices), sign a fresh challenge
+     * with the Keystore key instead of asking for the password. The signed text names this device, the nonce and the
+     * certificate fingerprint pinned at pairing, so a signature is useless anywhere else.
+     */
+    boolean keyUnlock(int g) {
+        lanNote = "";
+        if (!LanKey.exists()) {
+            return false;
+        }
+        PhoneApi.Reply h = api.hello(android.os.Build.MODEL, appVersion);
+        if (!h.ok() || !h.body.optBoolean("lanUnlock")) {
+            return false;
+        }
+        String phoneId = h.body.optString("phoneId");
+        String fp = api.prefs.getString("pair.fp", "");
+        for (int attempt = 0; attempt < 2 && running && g == gen; attempt++) {
+            PhoneApi.Reply c = api.unlockChallenge();
+            if (!c.ok() || c.body.optString("nonce").isEmpty()) {
+                lanNote = "Quill Desktop didn't offer the home-network unlock (" + c.error() + ").";
+                return false;
+            }
+            String nonce = c.body.optString("nonce");
+            String sig;
+            try {
+                sig = LanKey.sign(LanKey.message(phoneId, nonce, fp));
+            } catch (android.security.keystore.UserNotAuthenticatedException e) {
+                if (attempt > 0 || !askScreenLock()) {
+                    lanNote = "The home-network unlock needs this phone's screen lock first.";
+                    return false;
+                }
+                continue; // the phone was just unlocked: sign a fresh challenge
+            } catch (Exception e) {
+                lanNote = "This phone's home-network key can't be used (" + e.getClass().getSimpleName() + ").";
+                return false;
+            }
+            PhoneApi.Reply r = api.unlockSigned(nonce, sig);
+            if (r.ok() && !r.body.optString("token").isEmpty()) {
+                PhoneApi.unlockToken = r.body.optString("token");
+                passwordSession = false;
+                lastTouch = System.currentTimeMillis();
+                return true;
+            }
+            lanNote = "locked_out".equals(r.error()) ? "Too many failed tries; Quill Desktop blocks this device for 15 minutes."
+                    : "Quill Desktop refused the home-network unlock (" + r.error() + ").";
+            return false;
+        }
+        return false;
+    }
+
+    /** Blocks the stream thread until the phone's own unlock prompt is done. */
+    boolean askScreenLock() {
+        java.util.concurrent.CompletableFuture<Boolean> f = new java.util.concurrent.CompletableFuture<>();
+        ui.post(() -> host.screenLock(f::complete));
+        try {
+            return f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     void lockedWait(int g) {
+        if (keyUnlock(g)) {
+            connection("");
+            return;
+        }
         PhoneApi.unlockToken = null;
         synchronized (this) {
             sessions.clear();
@@ -197,6 +271,46 @@ final class Remote implements ChatView.Actions {
 
     volatile long lastTouch;
 
+    /**
+     * After a password unlock: make sure Quill Desktop has this phone's current home-network key (registering again
+     * replaces it, e.g. after a reinstall or a changed screen-lock option). A phone without a secure screen lock gets
+     * no key while the screen-lock option is on. done (UI thread) gets null or the reason it wasn't registered.
+     */
+    void registerKey(java.util.function.Consumer<String> done) {
+        work.execute(() -> {
+            String msg = null;
+            if (!passwordSession) {
+                msg = "Unlock Quill Desktop with its password once to set this up.";
+            } else {
+                boolean screen = api.prefs.getBoolean("lanScreenLock", true);
+                try {
+                    if (!LanKey.exists() || api.prefs.getBoolean("lanScreenLock.applied", true) != screen) {
+                        android.app.KeyguardManager km = chat.getContext().getSystemService(android.app.KeyguardManager.class);
+                        if (screen && (km == null || !km.isDeviceSecure())) {
+                            LanKey.delete();
+                            msg = "Set a screen lock on this phone to use the home-network unlock (or turn off \"Require this phone's screen lock\").";
+                        } else {
+                            LanKey.create(screen);
+                            api.prefs.edit().putBoolean("lanScreenLock.applied", screen).apply();
+                        }
+                    }
+                    if (msg == null) {
+                        PhoneApi.Reply r = api.unlockKey(LanKey.publicKeyBase64());
+                        if (!r.ok()) {
+                            msg = "Quill Desktop didn't take this phone's key (" + r.error() + ").";
+                        }
+                    }
+                } catch (Exception e) {
+                    msg = "Couldn't create this phone's home-network key (" + e.getClass().getSimpleName() + ").";
+                }
+            }
+            if (done != null) {
+                String m = msg;
+                ui.post(() -> done.accept(m));
+            }
+        });
+    }
+
     /** POST /phone/unlock; done gets "" on success, else the message to show. */
     void unlock(String password, java.util.function.Consumer<String> done) {
         work.execute(() -> {
@@ -204,8 +318,10 @@ final class Remote implements ChatView.Actions {
             String msg;
             if (r.ok() && !r.body.optString("token").isEmpty()) {
                 PhoneApi.unlockToken = r.body.optString("token");
+                passwordSession = true;
                 lastTouch = System.currentTimeMillis();
                 msg = "";
+                registerKey(null);
             } else {
                 switch (r.error()) {
                     case "wrong_password":

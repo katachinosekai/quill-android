@@ -881,6 +881,7 @@ if [ -n "${PPORT:-}" ]; then
 		tap_up "a: Plan-first" && nap 1
 		tap_scroll "Approve plan &amp; send answers" && nap 1
 		wait_log 'req_planq[^]]*planAnswers' && plog | grep -o 'req_planq[^]]*' | tail -1 | grep -q 'yes' && plog | grep -o 'req_planq[^]]*' | tail -1 | grep -q '"2\\":1' && ok "remote: plan answers go with the approval (yes/no, recommended pick, unanswered left out)" || bad "remote: plan answers go with the approval (yes/no, recommended pick, unanswered left out)" "$(plog | grep -o 'req_planq[^]]*' | tail -1)"
+		plog | grep -o 'req_planq[^}]*}' | tail -1 | grep -q '"3\\":\[0,1\]' && ok "remote: plan multi question pre-ticks recommendedPicks" || bad "remote: plan multi question pre-ticks recommendedPicks" "$(plog | grep -o 'req_planq[^}]*}' | tail -1)"
 		plog | grep -o 'req_planq[^}]*}' | tail -1 | grep -q '"5\\":\\"no' && ok "remote: plan yes/no question pre-picks the recommended answer" || bad "remote: plan yes/no question pre-picks the recommended answer" "$(plog | grep -o 'req_planq[^}]*}' | tail -1)"
 	else
 		bad "remote: plan questions card with its controls" "no card"
@@ -1110,6 +1111,27 @@ if [ -n "${PPORT:-}" ]; then
 	gone 'text="Unlock Quill Desktop"' 10 && wait_log '/phone/unlock ' && ok "remote: right password unlocks" || bad "remote: right password unlocks"
 	popen session_A1
 	a1_open 20 && ok "remote: sessions load again after unlocking" || bad "remote: sessions load again after unlocking"
+	# Home-network unlock (user 2026-11-22, Quill Desktop b12fad1). The emulator has no screen lock, so with
+	# "Require this phone's screen lock" on (the default) no key is made; with it off, the password session registers it.
+	sleep 3
+	plog | grep -q 'lan key registered' && bad "home: no key without the phone's screen lock" || ok "home: no key without the phone's screen lock"
+	tap_text "Settings" && nap 2
+	tap_scroll "Require this phone's screen lock" && nap 1
+	wait_log 'lan key registered' && ok "home: key registered from the password session" || bad "home: key registered from the password session"
+	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+	nap 1
+	pcurl "/debug/lan?on=1" >/dev/null
+	pcurl "/debug/relock" >/dev/null
+	tap_desc "Reconnect" && nap 4
+	DIRTY=1
+	wait_log 'lan unlock ok' && ! has 'text="Unlock Quill Desktop"' && ok "home: unlocks with the phone's key, no password, on the home network" || bad "home: unlocks with the phone's key, no password, on the home network" "$(plog | grep -o 'lan unlock[^"]*' | tail -1)"
+	popen session_A1
+	a1_open 20 && ok "home: sessions load after the key unlock" || bad "home: sessions load after the key unlock"
+	pcurl "/debug/lan?on=0" >/dev/null
+	pcurl "/debug/relock" >/dev/null
+	tap_desc "Reconnect" && nap 2
+	wait_for 'text="Unlock Quill Desktop"' 20 && ok "home: password again off the home network" || bad "home: password again off the home network"
+	tap_any "Cancel" >/dev/null 2>&1; nap 1
 	pcurl "/debug/relock" >/dev/null
 	tap_desc "Reconnect" && nap 2
 	wait_for 'text="Unlock Quill Desktop"' 20 && ok "remote: asks again once Quill Desktop drops the unlock" || bad "remote: asks again once Quill Desktop drops the unlock"

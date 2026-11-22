@@ -211,6 +211,19 @@ final class PhoneApi {
         return post("/phone/unlock", obj("password", password));
     }
 
+    /** Home-network unlock (Quill Desktop b12fad1): register this phone's Keystore public key (std base64 SPKI DER). */
+    Reply unlockKey(String publicKey) {
+        return post("/phone/unlock/key", obj("publicKey", publicKey));
+    }
+
+    Reply unlockChallenge() {
+        return post("/phone/unlock/challenge", new JSONObject());
+    }
+
+    Reply unlockSigned(String nonce, String sig) {
+        return post("/phone/unlock", obj("nonce", nonce, "sig", sig));
+    }
+
     Reply touch() {
         return post("/phone/unlock/touch", new JSONObject());
     }

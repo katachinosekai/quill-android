@@ -204,6 +204,31 @@ public class MainActivity extends Activity {
     android.app.AlertDialog unlockDlg;
 
     /** Password prompt for Quill Desktop's paired-device lock (only when this device's Password switch is on there). */
+    /** The phone's own unlock prompt (fingerprint or screen lock), for the home-network key (LanKey). */
+    void askScreenLock(java.util.function.Consumer<Boolean> done) {
+        if (isFinishing()) {
+            done.accept(false);
+            return;
+        }
+        android.hardware.biometrics.BiometricPrompt p = new android.hardware.biometrics.BiometricPrompt.Builder(this)
+                .setTitle("Unlock Quill Desktop")
+                .setSubtitle("On your home network, this phone's screen lock replaces Quill Desktop's password.")
+                .setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG
+                        | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build();
+        p.authenticate(new android.os.CancellationSignal(), getMainExecutor(), new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+            @Override
+            public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) {
+                done.accept(true);
+            }
+
+            @Override
+            public void onAuthenticationError(int code, CharSequence err) {
+                done.accept(false);
+            }
+        });
+    }
+
     void unlockDialog() {
         if (remote == null || isFinishing() || (unlockDlg != null && unlockDlg.isShowing())) {
             return;
@@ -223,6 +248,11 @@ public class MainActivity extends Activity {
             pw.setSelection(Math.max(0, Math.min(at, pw.length())));
         });
         TextView msg = label("");
+        // Why the home-network unlock didn't work this time (e.g. not on the home network, screen lock cancelled).
+        String lanNote = remote.lanNote;
+        if (!lanNote.isEmpty()) {
+            msg.setText(lanNote);
+        }
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(20), dp(8), dp(20), 0);
@@ -912,6 +942,11 @@ public class MainActivity extends Activity {
                 public void onLocked() {
                     unlockDialog();
                 }
+
+                @Override
+                public void screenLock(java.util.function.Consumer<Boolean> done) {
+                    askScreenLock(done);
+                }
             }, appVersion(), openTarget(getIntent()));
         } else {
             sync.usageListener = json -> bars.setUsage(json);
@@ -1298,6 +1333,20 @@ public class MainActivity extends Activity {
             syncSessions.run();
             remote.onSettings = syncSessions;
             box.addView(sessionBox);
+
+            // Home-network unlock (switched on per device in Quill Desktop → Devices, Linux only there).
+            section(box, "Home network", true);
+            box.addView(line(LanKey.exists()
+                    ? "This phone has its home-network key. When Quill Desktop's Devices switch for it is on, no password is needed on its home network (again every 30 days)."
+                    : "Unlock with the password once, then switch \"No password on this home network\" on for this phone in Quill Desktop → Devices.", MUTED));
+            CheckBox screenLock = check("Require this phone's screen lock", prefs.getBoolean("lanScreenLock", true));
+            screenLock.setContentDescription("Require this phone's screen lock");
+            screenLock.setOnCheckedChangeListener((v, on) -> {
+                prefs.edit().putBoolean("lanScreenLock", on).apply();
+                // A new key is needed for the new setting; Quill Desktop only takes it from a password-unlocked session.
+                remote.registerKey(m -> toast(m == null ? "Home-network key updated." : m));
+            });
+            box.addView(screenLock);
         }
 
         section(box, "Notifications", true);

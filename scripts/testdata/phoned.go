@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -55,6 +56,11 @@ type server struct {
 	noAPI     bool
 	downUntil time.Time
 	liveItem  item
+	fp        string
+	lanOn     bool
+	lanKey    *ecdsa.PublicKey
+	tokPw     bool
+	nonces    map[string]time.Time
 	settings  map[string]bool
 	conns     int
 	paths     map[string]int
@@ -189,7 +195,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	locked := s.lockOn && (s.unlockTok == "" || r.Header.Get("X-Quill-Unlock") != s.unlockTok)
 	s.mu.Unlock()
-	if locked && !strings.HasPrefix(r.URL.Path, "/debug/") && r.URL.Path != "/phone/hello" && r.URL.Path != "/phone/unlock" {
+	if locked && !strings.HasPrefix(r.URL.Path, "/debug/") && r.URL.Path != "/phone/hello" && r.URL.Path != "/phone/unlock" && r.URL.Path != "/phone/unlock/challenge" {
 		fail(w, 401, "locked")
 		return
 	}
@@ -521,7 +527,7 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		qs := []any{
 			map[string]any{"id": 1, "text": "Should rule 21 stay as it is?", "kind": "yesno", "recommended": -1},
 			map[string]any{"id": 2, "text": "Which channel?", "kind": "single", "options": []string{"Stable", "Beta"}, "recommended": 1},
-			map[string]any{"id": 3, "text": "Which parts?", "kind": "multi", "options": []string{"a: Plan-first", "b: Auto mode"}, "recommended": -1},
+			map[string]any{"id": 3, "text": "Which parts?", "kind": "multi", "options": []string{"a: Plan-first", "b: Auto mode"}, "recommended": -1, "recommendedPicks": []int{1}},
 			map[string]any{"id": 4, "text": "Anything else?", "kind": "text", "recommended": -1},
 			map[string]any{"id": 5, "num": 7, "text": "Push the tag too?", "kind": "yesno", "options": []string{"Yes", "No"}, "recommended": 1},
 		}
@@ -614,6 +620,15 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		s.add(x, item{"kind": "assistant", "text": "`go test` runs before every release.\n\n- one\n- two items\n- a third item that is much longer than the others and keeps going so the column has to wrap it into balanced lines\n\nShort end.\n\na. first choice\n\nb) second choice"})
 		s.touch(x, nil)
 		reply(w, 200, map[string]any{})
+	case p == "/debug/lan":
+		// ?on=1: this device may use its key here (Devices switch on, on the home network); ?drop=1 forgets the key
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.lanOn = q.Get("on") == "1"
+		if q.Get("drop") == "1" {
+			s.lanKey = nil
+		}
+		reply(w, 200, map[string]any{"key": s.lanKey != nil})
 	case p == "/debug/settings":
 		// change a setting "on the PC": ?buildGate=0|1&coordinator=0|1; ?off=1 drops the field (older Quill Desktop)
 		s.mu.Lock()
@@ -703,7 +718,61 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 	defer s.mu.Unlock()
 	if p == "/phone/hello" {
 		need := s.lockOn && (s.unlockTok == "" || r.Header.Get("X-Quill-Unlock") != s.unlockTok)
-		reply(w, 200, map[string]any{"phoneId": "a1b2c3d4", "control": s.control, "boot": s.boot, "quill": "9.9.9", "unlock": need})
+		reply(w, 200, map[string]any{"phoneId": "a1b2c3d4", "control": s.control, "boot": s.boot, "quill": "9.9.9", "unlock": need, "lanUnlock": s.lanOn && s.lanKey != nil})
+		return
+	}
+	if p == "/phone/unlock/challenge" {
+		// home-network unlock (Quill Desktop b12fad1): single-use 32-byte nonces, 60 s, at most 4 open
+		if !s.lanOn || s.lanKey == nil {
+			fail(w, 403, "lan_unlock_off")
+			return
+		}
+		if s.nonces == nil {
+			s.nonces = map[string]time.Time{}
+		}
+		for n, exp := range s.nonces {
+			if time.Now().After(exp) {
+				delete(s.nonces, n)
+			}
+		}
+		if len(s.nonces) >= 4 {
+			fail(w, 429, "too_many")
+			return
+		}
+		b := make([]byte, 32)
+		rand.Read(b)
+		n := base64.RawURLEncoding.EncodeToString(b)
+		s.nonces[n] = time.Now().Add(60 * time.Second)
+		reply(w, 200, map[string]any{"nonce": n, "expiresMs": time.Now().Add(60 * time.Second).UnixMilli(), "ttlMs": 60000})
+		return
+	}
+	if p == "/phone/unlock" && body["nonce"] != nil {
+		if body["password"] != nil {
+			fail(w, 400, "bad_request")
+			return
+		}
+		if !s.lanOn || s.lanKey == nil {
+			fail(w, 403, "lan_unlock_off")
+			return
+		}
+		n, _ := body["nonce"].(string)
+		exp, ok := s.nonces[n]
+		delete(s.nonces, n)
+		if !ok || time.Now().After(exp) {
+			s.log = append(s.log, "lan unlock bad_nonce")
+			fail(w, 403, "bad_nonce")
+			return
+		}
+		sig, err := base64.StdEncoding.DecodeString(fmt.Sprint(body["sig"]))
+		msg := sha256.Sum256([]byte("quill-unlock-v1|a1b2c3d4|" + n + "|" + s.fp))
+		if err != nil || !ecdsa.VerifyASN1(s.lanKey, msg[:], sig) {
+			s.log = append(s.log, "lan unlock bad_signature")
+			fail(w, 403, "bad_signature")
+			return
+		}
+		s.unlockTok, s.tokPw = fmt.Sprintf("tok%d", time.Now().UnixNano()), false
+		s.log = append(s.log, "lan unlock ok")
+		reply(w, 200, map[string]any{"token": s.unlockTok, "idleMin": 15, "needed": true, "method": "key"})
 		return
 	}
 	if p == "/phone/unlock" {
@@ -714,8 +783,25 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 			json.NewEncoder(w).Encode(map[string]any{"v": 1, "error": map[string]any{"code": "wrong_password", "message": fmt.Sprintf("%d of 5 tries", s.wrongPw)}})
 			return
 		}
-		s.unlockTok = fmt.Sprintf("tok%d", time.Now().UnixNano())
+		s.unlockTok, s.tokPw = fmt.Sprintf("tok%d", time.Now().UnixNano()), true
 		reply(w, 200, map[string]any{"token": s.unlockTok, "idleMin": 15, "needed": true})
+		return
+	}
+	if p == "/phone/unlock/key" {
+		if !s.tokPw || r.Header.Get("X-Quill-Unlock") != s.unlockTok {
+			fail(w, 403, "password_session_required")
+			return
+		}
+		der, err := base64.StdEncoding.DecodeString(fmt.Sprint(body["publicKey"]))
+		k, err2 := x509.ParsePKIXPublicKey(der)
+		ek, ok := k.(*ecdsa.PublicKey)
+		if err != nil || err2 != nil || !ok || ek.Curve != elliptic.P256() {
+			fail(w, 400, "bad_request")
+			return
+		}
+		s.lanKey = ek
+		s.log = append(s.log, "lan key registered")
+		reply(w, 200, map[string]any{"ok": true, "lanUnlock": s.lanOn})
 		return
 	}
 	if p == "/phone/unlock/touch" {
@@ -1054,6 +1140,7 @@ func main() {
 	s.add(b, item{"kind": "permission", "request": map[string]any{"id": "req_push", "state": "pending", "tool": "Bash", "detail": "git push origin master", "canAllowAlways": true}})
 	s.add(c, item{"kind": "notice", "text": "Session stopped"})
 	cr, fp := cert()
+	s.fp = fp
 	ln, err := tls.Listen("tcp", ":"+strconv.Itoa(port), &tls.Config{Certificates: []tls.Certificate{cr}})
 	if err != nil {
 		panic(err)

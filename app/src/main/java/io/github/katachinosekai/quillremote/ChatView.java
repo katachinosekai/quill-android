@@ -1297,6 +1297,19 @@ final class ChatView extends LinearLayout {
                 ans.put(qid, rec == 0 ? "yes" : "no");
             } else if (rec >= 0 && "single".equals(kind)) {
                 ans.put(qid, rec);
+            } else if ("multi".equals(kind) && q.optJSONArray("recommendedPicks") != null) {
+                // Quill Desktop 44f40ef: "All of a–e (recommended)" and similar pre-tick these boxes.
+                java.util.TreeSet<Integer> picks = new java.util.TreeSet<>();
+                JSONArray rp = q.optJSONArray("recommendedPicks");
+                for (int k = 0; k < rp.length(); k++) {
+                    int idx = rp.optInt(k, -1);
+                    if (os != null && idx >= 0 && idx < os.length()) {
+                        picks.add(idx);
+                    }
+                }
+                if (!picks.isEmpty()) {
+                    ans.put(qid, picks);
+                }
             }
         }
         switch (kind) {
