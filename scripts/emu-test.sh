@@ -1127,6 +1127,21 @@ if [ -n "${PPORT:-}" ]; then
 	wait_log 'lan unlock ok' && ! has 'text="Unlock Quill Desktop"' && ok "home: unlocks with the phone's key, no password, on the home network" || bad "home: unlocks with the phone's key, no password, on the home network" "$(plog | grep -o 'lan unlock[^"]*' | tail -1)"
 	popen session_A1
 	a1_open 20 && ok "home: sessions load after the key unlock" || bad "home: sessions load after the key unlock"
+	# Turning "Require this phone's screen lock" back on in a key-unlocked session drops the old key at once
+	KU=$(plog | grep -c 'lan unlock ok')
+	tap_text "Settings" && nap 2
+	tap_scroll "Require this phone's screen lock" && nap 2
+	tap_text "DONE" >/dev/null 2>&1 || adb_ shell input keyevent KEYCODE_BACK
+	nap 1
+	pcurl "/debug/relock" >/dev/null
+	tap_desc "Reconnect" && nap 4
+	wait_for 'text="Unlock Quill Desktop"' 20 && [ "$(plog | grep -c 'lan unlock ok')" = "$KU" ] && ok "home: screen-lock option on drops the old key at once" || bad "home: screen-lock option on drops the old key at once"
+	tap_edit && nap 1
+	adb_ shell input text "test-password-1"
+	ime_off
+	tap_any "Unlock" && nap 2
+	popen session_A1
+	a1_open 20
 	pcurl "/debug/lan?on=0" >/dev/null
 	pcurl "/debug/relock" >/dev/null
 	tap_desc "Reconnect" && nap 2

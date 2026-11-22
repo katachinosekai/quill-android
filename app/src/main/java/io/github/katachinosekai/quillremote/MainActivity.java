@@ -947,6 +947,13 @@ public class MainActivity extends Activity {
                 public void screenLock(java.util.function.Consumer<Boolean> done) {
                     askScreenLock(done);
                 }
+
+                @Override
+                public void onUnlocked() {
+                    if (unlockDlg != null && unlockDlg.isShowing()) {
+                        unlockDlg.dismiss();
+                    }
+                }
             }, appVersion(), openTarget(getIntent()));
         } else {
             sync.usageListener = json -> bars.setUsage(json);

@@ -28,6 +28,9 @@ final class Remote implements ChatView.Actions {
 
         /** Show the phone's own unlock prompt (screen lock or fingerprint); done gets true when it succeeded. */
         void screenLock(java.util.function.Consumer<Boolean> done);
+
+        /** Unlocked by any route (key or password): close a password prompt still on screen. */
+        void onUnlocked();
     }
 
     final PhoneApi api;
@@ -195,6 +198,16 @@ final class Remote implements ChatView.Actions {
         if (!LanKey.exists()) {
             return false;
         }
+        // Only a key Quill Desktop accepted (else every try is a bad_signature strike toward the lock-out), and only one
+        // made with the screen-lock option the user has now.
+        boolean screen = api.prefs.getBoolean("lanScreenLock", true);
+        if (screen != api.prefs.getBoolean("lanScreenLock.applied", true)) {
+            lanNote = "The screen-lock option changed: unlock with the password once to renew this phone's key.";
+            return false;
+        }
+        if (!LanKey.publicKeyHash().equals(api.prefs.getString("lanKey.registered", ""))) {
+            return false;
+        }
         PhoneApi.Reply h = api.hello(android.os.Build.MODEL, appVersion);
         if (!h.ok() || !h.body.optBoolean("lanUnlock")) {
             return false;
@@ -217,6 +230,10 @@ final class Remote implements ChatView.Actions {
                     return false;
                 }
                 continue; // the phone was just unlocked: sign a fresh challenge
+            } catch (android.security.keystore.KeyPermanentlyInvalidatedException e) {
+                forgetKey(); // Android dropped it (screen lock changed): a new one comes with the next password unlock
+                lanNote = "This phone's screen lock changed: unlock with the password once to renew the home-network key.";
+                return false;
             } catch (Exception e) {
                 lanNote = "This phone's home-network key can't be used (" + e.getClass().getSimpleName() + ").";
                 return false;
@@ -227,6 +244,9 @@ final class Remote implements ChatView.Actions {
                 passwordSession = false;
                 lastTouch = System.currentTimeMillis();
                 return true;
+            }
+            if ("bad_signature".equals(r.error())) {
+                api.prefs.edit().remove("lanKey.registered").apply(); // no more tries with this key until re-registered
             }
             lanNote = "locked_out".equals(r.error()) ? "Too many failed tries; Quill Desktop blocks this device for 15 minutes."
                     : "Quill Desktop refused the home-network unlock (" + r.error() + ").";
@@ -241,26 +261,43 @@ final class Remote implements ChatView.Actions {
         ui.post(() -> host.screenLock(f::complete));
         try {
             return f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         } catch (Exception e) {
             return false;
         }
     }
 
-    void lockedWait(int g) {
-        if (keyUnlock(g)) {
-            connection("");
-            return;
-        }
+    void forgetKey() {
+        LanKey.delete();
+        api.prefs.edit().remove("lanKey.registered").apply();
+    }
+
+    void dropToken() {
         PhoneApi.unlockToken = null;
+        passwordSession = false;
+    }
+
+    void lockedWait(int g) {
+        // Locked: drop what was loaded first (like Quill Desktop's client), then try the key, then ask for the password.
+        dropToken();
         synchronized (this) {
             sessions.clear();
             items.clear();
             boot = "";
         }
-        ui.post(() -> {
-            chat.clear();
-            host.onLocked();
-        });
+        ui.post(chat::clear);
+        publish();
+        if (keyUnlock(g)) {
+            connection("");
+            ui.post(host::onUnlocked);
+            return;
+        }
+        if (!running || g != gen) {
+            return; // a stopped or restarted connection: the newer one decides
+        }
+        ui.post(host::onLocked);
         publish();
         connection("Locked by Quill Desktop. Enter its device password to continue.");
         while (running && g == gen && PhoneApi.unlockToken == null) {
@@ -280,11 +317,14 @@ final class Remote implements ChatView.Actions {
         work.execute(() -> {
             String msg = null;
             if (!passwordSession) {
+                if (api.prefs.getBoolean("lanScreenLock", true) != api.prefs.getBoolean("lanScreenLock.applied", true)) {
+                    forgetKey(); // the old key must not keep working under the old option
+                }
                 msg = "Unlock Quill Desktop with its password once to set this up.";
             } else {
                 boolean screen = api.prefs.getBoolean("lanScreenLock", true);
                 try {
-                    if (!LanKey.exists() || api.prefs.getBoolean("lanScreenLock.applied", true) != screen) {
+                    if (!LanKey.exists() || !LanKey.usable() || api.prefs.getBoolean("lanScreenLock.applied", true) != screen) {
                         android.app.KeyguardManager km = chat.getContext().getSystemService(android.app.KeyguardManager.class);
                         if (screen && (km == null || !km.isDeviceSecure())) {
                             LanKey.delete();
@@ -296,7 +336,10 @@ final class Remote implements ChatView.Actions {
                     }
                     if (msg == null) {
                         PhoneApi.Reply r = api.unlockKey(LanKey.publicKeyBase64());
-                        if (!r.ok()) {
+                        if (r.ok()) {
+                            api.prefs.edit().putString("lanKey.registered", LanKey.publicKeyHash()).apply();
+                        } else {
+                            api.prefs.edit().remove("lanKey.registered").apply();
                             msg = "Quill Desktop didn't take this phone's key (" + r.error() + ").";
                         }
                     }
@@ -319,6 +362,7 @@ final class Remote implements ChatView.Actions {
             if (r.ok() && !r.body.optString("token").isEmpty()) {
                 PhoneApi.unlockToken = r.body.optString("token");
                 passwordSession = true;
+                ui.post(host::onUnlocked);
                 lastTouch = System.currentTimeMillis();
                 msg = "";
                 registerKey(null);
@@ -881,7 +925,7 @@ final class Remote implements ChatView.Actions {
                 return;
             }
             if (r.code == 401 && "locked".equals(r.error())) {
-                PhoneApi.unlockToken = null;
+                dropToken();
                 restart();
                 return;
             }

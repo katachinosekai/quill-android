@@ -53,7 +53,8 @@ final class LanKey {
         delete();
         KeyGenParameterSpec.Builder b = new KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
                 .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
-                .setDigests(KeyProperties.DIGEST_SHA256);
+                .setDigests(KeyProperties.DIGEST_SHA256)
+                .setUnlockedDeviceRequired(true); // never usable while the phone is locked, in both modes
         if (screenLock) {
             b.setUserAuthenticationRequired(true)
                     .setUserAuthenticationParameters(AUTH_SECONDS, KeyProperties.AUTH_DEVICE_CREDENTIAL | KeyProperties.AUTH_BIOMETRIC_STRONG)
@@ -88,6 +89,42 @@ final class LanKey {
         s.initSign(k);
         s.update(message.getBytes(StandardCharsets.UTF_8));
         return android.util.Base64.encodeToString(s.sign(), android.util.Base64.NO_WRAP);
+    }
+
+    /** False when Android has permanently invalidated the key (e.g. the screen lock was removed and set again). */
+    static boolean usable() {
+        try {
+            PrivateKey k = (PrivateKey) store().getKey(ALIAS, null);
+            if (k == null) {
+                return false;
+            }
+            Signature.getInstance("SHA256withECDSA").initSign(k);
+            return true;
+        } catch (android.security.keystore.KeyPermanentlyInvalidatedException e) {
+            return false;
+        } catch (android.security.keystore.UserNotAuthenticatedException e) {
+            return true; // fine, it just needs the screen lock first
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** SHA-256 hex of the public key, to remember which key Quill Desktop accepted. */
+    static String publicKeyHash() {
+        try {
+            PublicKey p = publicKey();
+            if (p == null) {
+                return "";
+            }
+            byte[] h = java.security.MessageDigest.getInstance("SHA-256").digest(p.getEncoded());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : h) {
+                sb.append(String.format(java.util.Locale.ROOT, "%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     static void delete() {

@@ -650,6 +650,8 @@ final class ChatView extends LinearLayout {
     }
 
     void clear() {
+        planAns.clear();
+        planPlain.clear();
         for (StreamView sv : streams.values()) {
             sv.stop();
         }
@@ -1182,11 +1184,7 @@ final class ChatView extends LinearLayout {
         md.setPadding(0, dp(8), 0, 0);
         c.addView(md);
         if (pending(it)) {
-            EditText fb = new EditText(getContext());
-            fb.setHint("Changes (optional)");
-            fb.setTextColor(MainActivity.TEXT);
-            fb.setHintTextColor(MainActivity.MUTED);
-            fb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            EditText fb = changesField(it);
             c.addView(fb);
             JSONArray opts = it.planChoices;
             int n = opts == null ? 0 : opts.length();
@@ -1275,11 +1273,41 @@ final class ChatView extends LinearLayout {
 
     /** One plan's answers, shared by the card and the overlay (Quill Desktop: both views share one answers map). */
     final Map<String, Map<String, Object>> planAns = new HashMap<>();
+    /** The plan's "Changes (optional)" text, kept in its answers map so a redraw doesn't lose it. */
+    static final String CHANGES = "changes:";
+
+    EditText changesField(Item plan) {
+        Map<String, Object> ans = answers(plan);
+        EditText fb = new EditText(getContext());
+        fb.setHint("Changes (optional)");
+        fb.setTextColor(MainActivity.TEXT);
+        fb.setHintTextColor(MainActivity.MUTED);
+        fb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        Object cur = ans.get(CHANGES);
+        if (cur instanceof String) {
+            fb.setText((String) cur);
+        }
+        fb.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence x, int a, int b, int c) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence x, int a, int b, int c) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable x) {
+                ans.put(CHANGES, x.toString());
+            }
+        });
+        return fb;
+    }
     /** Plans the user switched to "Show as written" (the reply as written plus the card). */
     final java.util.Set<Integer> planPlain = new java.util.HashSet<>();
 
     Map<String, Object> answers(Item plan) {
-        return planAns.computeIfAbsent(plan.requestId == null ? "seq:" + plan.seq : plan.requestId, k -> new HashMap<>());
+        return planAns.computeIfAbsent(plan.requestId == null || plan.requestId.isEmpty() ? "seq:" + plan.seq : plan.requestId, k -> new HashMap<>());
     }
 
     /**
@@ -1411,7 +1439,7 @@ final class ChatView extends LinearLayout {
         JSONObject out = new JSONObject();
         try {
             for (Map.Entry<String, Object> e : answers(plan).entrySet()) {
-                if (e.getKey().startsWith("seen:")) {
+                if (e.getKey().startsWith("seen:") || e.getKey().equals(CHANGES)) {
                     continue;
                 }
                 Object v = e.getValue();
@@ -1480,11 +1508,7 @@ final class ChatView extends LinearLayout {
             col.addView(markdown(rest));
         }
         LinearLayout c = card(planTitle(plan.text), MainActivity.ACCENT);
-        EditText fb = new EditText(getContext());
-        fb.setHint("Changes (optional)");
-        fb.setTextColor(MainActivity.TEXT);
-        fb.setHintTextColor(MainActivity.MUTED);
-        fb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        EditText fb = changesField(plan);
         c.addView(fb);
         planButtons(c, plan, fb);
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
