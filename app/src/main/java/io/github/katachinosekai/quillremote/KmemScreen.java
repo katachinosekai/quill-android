@@ -30,6 +30,7 @@ class KmemScreen {
     final MainActivity a;
     final Remote remote;
     final Dialog dialog;
+    final BottomSheet sheet;
     final FrameLayout holder;
     final LinearLayout ovCol, taskCol;
     final ScrollView ovScroll, taskScroll;
@@ -141,14 +142,10 @@ class KmemScreen {
         assistPane = column();
         assistPane.addView(assistHeader, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         assistPane.addView(chatView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        dialog = new Dialog(a, android.R.style.Theme_DeviceDefault_NoActionBar);
-        holder = new FrameLayout(a);
-        holder.setBackgroundColor(MainActivity.BG);
-        dialog.setContentView(holder);
-        InsetPad.install(holder);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        }
+        // A bottom sheet (half height, drag to full; landscape starts full because its two columns need the room).
+        sheet = new BottomSheet(a, a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
+        dialog = sheet.dialog;
+        holder = sheet.content;
         // Back inside the Memory tab goes up one page (fact -> topic -> start) before it closes the screen.
         dialog.setOnKeyListener((d, key, ev) -> {
             if (key == android.view.KeyEvent.KEYCODE_BACK && tab == TAB_MEMORY && memNav.canBack()) {
@@ -190,6 +187,9 @@ class KmemScreen {
     /** Rebuild the frame for the current orientation (also called on rotation); content views are kept. */
     void layout() {
         landscape = a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        if (landscape) {
+            sheet.setFull(true);
+        }
         for (View v : new View[]{ovScroll, taskScroll, chips, search, errorLine, assistPane, memPane}) {
             if (v.getParent() instanceof ViewGroup) {
                 ((ViewGroup) v.getParent()).removeView(v);

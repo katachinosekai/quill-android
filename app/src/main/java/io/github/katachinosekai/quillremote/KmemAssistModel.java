@@ -53,7 +53,12 @@ final class KmemAssistModel {
 
     /** Parse the "assistant" object of a reply; actions and question may also sit beside it (body). Null if neither exists. */
     static KmemAssistModel parse(JSONObject body, long now) {
-        JSONObject as = body == null ? null : body.optJSONObject("assistant");
+        return parse(body, "assistant", now);
+    }
+
+    /** As parse, for the summary under another key ("operator" for the Quill operator). */
+    static KmemAssistModel parse(JSONObject body, String key, long now) {
+        JSONObject as = body == null ? null : body.optJSONObject(key);
         if (as == null) {
             return null;
         }

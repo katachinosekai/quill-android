@@ -98,6 +98,12 @@ final class Remote implements ChatView.Actions {
     volatile long kmemEpoch, kmemRev;
     /** Called on the UI thread when the kmem summary changed (button) or the stream says kmem changed (open screen). */
     volatile Runnable onKmem;
+    /** The Quill operator (hello.quillOperator on; older Quill Desktop leaves it out and the button stays hidden). */
+    volatile boolean quillOn;
+    volatile QuillOpModel.State quillState;
+    volatile long quillEpoch, quillRev, quillLastChange = -1;
+    /** Called on the UI thread when the Quill summary changed (button, open sheet). */
+    volatile Runnable onQuill;
     final java.util.Set<String> actions = new java.util.HashSet<>();
     volatile String current;
     int epoch = -1;
@@ -172,6 +178,14 @@ final class Remote implements ChatView.Actions {
                         work.execute(() -> kmemRefresh());
                     } else if (was) {
                         kmemChanged();
+                    }
+                    boolean quillWas = quillOn;
+                    quillOn = QuillOpModel.showButton(QuillOpModel.map(ChatView.Item.plain(h.body)));
+                    if (quillOn) {
+                        work.execute(() -> quillRefresh());
+                    } else if (quillWas) {
+                        quillState = null;
+                        quillChanged();
                     }
                     if (h.body.optBoolean("unlock") && !PhoneApi.isUnlocked()) {
                         lockedWait(g);
@@ -605,6 +619,11 @@ final class Remote implements ChatView.Actions {
                         kmemChanged();
                     }
                     break;
+                case "quill":
+                    if (quillOn) {
+                        applyQuillChange(c);
+                    }
+                    break;
                 case "files":
                     setFiles(c.optJSONObject("files"));
                     break;
@@ -643,6 +662,56 @@ final class Remote implements ChatView.Actions {
         Runnable k = onKmem;
         if (k != null) {
             ui.post(k);
+        }
+    }
+
+    /** Stream change {type quill, needs, operator{state, waiting, epoch, rev}, lastChange}. */
+    void applyQuillChange(JSONObject c) {
+        JSONObject op = c.optJSONObject("operator");
+        QuillOpModel.State old = quillState;
+        QuillOpModel.State now = QuillOpModel.merge(old, QuillOpModel.map(ChatView.Item.plain(c)));
+        quillState = now;
+        if (op != null) {
+            quillEpoch = op.optLong("epoch");
+            quillRev = op.optLong("rev");
+        }
+        quillChanged();
+        if (op == null || !op.has("status")) {
+            work.execute(this::quillRefresh); // the stream carries no status line or dot: read them
+        }
+        long lc = c.optLong("lastChange", -1);
+        if (lc != quillLastChange) {
+            quillLastChange = lc;
+            Runnable r = onQuillChanges;
+            if (r != null) {
+                ui.post(r);
+            }
+        }
+    }
+
+    /** Called on the UI thread when the settings change log moved (lastChange). */
+    volatile Runnable onQuillChanges;
+
+    void quillChanged() {
+        Runnable k = onQuill;
+        if (k != null) {
+            ui.post(k);
+        }
+    }
+
+    /** Read GET /phone/quill once for the button and the sheet header. */
+    void quillRefresh() {
+        PhoneApi.Reply r = api.quillState();
+        if (r.ok()) {
+            quillState = QuillOpModel.parse(QuillOpModel.map(ChatView.Item.plain(r.body)));
+            JSONObject op = r.body.optJSONObject("operator");
+            if (op != null) {
+                quillEpoch = op.optLong("epoch");
+                quillRev = op.optLong("rev");
+            }
+            quillChanged();
+        } else if (r.code == 401 && "locked".equals(r.error())) {
+            expired();
         }
     }
 

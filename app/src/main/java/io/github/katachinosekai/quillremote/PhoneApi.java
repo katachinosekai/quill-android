@@ -386,6 +386,46 @@ final class PhoneApi {
         return post("/phone/kmem/assistant/" + op, body == null ? new JSONObject() : body);
     }
 
+    /** Open a topic from the topic list: POST /phone/sessions/new {openTopic:{topic}}. Topic "quill" answers {operator, starting} and never a session. */
+    Reply openTopic(String slug) {
+        JSONObject t = new JSONObject();
+        JSONObject b = new JSONObject();
+        try {
+            t.put("topic", slug);
+            b.put("openTopic", t);
+        } catch (JSONException e) {
+            return new Reply(0, null, false);
+        }
+        return post("/phone/sessions/new", b);
+    }
+
+    /** The Quill operator (Quill Desktop 0.1.x+, hello.quillOperator): state, chat, changes and Undo. 503 quill_unavailable. */
+    Reply quillState() {
+        return get("/phone/quill", 10000);
+    }
+
+    Reply quillItems(int epoch, long since, String have) {
+        String q = epoch >= 0 ? "?epoch=" + epoch + "&since=" + since + (have.isEmpty() ? "" : "&delta=1&have=" + enc(have)) : "";
+        return get("/phone/quill/operator/items" + q, 10000);
+    }
+
+    /** op: send, answer, interrupt, queue/delete, queue/send-now, start, stop, restart. */
+    Reply quillOp(String op, JSONObject body) {
+        return post("/phone/quill/operator/" + op, body == null ? new JSONObject() : body);
+    }
+
+    Reply quillChanges() {
+        return get("/phone/quill/settings/changes", 10000);
+    }
+
+    Reply quillUndo(int change) {
+        try {
+            return post("/phone/quill/settings/undo", new JSONObject(QuillOpModel.undoBody(change)));
+        } catch (JSONException e) {
+            return new Reply(0, null, false);
+        }
+    }
+
     /** Memory tab (phase 3, read-only): find is limited to one per second (429 + Retry-After). */
     Reply kmemFind(String q) {
         return get("/phone/kmem/find?q=" + enc(q), 20000);

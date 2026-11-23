@@ -99,8 +99,66 @@ public class MainActivity extends Activity {
 
     int pendingKmemTab = -1;
 
+    /** The Quill notification's tap (type quill, no session id): open the Quill sheet, now or when the connection says it is on. */
+    boolean handleQuillIntent(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(Notifier.EXTRA_OPEN_QUILL_SHEET, false)) {
+            return false;
+        }
+        intent.removeExtra(Notifier.EXTRA_OPEN_QUILL_SHEET);
+        if (remote != null && remote.quillOn) {
+            openQuill();
+        } else {
+            pendingQuill = true;
+        }
+        return true;
+    }
+
+    boolean pendingQuill;
+    QuillSheet quillSheet;
+
+    /** The Quill button, a quill notification, or the Quill topic (openTopic answered operator): the Quill sheet. */
+    void openQuill() {
+        if (remote == null || !remote.quillOn) {
+            return;
+        }
+        if (quillSheet != null) {
+            quillSheet.refresh();
+            return;
+        }
+        quillSheet = new QuillSheet(this, remote);
+        quillSheet.show();
+    }
+
+    /** An openTopic answer: the Quill topic opens the Quill sheet (also while it is still starting), anything else is the caller's. True when handled here. */
+    boolean onTopicOpened(org.json.JSONObject answer) {
+        java.util.Map<String, Object> m = QuillOpModel.map(ChatView.Item.plain(answer));
+        if (QuillOpModel.topicOpen(m) != QuillOpModel.OPEN_SHEET) {
+            return false;
+        }
+        if (remote != null && QuillOpModel.topicStarting(m)) {
+            remote.work.execute(remote::quillRefresh);
+        }
+        openQuill();
+        return true;
+    }
+
+    /** The Quill summary changed (button) or the stream moved (open sheet). */
+    void onQuillChanged() {
+        if (pendingQuill && remote != null && remote.quillOn) {
+            pendingQuill = false;
+            openQuill();
+        }
+        if (bars != null) {
+            bars.render();
+        }
+        if (quillSheet != null) {
+            quillSheet.onModel();
+            quillSheet.assist.streamChanged(remote.quillEpoch, remote.quillRev);
+        }
+    }
+
     boolean handleOpen(Intent intent) {
-        if (handleKmemIntent(intent)) {
+        if (handleKmemIntent(intent) || handleQuillIntent(intent)) {
             return true;
         }
         String q = intent == null ? null : intent.getStringExtra(Notifier.EXTRA_OPEN_QUILL);
@@ -692,6 +750,9 @@ public class MainActivity extends Activity {
     public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);
         syncTitle();
+        if (quillSheet != null) {
+            quillSheet.layout();
+        }
         if (kmemScreen != null) {
             kmemScreen.layout();
         }
@@ -1242,7 +1303,9 @@ public class MainActivity extends Activity {
             return;
         }
         if (remote != null) {
-            handleKmemIntent(getIntent());
+            if (!handleKmemIntent(getIntent())) {
+                handleQuillIntent(getIntent());
+            }
             return;
         }
         if (test != null) {
@@ -1889,6 +1952,9 @@ public class MainActivity extends Activity {
 
     void chatStyle() {
         styleChat(chat);
+        if (quillSheet != null) {
+            styleChat(quillSheet.chatView);
+        }
         if (kmemScreen != null) {
             styleChat(kmemScreen.chatView);
         }
@@ -2302,6 +2368,7 @@ public class MainActivity extends Activity {
         }
         if (remote != null) {
             remote.onKmem = this::onKmemChanged;
+            remote.onQuill = this::onQuillChanged;
             remote.start();
         } else if (phoneApi != null && phoneApi.paired2() && prefs.getBoolean("phone.unsupported", false)) {
             new Thread(() -> {

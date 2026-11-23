@@ -1,0 +1,141 @@
+package io.github.katachinosekai.quillremote;
+
+import android.app.Dialog;
+import android.content.Context;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+
+/**
+ * A bottom sheet in a Dialog (no AndroidX): a drag handle, half or full height, back or a tap outside closes it. Dragging
+ * the handle up makes it full, down makes it half and then closes it; a tap on the handle toggles. No animation, so the
+ * system "Remove animations" setting needs nothing extra. Content goes into {@link #content}.
+ */
+final class BottomSheet {
+    /** Half of the available height, as a fraction. */
+    static final float HALF = 0.55f;
+
+    final Dialog dialog;
+    final FrameLayout content;
+    final View sheet;
+    final Root root;
+    boolean full;
+
+    /** Sheet height in pixels for a window of total height (pure, for tests). */
+    static int heightFor(int total, boolean full) {
+        return full ? total : Math.round(total * HALF);
+    }
+
+    /** What a handle drag of dy pixels (negative = up) does: +1 grow to full, -1 shrink (half, then close), 0 nothing. */
+    static int dragResult(float dy, int threshold) {
+        if (dy <= -threshold) {
+            return 1;
+        }
+        return dy >= threshold ? -1 : 0;
+    }
+
+    BottomSheet(Context c, boolean startFull) {
+        float d = c.getResources().getDisplayMetrics().density;
+        full = startFull;
+        dialog = new Dialog(c, android.R.style.Theme_DeviceDefault_NoActionBar);
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setDimAmount(0.45f);
+            w.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+        root = new Root(c);
+        LinearLayout box = new LinearLayout(c);
+        box.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(MainActivity.BG);
+        bg.setCornerRadii(new float[]{16 * d, 16 * d, 16 * d, 16 * d, 0, 0, 0, 0});
+        box.setBackground(bg);
+        box.setClipToOutline(true);
+        sheet = box;
+        View handle = handleView(c, d);
+        box.addView(handle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.round(24 * d)));
+        content = new FrameLayout(c);
+        box.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM));
+        root.setOnClickListener(v -> dialog.dismiss());
+        box.setOnClickListener(v -> { });
+        dialog.setContentView(root);
+        InsetPad.install(root);
+    }
+
+    View handleView(Context c, float d) {
+        FrameLayout h = new FrameLayout(c);
+        View bar = new View(c);
+        GradientDrawable b = new GradientDrawable();
+        b.setCornerRadius(2 * d);
+        b.setColor(0xFF6A6A64);
+        bar.setBackground(b);
+        h.addView(bar, new FrameLayout.LayoutParams(Math.round(40 * d), Math.round(4 * d), Gravity.CENTER));
+        h.setContentDescription("Drag to resize the sheet; tap to switch between half and full height");
+        final float[] down = new float[1];
+        final boolean[] moved = new boolean[1];
+        h.setOnTouchListener((v, e) -> {
+            Touch.ping();
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    down[0] = e.getRawY();
+                    moved[0] = false;
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    int r = dragResult(e.getRawY() - down[0], Math.round(24 * d));
+                    if (r == 0) {
+                        setFull(!full);
+                    } else if (r > 0) {
+                        setFull(true);
+                    } else if (full) {
+                        setFull(false);
+                    } else {
+                        dialog.dismiss();
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        });
+        return h;
+    }
+
+    void setFull(boolean f) {
+        full = f;
+        root.requestLayout();
+    }
+
+    /** The window root: sizes the sheet to half or full of its own height before measuring. */
+    final class Root extends FrameLayout {
+        Root(Context c) {
+            super(c);
+        }
+
+        @Override
+        protected void onMeasure(int w, int h) {
+            int avail = MeasureSpec.getSize(h) - getPaddingTop() - getPaddingBottom();
+            ViewGroup.LayoutParams lp = sheet.getLayoutParams();
+            int want = heightFor(Math.max(0, avail), full);
+            if (lp.height != want) {
+                lp.height = want;
+            }
+            super.onMeasure(w, h);
+        }
+    }
+
+    void show() {
+        Touch.watch(dialog).show();
+    }
+}

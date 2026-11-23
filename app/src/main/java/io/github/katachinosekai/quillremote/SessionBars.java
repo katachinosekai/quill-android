@@ -674,6 +674,79 @@ class SessionBars {
     }
 
     /** kmem button: count bubble, a dot while the assistant runs, an accent outline and "!" while it waits for the user. */
+    /** The Quill and kmem buttons in one row (Quill only when hello says quillOperator is on). */
+    View assistButtons(Remote rm) {
+        if (!rm.quillOn) {
+            return kmemButton(rm);
+        }
+        LinearLayout row = new LinearLayout(a);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rp.setMargins(0, 0, 0, a.dp(8));
+        row.setLayoutParams(rp);
+        View q = quillButton(rm);
+        View k = rm.kmemOn ? kmemButton(rm) : null;
+        row.addView(q, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (k != null) {
+            LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            kp.setMarginStart(a.dp(8));
+            row.addView(k, kp);
+        }
+        return row;
+    }
+
+    /** Quill button: the same bubble and running dot as kmem's, from GET /phone/quill and the stream. */
+    View quillButton(Remote rm) {
+        QuillOpModel.State s = rm.quillState;
+        boolean waits = s != null && !s.waiting.isEmpty();
+        LinearLayout l = new LinearLayout(a);
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setGravity(Gravity.CENTER_VERTICAL);
+        l.setMinimumHeight(a.dp(44));
+        l.setPaddingRelative(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(a.dp(8));
+        bg.setColor(CARD);
+        bg.setStroke(a.dp(waits ? 2 : 1), waits ? MainActivity.ACCENT : 0xFF444440);
+        l.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        l.setLayoutParams(lp);
+        TextView t = new TextView(a);
+        t.setText("Quill");
+        t.setTextColor(MainActivity.TEXT);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        l.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (s != null && s.dot) {
+            View dot = new View(a);
+            GradientDrawable d = new GradientDrawable();
+            d.setShape(GradientDrawable.OVAL);
+            d.setColor(0xFF6CC06C);
+            dot.setBackground(d);
+            LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(a.dp(8), a.dp(8));
+            dp.setMarginEnd(a.dp(8));
+            l.addView(dot, dp);
+        }
+        String bub = s == null ? "" : s.bubble();
+        if (!bub.isEmpty()) {
+            TextView b = new TextView(a);
+            b.setText(bub);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setTextColor(waits ? 0xFF1F1F1D : MainActivity.TEXT);
+            b.setGravity(Gravity.CENTER);
+            b.setPaddingRelative(a.dp(7), a.dp(1), a.dp(7), a.dp(1));
+            GradientDrawable bb = new GradientDrawable();
+            bb.setCornerRadius(a.dp(10));
+            bb.setColor(waits ? MainActivity.ACCENT : 0xFF5A5A55);
+            b.setBackground(bb);
+            l.addView(b);
+        }
+        l.setContentDescription("Quill operator" + (s == null ? "" : ", " + s.line()) + (s != null && s.count > 0 ? ", " + s.count + " waiting" : ""));
+        l.setOnClickListener(v -> a.openQuill());
+        return l;
+    }
+
     View kmemButton(Remote rm) {
         boolean waits = !rm.kmemWaiting.isEmpty();
         LinearLayout l = new LinearLayout(a);
@@ -729,8 +802,8 @@ class SessionBars {
         boolean flat = portrait();
         sideList.removeAllViews();
         Remote rm = remote ? a.remote : null;
-        if (rm != null && rm.kmemOn) {
-            sideList.addView(kmemButton(rm));
+        if (rm != null && (rm.kmemOn || rm.quillOn)) {
+            sideList.addView(assistButtons(rm));
         }
         TextView head = new TextView(a);
         head.setText("Sessions");

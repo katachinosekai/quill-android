@@ -27,12 +27,30 @@ final class KmemAssistant implements ChatView.Actions {
     JSONArray queue = new JSONArray();
     final java.util.concurrent.atomic.AtomicBoolean fetching = new java.util.concurrent.atomic.AtomicBoolean();
 
+    /** True for the Quill operator (same chat, other routes and summary key). */
+    final boolean quill;
+    final String key;
+
     KmemAssistant(Remote remote, ChatView chat) {
+        this(remote, chat, false);
+    }
+
+    KmemAssistant(Remote remote, ChatView chat, boolean quill) {
         this.remote = remote;
         this.chat = chat;
+        this.quill = quill;
+        this.key = quill ? "operator" : "assistant";
         chat.actions = this;
-        chat.hint = "Message the kmem assistant";
+        chat.hint = quill ? "Message the Quill operator" : "Message the kmem assistant";
         chat.syncHint();
+    }
+
+    PhoneApi.Reply itemsCall(int ep, long since, String have) {
+        return quill ? remote.api.quillItems(ep, since, have) : remote.api.kmemAssistItems(ep, since, have);
+    }
+
+    PhoneApi.Reply opCall(String op, JSONObject body) {
+        return quill ? remote.api.quillOp(op, body) : remote.api.kmemAssist(op, body);
     }
 
     /** Reload when the stream (or a tap) says the assistant changed; fresh = whole window. */
@@ -96,9 +114,9 @@ final class KmemAssistant implements ChatView.Actions {
                 }
             }
         }
-        PhoneApi.Reply r = remote.api.kmemAssistItems(ep, since, have.toString());
+        PhoneApi.Reply r = itemsCall(ep, since, have.toString());
         if (r.code == 400 && have.length() > 0) {
-            r = remote.api.kmemAssistItems(ep, since, "");
+            r = itemsCall(ep, since, "");
         }
         if (r.ok()) {
             apply(r.body, fresh);
@@ -108,7 +126,7 @@ final class KmemAssistant implements ChatView.Actions {
     }
 
     synchronized void apply(JSONObject o, boolean fresh) {
-        KmemAssistModel m = KmemAssistModel.parse(o, System.currentTimeMillis());
+        KmemAssistModel m = KmemAssistModel.parse(o, key, System.currentTimeMillis());
         if (fresh || epoch < 0 || o.optBoolean("reset") || o.optInt("epoch") != epoch) {
             items.clear();
         }
@@ -228,13 +246,13 @@ final class KmemAssistant implements ChatView.Actions {
         boolean control = remote.control;
         chat.setReadOnly(!control || m == null || !m.canSend());
         String line = !control ? "Read only (Quill Desktop → Settings → Sessions → Devices)"
-                : m != null && !m.canSend() ? "kmem assistant: " + KmemModels.stateText(m.state) + " (can't take messages now)" : "";
+                : m != null && !m.canSend() ? (quill ? "Quill operator: " : "kmem assistant: ") + KmemModels.stateText(m.state) + " (can't take messages now)" : "";
         chat.setBusy(busy, line);
     }
 
     /** Take the assistant object of a write's answer. */
     void takeModel(JSONObject body) {
-        KmemAssistModel m = KmemAssistModel.parse(body, System.currentTimeMillis());
+        KmemAssistModel m = KmemAssistModel.parse(body, key, System.currentTimeMillis());
         if (m != null) {
             remote.ui.post(() -> setModel(m, busy));
         }
@@ -275,7 +293,7 @@ final class KmemAssistant implements ChatView.Actions {
 
     @Override
     public void send(String text) {
-        write("message", () -> remote.api.kmemAssist("send", PhoneApi.obj("text", text)), null);
+        write("message", () -> opCall("send", PhoneApi.obj("text", text)), null);
     }
 
     @Override
@@ -296,12 +314,12 @@ final class KmemAssistant implements ChatView.Actions {
         } catch (JSONException e) {
             return;
         }
-        write("answer", () -> remote.api.kmemAssist("answer", body), null);
+        write("answer", () -> opCall("answer", body), null);
     }
 
     @Override
     public void interrupt() {
-        write("stop", () -> remote.api.kmemAssist("interrupt", null), null);
+        write("stop", () -> opCall("interrupt", null), null);
     }
 
     @Override
@@ -322,7 +340,7 @@ final class KmemAssistant implements ChatView.Actions {
                 remote.ui.post(() -> chat.queueDone(text));
                 return;
             }
-            PhoneApi.Reply r = remote.api.kmemAssist("queue/" + op, PhoneApi.obj("index", at, "text", text));
+            PhoneApi.Reply r = opCall("queue/" + op, PhoneApi.obj("index", at, "text", text));
             if (r.ok()) {
                 takeModel(r.body);
                 JSONArray q = r.body.optJSONArray("queue");
@@ -358,11 +376,11 @@ final class KmemAssistant implements ChatView.Actions {
 
     /** start, stop, restart or save (only offered ones are shown); the reply's assistant replaces the header. */
     void lifecycle(String op, String what) {
-        write(what, () -> remote.api.kmemAssist(op, null), null);
+        write(what, () -> opCall(op, null), null);
     }
 
     /** Answer the save-timeout question; a stale 409 just refreshes and the card goes away. */
     void choose(int choice) {
-        write("choice", () -> remote.api.kmemAssist("choose", PhoneApi.obj("choice", choice)), null);
+        write("choice", () -> opCall("choose", PhoneApi.obj("choice", choice)), null);
     }
 }
