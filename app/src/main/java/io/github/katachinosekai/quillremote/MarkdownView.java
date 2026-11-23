@@ -178,7 +178,7 @@ final class MarkdownView extends LinearLayout {
                 t.setLineSpacing(0, 1.2f);
                 t.setGravity(android.view.Gravity.START);
                 t.setHorizontallyScrolling(true);
-                t.setPadding(dp(12), dp(10), dp(12), dp(10));
+                t.setPaddingRelative(dp(12), dp(10), dp(12), dp(10));
                 HorizontalScrollView h = new HorizontalScrollView(getContext());
                 h.setFillViewport(true);
                 GradientDrawable bg = new GradientDrawable();

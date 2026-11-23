@@ -221,18 +221,18 @@ class SessionBars {
             UsageItem it = list.get(i);
             if (i > 0) {
                 TextView sep = usageText("│", false);
-                sep.setPadding(a.dp(10), 0, a.dp(10), 0);
+                sep.setPaddingRelative(a.dp(10), 0, a.dp(10), 0);
                 usageRow.addView(sep);
             }
             usageRow.addView(usageText(it.title, true));
             if (it.bar >= 0) {
                 View b = usageBar(it.bar, a.dp(56), a.dp(6));
-                ((LinearLayout.LayoutParams) b.getLayoutParams()).setMargins(a.dp(6), 0, 0, 0);
+                ((LinearLayout.LayoutParams) b.getLayoutParams()).setMarginStart(a.dp(6));
                 ((LinearLayout.LayoutParams) b.getLayoutParams()).gravity = Gravity.CENTER_VERTICAL;
                 usageRow.addView(b);
             }
             TextView v = usageText(it.value, false);
-            v.setPadding(a.dp(6), 0, 0, 0);
+            v.setPaddingRelative(a.dp(6), 0, 0, 0);
             usageRow.addView(v);
         }
     }
@@ -240,14 +240,14 @@ class SessionBars {
     void fillSide(List<UsageItem> list) {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(a.dp(8), 0, a.dp(8), a.dp(6));
+        box.setPaddingRelative(a.dp(8), 0, a.dp(8), a.dp(6));
         box.setContentDescription("Usage");
         for (UsageItem it : list) {
             LinearLayout row = new LinearLayout(a);
-            row.setPadding(0, a.dp(2), 0, 0);
+            row.setPaddingRelative(0, a.dp(2), 0, 0);
             row.addView(usageText(it.title, true));
             TextView v = usageText(it.value, false);
-            v.setPadding(a.dp(6), 0, 0, 0);
+            v.setPaddingRelative(a.dp(6), 0, 0, 0);
             row.addView(v, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
             box.addView(row);
             if (it.bar >= 0) {
@@ -309,7 +309,7 @@ class SessionBars {
         l.setOrientation(LinearLayout.VERTICAL);
         l.setGravity(Gravity.CENTER_VERTICAL);
         l.setMinimumHeight(a.dp(44));
-        l.setPadding(padLeft, a.dp(4), a.dp(10), a.dp(4));
+        l.setPaddingRelative(padLeft, a.dp(4), a.dp(10), a.dp(4));
         TextView t = new TextView(a);
         t.setText(it.title);
         t.setTextColor(MainActivity.TEXT);
@@ -352,7 +352,7 @@ class SessionBars {
         tabScroll = scroller(tabRow);
         usageRow = new LinearLayout(a);
         usageRow.setGravity(Gravity.CENTER);
-        usageRow.setPadding(a.dp(8), 0, a.dp(8), a.dp(2));
+        usageRow.setPaddingRelative(a.dp(8), 0, a.dp(8), a.dp(2));
         usageStrip = scroller(usageRow);
         usageStrip.setFillViewport(true);
         usageStrip.setContentDescription("Usage");
@@ -360,7 +360,7 @@ class SessionBars {
         bookScroll = scroller(bookRow);
         sideList = new LinearLayout(a);
         sideList.setOrientation(LinearLayout.VERTICAL);
-        sideList.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(16));
+        sideList.setPaddingRelative(a.dp(8), a.dp(8), a.dp(8), a.dp(16));
         sideScroll = new android.widget.ScrollView(a);
         sideScroll.setBackgroundColor(MainActivity.SIDE);
         sideScroll.addView(sideList, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -675,7 +675,7 @@ class SessionBars {
         l.setOrientation(LinearLayout.HORIZONTAL);
         l.setGravity(Gravity.CENTER_VERTICAL);
         l.setMinimumHeight(a.dp(44));
-        l.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
+        l.setPaddingRelative(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
         GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(a.dp(8));
         bg.setColor(CARD);
@@ -697,7 +697,7 @@ class SessionBars {
             d.setColor(0xFF6CC06C);
             dot.setBackground(d);
             LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(a.dp(8), a.dp(8));
-            dp.setMargins(0, 0, a.dp(8), 0);
+            dp.setMarginEnd(a.dp(8));
             l.addView(dot, dp);
         }
         String bub = KmemModels.bubble(rm.kmemCount, rm.kmemWaiting);
@@ -708,7 +708,7 @@ class SessionBars {
             b.setTypeface(Typeface.DEFAULT_BOLD);
             b.setTextColor(waits ? 0xFF1F1F1D : MainActivity.TEXT);
             b.setGravity(Gravity.CENTER);
-            b.setPadding(a.dp(7), a.dp(1), a.dp(7), a.dp(1));
+            b.setPaddingRelative(a.dp(7), a.dp(1), a.dp(7), a.dp(1));
             GradientDrawable bb = new GradientDrawable();
             bb.setCornerRadius(a.dp(10));
             bb.setColor(waits ? MainActivity.ACCENT : 0xFF5A5A55);
@@ -732,7 +732,7 @@ class SessionBars {
         head.setTextColor(MainActivity.TEXT);
         head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         head.setTypeface(Typeface.DEFAULT_BOLD);
-        head.setPadding(a.dp(8), a.dp(4), a.dp(8), a.dp(8));
+        head.setPaddingRelative(a.dp(8), a.dp(4), a.dp(8), a.dp(8));
         sideList.addView(head);
         List<UsageItem> parts = usageItems();
         if (parts != null) {
@@ -743,7 +743,7 @@ class SessionBars {
             empty.setText(remote ? "No live sessions from Quill Desktop right now." : "No sessions found on this page yet. Open claude.ai's own session list once, then they show up here.");
             empty.setTextColor(MainActivity.MUTED);
             empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-            empty.setPadding(a.dp(8), 0, a.dp(8), 0);
+            empty.setPaddingRelative(a.dp(8), 0, a.dp(8), 0);
             sideList.addView(empty);
             return;
         }
@@ -776,7 +776,7 @@ class SessionBars {
             f.setGravity(Gravity.CENTER_VERTICAL);
             f.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.folder, 0, 0, 0);
             f.setCompoundDrawablePadding(a.dp(8));
-            f.setPadding(a.dp(8), 0, a.dp(8), 0);
+            f.setPaddingRelative(a.dp(8), 0, a.dp(8), 0);
             f.setMinHeight(a.dp(40));
             f.setOnClickListener(v -> {
                 prefs.edit().putBoolean("fold." + name, !open).apply();
@@ -806,7 +806,7 @@ class SessionBars {
         LinearLayout r = new LinearLayout(a);
         r.setOrientation(LinearLayout.HORIZONTAL);
         r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(a.dp(6), 0, a.dp(6), 0);
+        r.setPaddingRelative(a.dp(6), 0, a.dp(6), 0);
         return r;
     }
 
@@ -1005,7 +1005,7 @@ class SessionBars {
             bg.setStroke(a.dp(2), MainActivity.TEXT);
         }
         chip.setBackground(bg);
-        chip.setPadding(a.dp(10), 0, 0, 0);
+        chip.setPaddingRelative(a.dp(10), 0, 0, 0);
         TextView label = new TextView(a);
         label.setText(title);
         label.setTextColor(MainActivity.TEXT);
@@ -1140,7 +1140,7 @@ class SessionBars {
         e.setSelectAllOnFocus(true);
         e.setContentDescription(title);
         android.widget.FrameLayout box = new android.widget.FrameLayout(a);
-        box.setPadding(a.dp(20), a.dp(8), a.dp(20), 0);
+        box.setPaddingRelative(a.dp(20), a.dp(8), a.dp(20), 0);
         box.addView(e);
         android.app.AlertDialog d = new android.app.AlertDialog.Builder(a)
                 .setTitle(title)
@@ -1167,7 +1167,7 @@ class SessionBars {
         b.setGravity(Gravity.CENTER_VERTICAL);
         b.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.folder, 0, 0, 0);
         b.setCompoundDrawablePadding(a.dp(6));
-        b.setPadding(a.dp(8), 0, a.dp(10), 0);
+        b.setPaddingRelative(a.dp(8), 0, a.dp(10), 0);
         b.setMinHeight(a.dp(40));
         b.setOnClickListener(v -> dropDown(v, list));
         b.setOnLongClickListener(v -> {

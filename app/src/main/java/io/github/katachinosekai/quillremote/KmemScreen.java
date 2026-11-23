@@ -107,7 +107,7 @@ class KmemScreen {
         memSearch.setTextColor(MainActivity.TEXT);
         memSearch.setHintTextColor(MainActivity.MUTED);
         memSearch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        memSearch.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
+        memSearch.setPaddingRelative(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
         memSearch.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int st, int c, int af) {
@@ -137,7 +137,7 @@ class KmemScreen {
         assist = new KmemAssistant(remote, chatView);
         assist.onModel = this::fillAssist;
         assistHeader = column();
-        assistHeader.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(6));
+        assistHeader.setPaddingRelative(a.dp(14), a.dp(8), a.dp(14), a.dp(6));
         assistPane = column();
         assistPane.addView(assistHeader, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         assistPane.addView(chatView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -220,14 +220,14 @@ class KmemScreen {
         LinearLayout bar = new LinearLayout(a);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setBackgroundColor(MainActivity.SIDE);
-        bar.setPadding(a.dp(4), 0, a.dp(8), 0);
+        bar.setPaddingRelative(a.dp(4), 0, a.dp(8), 0);
         bar.addView(a.button("←", "Back", v -> close()));
         TextView t = new TextView(a);
         t.setText("kmem");
         t.setTextColor(MainActivity.TEXT);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
         t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setPadding(a.dp(8), 0, 0, 0);
+        t.setPaddingRelative(a.dp(8), 0, 0, 0);
         bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         bar.addView(a.button("⟳", "Refresh", v -> {
             refresh();
@@ -255,7 +255,7 @@ class KmemScreen {
         }
         p.addView(tabs, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         p.addView(errorLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        errorLine.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
+        errorLine.setPaddingRelative(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
         FrameLayout body = new FrameLayout(a);
         body.addView(ovScroll, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         LinearLayout tasksPane = new LinearLayout(a);
@@ -264,7 +264,7 @@ class KmemScreen {
         cs.setHorizontalScrollBarEnabled(false);
         cs.addView(chips);
         tasksPane.addView(cs, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        search.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
+        search.setPaddingRelative(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
         tasksPane.addView(search, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         tasksPane.addView(taskScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         tasksPane.setTag("tasks");
@@ -395,7 +395,7 @@ class KmemScreen {
         }
         if (!m.reason.isEmpty()) {
             TextView r = text(m.reason, 13, MainActivity.MUTED, false);
-            r.setPadding(0, a.dp(2), 0, 0);
+            r.setPaddingRelative(0, a.dp(2), 0, 0);
             assistHeader.addView(r);
         }
         boolean control = remote.control;
@@ -422,13 +422,13 @@ class KmemScreen {
             HorizontalScrollView hs = new HorizontalScrollView(a);
             hs.setHorizontalScrollBarEnabled(false);
             hs.addView(row);
-            hs.setPadding(0, a.dp(6), 0, 0);
+            hs.setPaddingRelative(0, a.dp(6), 0, 0);
             assistHeader.addView(hs);
         }
         KmemAssistModel.Question q = m.question;
         if (q != null) {
             LinearLayout card = column();
-            card.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+            card.setPaddingRelative(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(a.dp(10));
             bg.setColor(SessionBars.CARD);
@@ -467,14 +467,14 @@ class KmemScreen {
 
     TextView pill(String label, Runnable onTap) {
         TextView c = text(label, 13, MainActivity.TEXT, false);
-        c.setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7));
+        c.setPaddingRelative(a.dp(12), a.dp(7), a.dp(12), a.dp(7));
         GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(a.dp(16));
         bg.setColor(SessionBars.CARD);
         c.setBackground(bg);
         c.setOnClickListener(v -> onTap.run());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 0, a.dp(6), 0);
+        lp.setMarginEnd(a.dp(6));
         c.setLayoutParams(lp);
         return c;
     }
@@ -494,13 +494,13 @@ class KmemScreen {
 
     void heading(LinearLayout col, String s) {
         TextView t = text(s, 13, MainActivity.MUTED, true);
-        t.setPadding(0, a.dp(16), 0, a.dp(4));
+        t.setPaddingRelative(0, a.dp(16), 0, a.dp(4));
         col.addView(t);
     }
 
     void fillOverview() {
         ovCol.removeAllViews();
-        ovCol.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(24));
+        ovCol.setPaddingRelative(a.dp(14), a.dp(8), a.dp(14), a.dp(24));
         if (overview == null) {
             ovCol.addView(text("Loading…", 14, MainActivity.MUTED, false));
             return;
@@ -567,7 +567,7 @@ class KmemScreen {
 
     TextView row(String s) {
         TextView t = text(s, 14, MainActivity.TEXT, false);
-        t.setPadding(0, a.dp(3), 0, a.dp(3));
+        t.setPaddingRelative(0, a.dp(3), 0, a.dp(3));
         return t;
     }
 
@@ -576,7 +576,7 @@ class KmemScreen {
     void fillTasks() {
         chips.removeAllViews();
         taskCol.removeAllViews();
-        taskCol.setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(24));
+        taskCol.setPaddingRelative(a.dp(14), a.dp(4), a.dp(14), a.dp(24));
         if (!taskError.isEmpty()) {
             taskCol.addView(text(taskError, 14, 0xFFE55B5B, false));
         }
@@ -586,10 +586,10 @@ class KmemScreen {
             }
             return;
         }
-        chips.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(2));
+        chips.setPaddingRelative(a.dp(10), a.dp(6), a.dp(10), a.dp(2));
         for (String f : KmemModels.filters(tasks)) {
             TextView c = text(f, 13, f.equals(filter) ? 0xFF1F1F1D : MainActivity.TEXT, f.equals(filter));
-            c.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+            c.setPaddingRelative(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(a.dp(16));
             bg.setColor(f.equals(filter) ? MainActivity.ACCENT : SessionBars.CARD);
@@ -611,7 +611,7 @@ class KmemScreen {
             for (KmemModels.Task t : e.getValue()) {
                 LinearLayout r = new LinearLayout(a);
                 r.setOrientation(LinearLayout.VERTICAL);
-                r.setPadding(0, a.dp(4), 0, a.dp(4));
+                r.setPaddingRelative(0, a.dp(4), 0, a.dp(4));
                 r.addView(text(t.title, 14, MainActivity.TEXT, t.needsUser));
                 r.addView(text(KmemModels.taskMeta(t) + (t.needsUser ? " · waiting for you" : ""), 12,
                         t.needsUser ? MainActivity.ACCENT : MainActivity.MUTED, false));
@@ -628,7 +628,7 @@ class KmemScreen {
 
     TextView memRow(String s, int sp, int color, boolean bold, Runnable onTap) {
         TextView t = text(s, sp, color, bold);
-        t.setPadding(0, a.dp(3), 0, a.dp(3));
+        t.setPaddingRelative(0, a.dp(3), 0, a.dp(3));
         if (onTap != null) {
             t.setOnClickListener(v -> onTap.run());
         }
@@ -638,7 +638,7 @@ class KmemScreen {
     /** One fact as a list row: kind and topic, then the first lines. Only rows with an id open the fact view. */
     View factRow(KmemMemoryModel.Fact f) {
         LinearLayout r = column();
-        r.setPadding(0, a.dp(6), 0, a.dp(6));
+        r.setPaddingRelative(0, a.dp(6), 0, a.dp(6));
         r.addView(text(KmemMemoryModel.factMeta(f), 12, f.openable() ? MainActivity.ACCENT : MainActivity.MUTED, false));
         r.addView(text(KmemMemoryModel.preview(f.text, 3), 14, MainActivity.TEXT, false));
         if (f.openable()) {
@@ -649,7 +649,7 @@ class KmemScreen {
 
     View topicRow(KmemMemoryModel.Topic t) {
         LinearLayout r = column();
-        r.setPadding(0, a.dp(8), 0, a.dp(8));
+        r.setPaddingRelative(0, a.dp(8), 0, a.dp(8));
         r.addView(text(KmemMemoryModel.topicLine(t), 14, MainActivity.TEXT, false));
         r.setOnClickListener(v -> memOpen(KmemMemoryModel.Page.TOPIC, t.name));
         return r;
@@ -657,7 +657,7 @@ class KmemScreen {
 
     void fillMemory() {
         memCol.removeAllViews();
-        memCol.setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(24));
+        memCol.setPaddingRelative(a.dp(14), a.dp(4), a.dp(14), a.dp(24));
         KmemMemoryModel.Page p = memNav.current();
         memSearch.setVisibility(p.type == KmemMemoryModel.Page.HOME ? View.VISIBLE : View.GONE);
         if (!memError.isEmpty()) {
@@ -714,7 +714,7 @@ class KmemScreen {
 
     void fillTopic(String name) {
         TextView h = text(name, 16, MainActivity.TEXT, true);
-        h.setPadding(0, a.dp(10), 0, a.dp(2));
+        h.setPaddingRelative(0, a.dp(10), 0, a.dp(2));
         memCol.addView(h);
         KmemMemoryModel.TopicView v = topicCache.get(name);
         if (v == null) {
@@ -753,11 +753,11 @@ class KmemScreen {
         }
         TextView body = text(d.fact.text, 15, MainActivity.TEXT, false);
         body.setTextIsSelectable(true);
-        body.setPadding(0, a.dp(10), 0, a.dp(6));
+        body.setPaddingRelative(0, a.dp(10), 0, a.dp(6));
         memCol.addView(body);
         for (String[] r : KmemMemoryModel.detailRows(d)) {
             TextView t = text(r[0] + ": " + r[1], 13, MainActivity.MUTED, false);
-            t.setPadding(0, a.dp(2), 0, a.dp(2));
+            t.setPaddingRelative(0, a.dp(2), 0, a.dp(2));
             t.setTextIsSelectable(true);
             memCol.addView(t);
         }
@@ -769,7 +769,7 @@ class KmemScreen {
             heading(memCol, "History");
             for (KmemMemoryModel.History h : d.history) {
                 TextView t = text(KmemMemoryModel.historyLine(h), 13, MainActivity.TEXT, false);
-                t.setPadding(0, a.dp(2), 0, a.dp(2));
+                t.setPaddingRelative(0, a.dp(2), 0, a.dp(2));
                 memCol.addView(t);
             }
         }
@@ -905,12 +905,12 @@ class KmemScreen {
 
     void openTask(KmemModels.Task t) {
         LinearLayout col = column();
-        col.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(6));
+        col.setPaddingRelative(a.dp(18), a.dp(10), a.dp(18), a.dp(6));
         col.addView(text(t.title, 15, MainActivity.TEXT, true));
         col.addView(text(KmemModels.taskMeta(t), 12, MainActivity.MUTED, false));
         TextView body = text("Loading…", 13, MainActivity.TEXT, false);
         body.setTextIsSelectable(true);
-        body.setPadding(0, a.dp(10), 0, a.dp(10));
+        body.setPaddingRelative(0, a.dp(10), 0, a.dp(10));
         col.addView(body);
         boolean doneOk = t.can("done"), relOk = t.can("release");
         if (remote.control && (doneOk || relOk)) {
@@ -947,7 +947,7 @@ class KmemScreen {
         in.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(KmemWriteModel.RESULT_MAX * 2)});
         TextView count = text(KmemWriteModel.counter(""), 12, MainActivity.MUTED, false);
         LinearLayout col = column();
-        col.setPadding(a.dp(20), a.dp(10), a.dp(20), 0);
+        col.setPaddingRelative(a.dp(20), a.dp(10), a.dp(20), 0);
         col.addView(text("What was the result of [" + t.id + "] " + t.title + "?", 14, MainActivity.TEXT, false));
         col.addView(in);
         col.addView(count);
@@ -1029,7 +1029,7 @@ class KmemScreen {
             return;
         }
         binCol = column();
-        binCol.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(6));
+        binCol.setPaddingRelative(a.dp(18), a.dp(10), a.dp(18), a.dp(6));
         binItems = null;
         binError = "";
         fillBin();
@@ -1074,7 +1074,7 @@ class KmemScreen {
         }
         for (KmemWriteModel.BinItem b : binItems) {
             LinearLayout r = column();
-            r.setPadding(0, a.dp(8), 0, a.dp(8));
+            r.setPaddingRelative(0, a.dp(8), 0, a.dp(8));
             r.addView(text(b.label(), 14, MainActivity.TEXT, true));
             String tp = KmemWriteModel.binTopic(b);
             if (!tp.isEmpty()) {

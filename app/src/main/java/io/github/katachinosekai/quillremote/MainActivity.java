@@ -205,7 +205,7 @@ public class MainActivity extends Activity {
         notifyBanner.setTextColor(TEXT);
         notifyBanner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         notifyBanner.setBackgroundColor(0xFF5A2E22);
-        notifyBanner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        notifyBanner.setPaddingRelative(dp(14), dp(10), dp(14), dp(10));
         notifyBanner.setText("Notifications are off for Quill Android, so you won't see when a session finishes or needs you. Tap to turn them on. Long-press to hide this.");
         notifyBanner.setContentDescription("Notifications off banner");
         notifyBanner.setVisibility(View.GONE);
@@ -309,12 +309,12 @@ public class MainActivity extends Activity {
     void showUpdateDialog(java.util.List<UpdateNotes.Entry> local, org.json.JSONArray desk, int current) {
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(20), dp(8), dp(20), 0);
+        col.setPaddingRelative(dp(20), dp(8), dp(20), 0);
         java.util.List<Runnable> apply = new java.util.ArrayList<>();
         for (UpdateNotes.Entry e : local) {
             TextView t = para(e.title, TEXT);
             t.setTypeface(Typeface.DEFAULT_BOLD);
-            t.setPadding(0, dp(10), 0, dp(2));
+            t.setPaddingRelative(0, dp(10), 0, dp(2));
             col.addView(t);
             col.addView(para(e.text, MUTED));
         }
@@ -329,14 +329,14 @@ public class MainActivity extends Activity {
             String id = q.optString("id");
             TextView t = para(UpdateNotes.clip(q.optString("title"), UpdateNotes.MAX_TITLE) + "  (Quill Desktop)", TEXT);
             t.setTypeface(Typeface.DEFAULT_BOLD);
-            t.setPadding(0, dp(10), 0, dp(2));
+            t.setPaddingRelative(0, dp(10), 0, dp(2));
             col.addView(t);
             if (!q.optString("text").isEmpty()) {
                 col.addView(para(UpdateNotes.clip(q.optString("text"), UpdateNotes.MAX_TEXT), MUTED));
             }
             if (!q.optString("question").isEmpty()) {
                 TextView qq = para(UpdateNotes.clip(q.optString("question"), UpdateNotes.MAX_TEXT), TEXT);
-                qq.setPadding(0, dp(6), 0, 0);
+                qq.setPaddingRelative(0, dp(6), 0, 0);
                 col.addView(qq);
             }
             org.json.JSONArray ch = q.optJSONArray("choices");
@@ -348,7 +348,7 @@ public class MainActivity extends Activity {
             }
             if (act == UpdateNotes.DeskAction.DESKTOP_ONLY) {
                 TextView d = para("Answer this one in Quill Desktop.", MUTED); // never answered without a real choice
-                d.setPadding(0, dp(4), 0, 0);
+                d.setPaddingRelative(0, dp(4), 0, 0);
                 col.addView(d);
                 continue;
             }
@@ -444,7 +444,7 @@ public class MainActivity extends Activity {
         }
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(20), dp(8), dp(20), 0);
+        col.setPaddingRelative(dp(20), dp(8), dp(20), 0);
         col.addView(label("Quill Desktop asks for its device password before it shows sessions here."));
         col.addView(pw);
         col.addView(show);
@@ -605,7 +605,7 @@ public class MainActivity extends Activity {
         updateBanner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         updateBanner.setTypeface(Typeface.DEFAULT_BOLD);
         updateBanner.setBackgroundColor(ACCENT);
-        updateBanner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        updateBanner.setPaddingRelative(dp(14), dp(10), dp(14), dp(10));
         updateBanner.setContentDescription("Update banner");
         updateBanner.setVisibility(View.GONE);
         updateBanner.setOnClickListener(v -> {
@@ -657,7 +657,7 @@ public class MainActivity extends Activity {
             pairDlg.dismiss();
         }
         TextView msg = para(FolderSync.confirmText(p, paired ? prefs.getString("pair.name", "") : null), TEXT);
-        msg.setPadding(dp(24), dp(8), dp(24), 0);
+        msg.setPaddingRelative(dp(24), dp(8), dp(24), 0);
         pairDlg = Touch.show(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(paired ? "Replace the pairing?" : "Pair with Quill Desktop?")
                 .setView(scroll(msg))
@@ -815,7 +815,7 @@ public class MainActivity extends Activity {
             }
             LinearLayout col = new LinearLayout(this);
             col.setOrientation(LinearLayout.VERTICAL);
-            col.setPadding(dp(20), dp(8), dp(20), 0);
+            col.setPaddingRelative(dp(20), dp(8), dp(20), 0);
             boolean kmem = handoffs != null;
             android.widget.EditText name = new android.widget.EditText(this);
             TextView preview = label("");
@@ -861,7 +861,7 @@ public class MainActivity extends Activity {
                 android.widget.RadioGroup rg = new android.widget.RadioGroup(this);
                 if (handoffs.length() == 0) {
                     TextView none = label("No saved handoffs yet.");
-                    none.setPadding(0, 0, 0, dp(4));
+                    none.setPaddingRelative(0, 0, 0, dp(4));
                     col.addView(none);
                 }
                 for (int i = 0; i < handoffs.length(); i++) {
@@ -877,7 +877,7 @@ public class MainActivity extends Activity {
                         t.setText(hn + saved + " · open in " + open.optString("title") + " ›");
                         t.setTextColor(MUTED);
                         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-                        t.setPadding(dp(8), dp(10), dp(8), dp(10));
+                        t.setPaddingRelative(dp(8), dp(10), dp(8), dp(10));
                         String oid = open.optString("id");
                         t.setOnClickListener(v -> {
                             if (dlg[0] != null) {
@@ -986,7 +986,7 @@ public class MainActivity extends Activity {
         v.setText(t);
         v.setTextColor(MUTED);
         v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        v.setPadding(0, dp(12), 0, dp(2));
+        v.setPaddingRelative(0, dp(12), 0, dp(2));
         return v;
     }
 
@@ -1057,7 +1057,7 @@ public class MainActivity extends Activity {
         sessionBar.setSingleLine(true);
         sessionBar.setEllipsize(android.text.TextUtils.TruncateAt.END);
         sessionBar.setGravity(Gravity.CENTER);
-        sessionBar.setPadding(dp(16), 0, dp(16), 0);
+        sessionBar.setPaddingRelative(dp(16), 0, dp(16), 0);
         sessionBar.setBackgroundColor(SIDE);
         sessionBar.setVisibility(View.GONE);
         sessionBar.setOnClickListener(v -> toggleSessions());
@@ -1090,7 +1090,7 @@ public class MainActivity extends Activity {
         zoomLabel.setTextColor(TEXT);
         zoomLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         zoomLabel.setTypeface(Typeface.DEFAULT_BOLD);
-        zoomLabel.setPadding(dp(16), dp(8), dp(16), dp(8));
+        zoomLabel.setPaddingRelative(dp(16), dp(8), dp(16), dp(8));
         GradientDrawable zb = new GradientDrawable();
         zb.setCornerRadius(dp(10));
         zb.setColor(0xE62F2F2C);
@@ -1311,7 +1311,7 @@ public class MainActivity extends Activity {
     View bar() {
         android.widget.FrameLayout bar = new android.widget.FrameLayout(this);
         bar.setBackgroundColor(SIDE);
-        bar.setPadding(dp(8), 0, dp(4), 0);
+        bar.setPaddingRelative(dp(8), 0, dp(4), 0);
 
         LinearLayout left = new LinearLayout(this);
         left.setGravity(Gravity.CENTER_VERTICAL);
@@ -1327,7 +1327,7 @@ public class MainActivity extends Activity {
         sideArrow.setBackground(ring);
         sideArrow.setOnClickListener(v -> toggleSessions());
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(42), dp(36));
-        ap.setMargins(0, 0, dp(3), 0);
+        ap.setMarginEnd(dp(3));
         // The arrow is gone (user 2026-11-21): tap or drag the session list's edge strip instead.
         sideArrow.setVisibility(View.GONE);
         centerBtn = button("≡", "Center everything", v -> {
@@ -1354,7 +1354,7 @@ public class MainActivity extends Activity {
         title.setTextColor(TEXT);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(dp(8), 0, 0, 0);
+        title.setPaddingRelative(dp(8), 0, 0, 0);
         title.setSingleLine(true);
         mid.addView(title);
         mid.setOnClickListener(v -> toggleSessions());
@@ -1429,7 +1429,7 @@ public class MainActivity extends Activity {
     void settings() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(4), dp(20), dp(8));
+        box.setPaddingRelative(dp(20), dp(4), dp(20), dp(8));
 
         section(box, "Text", false);
         CheckBox[] checks = new CheckBox[CENTER_KEYS.length];
@@ -1580,7 +1580,7 @@ public class MainActivity extends Activity {
                 sessionChecks[k] = c;
                 sessionBox.addView(c);
                 TextView h = line(hints[k], MUTED);
-                h.setPadding(dp(32), 0, 0, dp(4));
+                h.setPaddingRelative(dp(32), 0, 0, dp(4));
                 sessionBox.addView(h);
             }
             Runnable syncSessions = () -> {
@@ -1677,7 +1677,7 @@ public class MainActivity extends Activity {
         t.setTypeface(Typeface.DEFAULT_BOLD);
         t.setLetterSpacing(0.04f);
         t.setSingleLine(true);
-        t.setPadding(0, dp(10), 0, dp(2));
+        t.setPaddingRelative(0, dp(10), 0, dp(2));
         box.addView(t);
     }
 
@@ -1704,9 +1704,9 @@ public class MainActivity extends Activity {
     }
 
     View indent(View v) {
-        v.setPadding(v.getPaddingLeft() + dp(24), v.getPaddingTop(), v.getPaddingRight(), v.getPaddingBottom());
+        v.setPaddingRelative(v.getPaddingStart() + dp(24), v.getPaddingTop(), v.getPaddingEnd(), v.getPaddingBottom());
         LinearLayout l = new LinearLayout(this);
-        l.setPadding(dp(4), 0, 0, 0);
+        l.setPaddingRelative(dp(4), 0, 0, 0);
         l.addView(v, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         return l;
     }
@@ -1789,7 +1789,7 @@ public class MainActivity extends Activity {
         banner.setTextColor(TEXT);
         banner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         banner.setBackgroundColor(0xFF3A2A22);
-        banner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        banner.setPaddingRelative(dp(14), dp(10), dp(14), dp(10));
         banner.setContentDescription("Sign-in tip");
         banner.setVisibility(View.GONE);
         banner.setOnClickListener(v -> {

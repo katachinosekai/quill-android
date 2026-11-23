@@ -73,7 +73,7 @@ final class FileViewer {
 
         LinearLayout head = new LinearLayout(ctx);
         head.setOrientation(LinearLayout.VERTICAL);
-        head.setPadding(dp(14), dp(10), dp(14), dp(6));
+        head.setPaddingRelative(dp(14), dp(10), dp(14), dp(6));
         title = label(FileModel.baseName(path), 17, MainActivity.TEXT);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         sub = label(path, 12, MainActivity.MUTED);
@@ -88,7 +88,7 @@ final class FileViewer {
         col.addView(head, new LinearLayout.LayoutParams(-1, -2));
         note = label("", 12, MainActivity.MUTED);
         note.setBackgroundColor(MarkdownView.CODE_BG);
-        note.setPadding(dp(14), dp(6), dp(14), dp(6));
+        note.setPaddingRelative(dp(14), dp(6), dp(14), dp(6));
         note.setVisibility(View.GONE);
         col.addView(note, new LinearLayout.LayoutParams(-1, -2));
         body = new FrameLayout(ctx);
@@ -118,7 +118,7 @@ final class FileViewer {
 
     TextView button(String text, Runnable r) {
         TextView t = label(text, 14, MainActivity.ACCENT);
-        t.setPadding(0, dp(8), dp(18), dp(4));
+        t.setPaddingRelative(0, dp(8), dp(18), dp(4));
         t.setOnClickListener(v -> r.run());
         return t;
     }
@@ -193,13 +193,13 @@ final class FileViewer {
         LinearLayout c = new LinearLayout(ctx);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setGravity(Gravity.CENTER);
-        c.setPadding(dp(24), dp(24), dp(24), dp(24));
+        c.setPaddingRelative(dp(24), dp(24), dp(24), dp(24));
         TextView t = label(text, 15, MainActivity.TEXT);
         t.setGravity(Gravity.CENTER);
         c.addView(t);
         if (retry) {
             TextView b = button("Retry", this::load);
-            b.setPadding(dp(18), dp(14), dp(18), dp(8));
+            b.setPaddingRelative(dp(18), dp(14), dp(18), dp(8));
             c.addView(b);
         }
         body.addView(c, new FrameLayout.LayoutParams(-1, -1));
@@ -232,12 +232,12 @@ final class FileViewer {
         }
         TextView gutter = mono(nums.toString(), MainActivity.MUTED);
         gutter.setGravity(Gravity.END);
-        gutter.setPadding(dp(10), dp(8), dp(8), dp(8));
+        gutter.setPaddingRelative(dp(10), dp(8), dp(8), dp(8));
         TextView tv = mono("", MainActivity.TEXT);
         tv.setText(code);
         tv.setTextIsSelectable(true);
         tv.setHorizontallyScrolling(true);
-        tv.setPadding(dp(8), dp(8), dp(14), dp(8));
+        tv.setPaddingRelative(dp(8), dp(8), dp(14), dp(8));
         LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.addView(gutter, new LinearLayout.LayoutParams(-2, -2));

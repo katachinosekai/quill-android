@@ -175,7 +175,7 @@ final class KmemModels {
         List<String> out = new ArrayList<>();
         out.add(ALL);
         boolean needs = false, issues = false;
-        java.util.TreeSet<String> topics = new java.util.TreeSet<>();
+        java.util.TreeSet<String> topics = new java.util.TreeSet<>(Text.comparator());
         for (Task t : tasks) {
             needs |= t.needsUser;
             issues |= t.issue;
@@ -205,15 +205,14 @@ final class KmemModels {
             ok = topLevel(t.topic).equals(filter);
         }
         if (ok && query != null && !query.trim().isEmpty()) {
-            String q = query.trim().toLowerCase(java.util.Locale.ROOT);
-            ok = t.title.toLowerCase(java.util.Locale.ROOT).contains(q) || t.id.toLowerCase(java.util.Locale.ROOT).contains(q);
+            ok = Text.foldContains(t.title, query.trim()) || Text.foldContains(t.id, query.trim());
         }
         return ok;
     }
 
     /** Filtered tasks grouped by topic (topics sorted, tasks by priority then id); tasks without a topic go under "(no topic)". */
     static Map<String, List<Task>> group(List<Task> tasks, String filter, String query) {
-        java.util.TreeMap<String, List<Task>> by = new java.util.TreeMap<>();
+        java.util.TreeMap<String, List<Task>> by = new java.util.TreeMap<>(Text.comparator());
         for (Task t : tasks) {
             if (matches(t, filter, query)) {
                 String k = t.topic.isEmpty() ? "(no topic)" : t.topic;

@@ -211,14 +211,14 @@ final class ChatView extends LinearLayout {
         scroll.setFillViewport(true);
         list = new LinearLayout(c);
         list.setOrientation(VERTICAL);
-        list.setPadding(dp(14), dp(10), dp(14), dp(16));
+        list.setPaddingRelative(dp(14), dp(10), dp(14), dp(16));
         col = new LinearLayout(c);
         col.setOrientation(VERTICAL);
         earlier = new TextView(c);
         earlier.setTextColor(MainActivity.ACCENT);
         earlier.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         earlier.setGravity(Gravity.CENTER);
-        earlier.setPadding(dp(14), dp(12), dp(14), dp(4));
+        earlier.setPaddingRelative(dp(14), dp(12), dp(14), dp(4));
         earlier.setVisibility(GONE);
         earlier.setOnClickListener(v -> {
             int before = col.getHeight();
@@ -294,18 +294,18 @@ final class ChatView extends LinearLayout {
         status = new TextView(c);
         status.setTextColor(MainActivity.MUTED);
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        status.setPadding(dp(16), dp(2), dp(16), dp(2));
+        status.setPaddingRelative(dp(16), dp(2), dp(16), dp(2));
         status.setVisibility(GONE);
         conn = new TextView(c);
         conn.setTextColor(MainActivity.TEXT);
         conn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         conn.setBackgroundColor(0xFF5A2A22);
-        conn.setPadding(dp(16), dp(6), dp(16), dp(6));
+        conn.setPaddingRelative(dp(16), dp(6), dp(16), dp(6));
         conn.setVisibility(GONE);
         addView(conn, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         pauseBar = new LinearLayout(c);
         pauseBar.setGravity(Gravity.CENTER_VERTICAL);
-        pauseBar.setPadding(dp(16), dp(6), dp(10), dp(6));
+        pauseBar.setPaddingRelative(dp(16), dp(6), dp(10), dp(6));
         pauseBar.setBackgroundColor(0xFF4A3A1E);
         pauseText = label("", MainActivity.TEXT, 13);
         pauseBar.addView(pauseText, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
@@ -320,14 +320,14 @@ final class ChatView extends LinearLayout {
         addView(pauseBar, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         queueBox = new LinearLayout(c);
         queueBox.setOrientation(VERTICAL);
-        queueBox.setPadding(dp(12), dp(4), dp(12), 0);
+        queueBox.setPaddingRelative(dp(12), dp(4), dp(12), 0);
         queueBox.setVisibility(GONE);
         addView(queueBox, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         LinearLayout bar = new LinearLayout(c);
         bar.setGravity(Gravity.BOTTOM);
-        bar.setPadding(dp(10), dp(6), dp(10), dp(10));
+        bar.setPaddingRelative(dp(10), dp(6), dp(10), dp(10));
         box = new EditText(c);
         box.setTextColor(MainActivity.TEXT);
         box.setHintTextColor(MainActivity.MUTED);
@@ -337,7 +337,7 @@ final class ChatView extends LinearLayout {
         box.setMaxLines(8);
         box.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_AUTO_CORRECT);
         box.setImeOptions(EditorInfo.IME_ACTION_SEND);
-        box.setPadding(dp(14), dp(10), dp(14), dp(10));
+        box.setPaddingRelative(dp(14), dp(10), dp(14), dp(10));
         box.setBackground(round(USER_BG, 14));
         // Double-tap (two taps within 0.6 s, close together) fills in the suggestion; a bit more forgiving than Android's 0.3 s.
         long[] lastTap = {0};
@@ -411,7 +411,7 @@ final class ChatView extends LinearLayout {
             }
         });
         LayoutParams sl = new LayoutParams(dp(48), dp(48));
-        sl.leftMargin = dp(8);
+        sl.setMarginStart(dp(8));
         bar.addView(send, sl);
         addView(bar, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
     }
@@ -630,7 +630,7 @@ final class ChatView extends LinearLayout {
         int visible = n - hiding.size();
         if (visible > 0) {
             TextView h = label(visible == 1 ? "1 queued message" : visible + " queued messages", MainActivity.MUTED, 12);
-            h.setPadding(dp(4), 0, 0, dp(2));
+            h.setPaddingRelative(dp(4), 0, 0, dp(2));
             queueBox.addView(h);
         }
         for (int i = 0; i < n; i++) {
@@ -647,7 +647,7 @@ final class ChatView extends LinearLayout {
             }
             LinearLayout row = new LinearLayout(getContext());
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(10), dp(4), dp(4), dp(4));
+            row.setPaddingRelative(dp(10), dp(4), dp(4), dp(4));
             row.setBackground(round(CARD, 10));
             TextView t = label(text, MainActivity.TEXT, 14);
             t.setMaxLines(centerChat ? 4 : 2);
@@ -676,7 +676,7 @@ final class ChatView extends LinearLayout {
             });
             TextView now = label("Send now", MainActivity.ACCENT, 13);
             now.setTypeface(Typeface.DEFAULT_BOLD);
-            now.setPadding(dp(10), dp(8), dp(10), dp(8));
+            now.setPaddingRelative(dp(10), dp(8), dp(10), dp(8));
             now.setOnClickListener(v -> {
                 if (actions != null && hideQueued(text)) {
                     actions.queueOp("send-now", index, text);
@@ -685,7 +685,7 @@ final class ChatView extends LinearLayout {
             row.addView(now);
             TextView del = label("✕", MainActivity.MUTED, 16);
             del.setContentDescription("Remove from queue");
-            del.setPadding(dp(10), dp(6), dp(10), dp(6));
+            del.setPaddingRelative(dp(10), dp(6), dp(10), dp(6));
             del.setOnClickListener(v -> {
                 if (actions != null && hideQueued(text)) {
                     actions.queueOp("delete", index, text);
@@ -1086,12 +1086,12 @@ final class ChatView extends LinearLayout {
         t.setGravity(centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START);
         t.setTextIsSelectable(true);
         t.setLineSpacing(0, 1.3f);
-        t.setPadding(dp(14), dp(10), dp(14), dp(10));
+        t.setPaddingRelative(dp(14), dp(10), dp(14), dp(10));
         t.setBackground(round(USER_BG, 14));
         LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-        lp.leftMargin = dp(48);
+        lp.setMarginStart(dp(48));
         if (centerChat) {
-            lp.rightMargin = dp(48);
+            lp.setMarginEnd(dp(48));
         }
         row.addView(t, lp);
         TextView when = stamp(it, centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.END);
@@ -1112,7 +1112,7 @@ final class ChatView extends LinearLayout {
         }
         TextView t = label(TimeFmt.stamp(it.timeMs, System.currentTimeMillis()), MainActivity.MUTED, 11);
         t.setGravity(gravity);
-        t.setPadding(0, dp(5), 0, 0); // about a third of the way to the next message (Quill Desktop 1be563f)
+        t.setPaddingRelative(0, dp(5), 0, 0); // about a third of the way to the next message (Quill Desktop 1be563f)
         t.setContentDescription("Sent " + t.getText());
         return t;
     }
@@ -1205,7 +1205,7 @@ final class ChatView extends LinearLayout {
             final String key = it.seq + ":" + it.text.hashCode();
             final boolean active = !picked.contains(key) && (server ? it.choicesOpen : answerable);
             LinearLayout row = new LinearLayout(getContext());
-            row.setPadding(0, dp(10), 0, 0);
+            row.setPaddingRelative(0, dp(10), 0, 0);
             final QuestionCards.ClickGuard guard = newGuard();
             final int mark = active ? -1 : Choices.picked(answerText.get(it.seq), opts);
             final List<TextView> btns = new ArrayList<>();
@@ -1237,7 +1237,7 @@ final class ChatView extends LinearLayout {
                     });
                 }
                 LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-                lp.rightMargin = dp(8);
+                lp.setMarginEnd(dp(8));
                 row.addView(b, lp);
             }
             if (!active) {
@@ -1285,7 +1285,7 @@ final class ChatView extends LinearLayout {
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setGravity(Gravity.CENTER_VERTICAL);
         b.setMinHeight(dp(40));
-        b.setPadding(dp(14), dp(8), dp(14), dp(8));
+        b.setPaddingRelative(dp(14), dp(8), dp(14), dp(8));
         GradientDrawable g = round((color & 0x00FFFFFF) | 0x24000000, 10);
         g.setStroke(dp(1), color);
         b.setBackground(g);
@@ -1308,7 +1308,7 @@ final class ChatView extends LinearLayout {
             TextView r = label(it.result, MainActivity.TEXT, 12);
             r.setTypeface(Typeface.MONOSPACE);
             r.setTextIsSelectable(true);
-            r.setPadding(dp(10), dp(8), dp(10), dp(8));
+            r.setPaddingRelative(dp(10), dp(8), dp(10), dp(8));
             r.setBackground(round(MarkdownView.CODE_BG, 8));
             LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
             lp.topMargin = dp(4);
@@ -1336,7 +1336,7 @@ final class ChatView extends LinearLayout {
         newGuard();
         LinearLayout c = new LinearLayout(getContext());
         c.setOrientation(VERTICAL);
-        c.setPadding(dp(14), dp(12), dp(14), dp(12));
+        c.setPaddingRelative(dp(14), dp(12), dp(14), dp(12));
         GradientDrawable g = round(CARD, 12);
         g.setStroke(dp(1), accent);
         c.setBackground(g);
@@ -1348,7 +1348,7 @@ final class ChatView extends LinearLayout {
 
     LinearLayout buttons(LinearLayout card) {
         LinearLayout row = new LinearLayout(getContext());
-        row.setPadding(0, dp(10), 0, 0);
+        row.setPaddingRelative(0, dp(10), 0, 0);
         card.addView(row);
         return row;
     }
@@ -1357,7 +1357,7 @@ final class ChatView extends LinearLayout {
         TextView b = button(text, color);
         b.setOnClickListener(guarded(l));
         LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(8);
+        lp.setMarginEnd(dp(8));
         row.addView(b, lp);
     }
 
@@ -1406,7 +1406,7 @@ final class ChatView extends LinearLayout {
             TextView s = label(what, MainActivity.TEXT, 13);
             s.setTypeface(Typeface.MONOSPACE);
             s.setTextIsSelectable(true);
-            s.setPadding(0, dp(6), 0, 0);
+            s.setPaddingRelative(0, dp(6), 0, 0);
             c.addView(s);
         }
         if (pending(it)) {
@@ -1427,7 +1427,7 @@ final class ChatView extends LinearLayout {
         md.links = linkHost;
         md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
         md.setMarkdown(it.text);
-        md.setPadding(0, dp(8), 0, 0);
+        md.setPaddingRelative(0, dp(8), 0, 0);
         c.addView(md);
         if (live(it)) {
             EditText fb = changesField(it);
@@ -1538,7 +1538,7 @@ final class ChatView extends LinearLayout {
             int num = q.optInt("num", 0) > 0 ? q.optInt("num") : i + 1;
             TextView qt = label("", MainActivity.TEXT, 15);
             qt.setText(MarkdownView.inline(getContext(), num + ". " + q.optString("text"))); // keeps inline code
-            qt.setPadding(0, dp(12), 0, dp(4));
+            qt.setPaddingRelative(0, dp(12), 0, dp(4));
             qt.setGravity(Gravity.START);
             qwords.add(MarkdownView.words(qt.getPaint(), num + ". " + q.optString("text")));
             JSONArray os = q.optJSONArray("options");
@@ -1758,7 +1758,7 @@ final class ChatView extends LinearLayout {
         col.setOrientation(VERTICAL);
         TextView toggle = label(plain ? "☰  Answer in place" : "▤  Show as written", MainActivity.MUTED, 12);
         toggle.setContentDescription(plain ? "Answer the plan's questions in place" : "Show the reply as written");
-        toggle.setPadding(0, dp(2), dp(8), dp(6));
+        toggle.setPaddingRelative(0, dp(2), dp(8), dp(6));
         toggle.setOnClickListener(v -> {
             if (!planPlain.remove(plan.seq)) {
                 planPlain.add(plan.seq);
@@ -1801,7 +1801,7 @@ final class ChatView extends LinearLayout {
             }
             LinearLayout ctl = new LinearLayout(getContext());
             ctl.setOrientation(VERTICAL);
-            ctl.setPadding(dp(16), 0, 0, dp(6));
+            ctl.setPaddingRelative(dp(16), 0, 0, dp(6));
             if (q != null) {
                 planControl(ctl, q, k, ans);
             }
@@ -1852,7 +1852,7 @@ final class ChatView extends LinearLayout {
             }
             greyOut(c);
             TextView status = label("Plan: " + planStatus(plan), MainActivity.MUTED, 12);
-            status.setPadding(0, dp(8), 0, 0);
+            status.setPaddingRelative(0, dp(8), 0, 0);
             c.addView(status);
         }
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
@@ -1887,7 +1887,7 @@ final class ChatView extends LinearLayout {
             return;
         }
         TextView note = label("Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
-        note.setPadding(0, dp(8), 0, 0);
+        note.setPaddingRelative(0, dp(8), 0, 0);
         c.addView(note);
         LinearLayout row = buttons(c);
         addButton(row, "Approve plan & send answers", GREEN, v -> {
@@ -1954,7 +1954,7 @@ final class ChatView extends LinearLayout {
     boolean addApprovalRadio(LinearLayout col, Item plan, List<View> ctls, String question) {
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(VERTICAL);
-        box.setPadding(dp(10), dp(8), dp(10), dp(6));
+        box.setPaddingRelative(dp(10), dp(8), dp(10), dp(6));
         boolean live = live(plan);
         GradientDrawable bg = round(live ? 0x24000000 | (MainActivity.ACCENT & 0x00FFFFFF) : 0x00000000, 10);
         bg.setStroke(dp(live ? 2 : 1), live ? MainActivity.ACCENT : 0xFF444440);
@@ -1962,14 +1962,14 @@ final class ChatView extends LinearLayout {
         if (live) {
             boolean qs = plan.planQuestions != null && plan.planQuestions.length() > 0;
             TextView warn = label(PlanOverlay.approvalCaption(plan.planApproval.options, plan.planApproval.stop, qs), MainActivity.MUTED, 12);
-            warn.setPadding(0, 0, 0, dp(6));
+            warn.setPaddingRelative(0, 0, 0, dp(6));
             box.addView(warn);
         }
         if (!question.trim().isEmpty()) {
             box.addView(markdown(question));
         }
         View g = approvalRadio(plan);
-        g.setPadding(dp(16), 0, 0, dp(6));
+        g.setPaddingRelative(dp(16), 0, 0, dp(6));
         box.addView(g);
         ctls.add(g);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
@@ -1988,7 +1988,7 @@ final class ChatView extends LinearLayout {
             c.addView(approvalRadio(it));
         }
         TextView note = label(qs.isEmpty() ? "Answer the question above, then send." : "Answer the question above, then send. Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
-        note.setPadding(0, dp(8), 0, 0);
+        note.setPaddingRelative(0, dp(8), 0, 0);
         c.addView(note);
         LinearLayout row = buttons(c);
         addButton(row, "Send answers", GREEN, v -> {
@@ -2051,13 +2051,13 @@ final class ChatView extends LinearLayout {
             boolean multi = q.optBoolean("multiSelect");
             if (!q.optString("header").isEmpty()) {
                 TextView h = label(q.optString("header").toUpperCase(java.util.Locale.ROOT), MainActivity.MUTED, 11);
-                h.setPadding(0, dp(10), 0, 0);
+                h.setPaddingRelative(0, dp(10), 0, 0);
                 c.addView(h);
             }
             Set<String> sel = new LinkedHashSet<>();
             chosen.put(qtext, sel);
             TextView qt = label(qtext, MainActivity.TEXT, 15);
-            qt.setPadding(0, dp(10), 0, dp(4));
+            qt.setPaddingRelative(0, dp(10), 0, dp(4));
             c.addView(qt);
             JSONArray opts = q.optJSONArray("options");
             LinearLayout col = new LinearLayout(getContext());
@@ -2140,7 +2140,7 @@ final class ChatView extends LinearLayout {
         t.setTypeface(Typeface.MONOSPACE);
         t.setTextIsSelectable(true);
         t.setHorizontallyScrolling(true);
-        t.setPadding(dp(10), dp(8), dp(10), dp(8));
+        t.setPaddingRelative(dp(10), dp(8), dp(10), dp(8));
         android.widget.HorizontalScrollView h = new android.widget.HorizontalScrollView(getContext());
         h.setBackground(round(MarkdownView.CODE_BG, 8));
         h.addView(t);
