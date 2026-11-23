@@ -23,8 +23,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The kmem screen: Overview, read-only Tasks and (phase 2) the Assistant chat. Portrait shows three tabs; landscape shows
- * Overview and Tasks on the left and the assistant chat on the right. Data comes from Quill Desktop's /phone/kmem/* routes.
+ * The kmem screen: Overview, read-only Tasks and Memory, and the Assistant chat. Portrait shows four tabs; landscape shows
+ * Overview, Tasks and Memory on the left and the assistant chat on the right. Data comes from Quill Desktop's /phone/kmem/* routes.
  */
 class KmemScreen {
     final MainActivity a;
@@ -36,8 +36,8 @@ class KmemScreen {
     final LinearLayout chips;
     final EditText search;
     final TextView errorLine;
-    static final int TAB_ASSISTANT = 2;
-    int tab; // 0 Overview, 1 Tasks, 2 Assistant (portrait only)
+    static final int TAB_MEMORY = 2, TAB_ASSISTANT = 3;
+    int tab; // 0 Overview, 1 Tasks, 2 Memory, 3 Assistant (portrait only)
     final ChatView chatView;
     final KmemAssistant assist;
     final LinearLayout assistPane, assistHeader;
@@ -49,7 +49,21 @@ class KmemScreen {
     String filter = KmemModels.ALL;
     String query = "";
     String taskError = "";
-    TextView tabOv, tabTasks;
+    TextView tabOv, tabTasks, tabMem;
+    // Memory tab (read-only)
+    final LinearLayout memPane, memCol;
+    final ScrollView memScroll;
+    final EditText memSearch;
+    final KmemMemoryModel.Nav memNav = new KmemMemoryModel.Nav();
+    final Map<String, KmemMemoryModel.TopicView> topicCache = new java.util.HashMap<>();
+    final Map<String, KmemMemoryModel.Detail> factCache = new java.util.HashMap<>();
+    List<KmemMemoryModel.Topic> memTopics;
+    List<KmemMemoryModel.Fact> memResults;
+    boolean memTruncated;
+    String memError = "", memFor = "";
+    long lastTyped, lastFind, blockedUntil;
+    int findSeq;
+    final Runnable findRun = this::runFind;
     boolean landscape;
 
     KmemScreen(MainActivity a, Remote remote) {
@@ -83,6 +97,33 @@ class KmemScreen {
                 fillTasks();
             }
         });
+        memCol = column();
+        memScroll = new ScrollView(a);
+        memScroll.addView(memCol);
+        memSearch = new EditText(a);
+        memSearch.setHint("Search memory");
+        memSearch.setSingleLine(true);
+        memSearch.setTextColor(MainActivity.TEXT);
+        memSearch.setHintTextColor(MainActivity.MUTED);
+        memSearch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        memSearch.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
+        memSearch.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int st, int c, int af) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int st, int b, int c) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable e) {
+                onMemQuery(e.toString().trim());
+            }
+        });
+        memPane = column();
+        memPane.addView(memSearch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        memPane.addView(memScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         errorLine = new TextView(a);
         errorLine.setTextColor(0xFFE55B5B);
         errorLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -101,9 +142,20 @@ class KmemScreen {
         holder = new FrameLayout(a);
         holder.setBackgroundColor(MainActivity.BG);
         dialog.setContentView(holder);
+        // Back inside the Memory tab goes up one page (fact -> topic -> start) before it closes the screen.
+        dialog.setOnKeyListener((d, key, ev) -> {
+            if (key == android.view.KeyEvent.KEYCODE_BACK && tab == TAB_MEMORY && memNav.canBack()) {
+                if (ev.getAction() == android.view.KeyEvent.ACTION_UP) {
+                    memBack();
+                }
+                return true;
+            }
+            return false;
+        });
         dialog.setOnDismissListener(d -> {
             Notifier.kmemOpen = false;
             assistHeader.removeCallbacks(tick);
+            memCol.removeCallbacks(findRun);
             if (a.kmemScreen == this) {
                 a.kmemScreen = null;
             }
@@ -131,7 +183,7 @@ class KmemScreen {
     /** Rebuild the frame for the current orientation (also called on rotation); content views are kept. */
     void layout() {
         landscape = a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        for (View v : new View[]{ovScroll, taskScroll, chips, search, errorLine, assistPane}) {
+        for (View v : new View[]{ovScroll, taskScroll, chips, search, errorLine, assistPane, memPane}) {
             if (v.getParent() instanceof ViewGroup) {
                 ((ViewGroup) v.getParent()).removeView(v);
             }
@@ -186,6 +238,8 @@ class KmemScreen {
         tabTasks = tabView("Tasks", 1);
         tabs.addView(tabOv, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
         tabs.addView(tabTasks, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
+        tabMem = tabView("Memory", TAB_MEMORY);
+        tabs.addView(tabMem, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
         if (!landscape) {
             tabAssist = tabView("Assistant", TAB_ASSISTANT);
             tabs.addView(tabAssist, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
@@ -209,6 +263,7 @@ class KmemScreen {
         tasksPane.setTag("tasks");
         body.addView(tasksPane, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         tasksHolder = tasksPane;
+        body.addView(memPane, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         if (!landscape) {
             body.addView(assistPane, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
@@ -234,6 +289,9 @@ class KmemScreen {
         if (tab == 1 && tasks == null) {
             refreshTasks();
         }
+        if (tab == TAB_MEMORY && memTopics == null) {
+            loadMemory(false);
+        }
     }
 
     void showTab() {
@@ -242,15 +300,18 @@ class KmemScreen {
         }
         ovScroll.setVisibility(tab == 0 ? View.VISIBLE : View.GONE);
         tasksHolder.setVisibility(tab == 1 ? View.VISIBLE : View.GONE);
+        memPane.setVisibility(tab == TAB_MEMORY ? View.VISIBLE : View.GONE);
         assistPane.setVisibility(landscape || tab == TAB_ASSISTANT ? View.VISIBLE : View.GONE);
         style(tabOv, tab == 0);
         style(tabTasks, tab == 1);
+        style(tabMem, tab == TAB_MEMORY);
         if (tabAssist != null) {
             style(tabAssist, tab == TAB_ASSISTANT);
         }
         fillAssist();
         fillOverview();
         fillTasks();
+        fillMemory();
     }
 
     void style(TextView t, boolean on) {
@@ -263,6 +324,9 @@ class KmemScreen {
         refreshOverview();
         if (tab == 1 || tasks != null) {
             refreshTasks();
+        }
+        if (tab == TAB_MEMORY || memTopics != null) {
+            loadMemory(true);
         }
     }
 
@@ -541,5 +605,266 @@ class KmemScreen {
         if (truncated) {
             taskCol.addView(text("The list is cut off; more tasks exist than shown.", 12, MainActivity.MUTED, false));
         }
+    }
+
+    // ---- Memory (read-only: search, topics, topic view, fact view) ----
+
+    TextView memRow(String s, int sp, int color, boolean bold, Runnable onTap) {
+        TextView t = text(s, sp, color, bold);
+        t.setPadding(0, a.dp(3), 0, a.dp(3));
+        if (onTap != null) {
+            t.setOnClickListener(v -> onTap.run());
+        }
+        return t;
+    }
+
+    /** One fact as a list row: kind and topic, then the first lines. Only rows with an id open the fact view. */
+    View factRow(KmemMemoryModel.Fact f) {
+        LinearLayout r = column();
+        r.setPadding(0, a.dp(6), 0, a.dp(6));
+        r.addView(text(KmemMemoryModel.factMeta(f), 12, f.openable() ? MainActivity.ACCENT : MainActivity.MUTED, false));
+        r.addView(text(KmemMemoryModel.preview(f.text, 3), 14, MainActivity.TEXT, false));
+        if (f.openable()) {
+            r.setOnClickListener(v -> memOpen(KmemMemoryModel.Page.FACT, f.id));
+        }
+        return r;
+    }
+
+    View topicRow(KmemMemoryModel.Topic t) {
+        LinearLayout r = column();
+        r.setPadding(0, a.dp(8), 0, a.dp(8));
+        r.addView(text(KmemMemoryModel.topicLine(t), 14, MainActivity.TEXT, false));
+        r.setOnClickListener(v -> memOpen(KmemMemoryModel.Page.TOPIC, t.name));
+        return r;
+    }
+
+    void fillMemory() {
+        memCol.removeAllViews();
+        memCol.setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(24));
+        KmemMemoryModel.Page p = memNav.current();
+        memSearch.setVisibility(p.type == KmemMemoryModel.Page.HOME ? View.VISIBLE : View.GONE);
+        if (!memError.isEmpty()) {
+            memCol.addView(text(memError, 14, 0xFFE55B5B, false));
+        }
+        if (memNav.canBack()) {
+            TextView back = pill("← Back", this::memBack);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = a.dp(6);
+            memCol.addView(back, lp);
+        }
+        if (p.type == KmemMemoryModel.Page.FACT) {
+            fillFact(p.key);
+        } else if (p.type == KmemMemoryModel.Page.TOPIC) {
+            fillTopic(p.key);
+        } else {
+            fillMemHome();
+        }
+    }
+
+    void fillMemHome() {
+        String q = memSearch.getText().toString().trim();
+        if (KmemMemoryModel.validQuery(q)) {
+            if (memResults == null || !q.equals(memFor)) {
+                memCol.addView(text(memError.isEmpty() ? "Searching…" : "", 14, MainActivity.MUTED, false));
+                return;
+            }
+            heading(memCol, "Results (" + memResults.size() + ")");
+            if (memResults.isEmpty()) {
+                memCol.addView(text("Nothing found.", 14, MainActivity.MUTED, false));
+            }
+            for (KmemMemoryModel.Fact f : memResults) {
+                memCol.addView(factRow(f));
+            }
+            if (memTruncated) {
+                memCol.addView(text("More results are not shown. Narrow the search.", 12, MainActivity.MUTED, false));
+            }
+            return;
+        }
+        heading(memCol, "Topics");
+        if (memTopics == null) {
+            if (memError.isEmpty()) {
+                memCol.addView(text("Loading…", 14, MainActivity.MUTED, false));
+            }
+            return;
+        }
+        if (memTopics.isEmpty()) {
+            memCol.addView(text("No topics.", 14, MainActivity.MUTED, false));
+        }
+        for (KmemMemoryModel.Topic t : memTopics) {
+            memCol.addView(topicRow(t));
+        }
+    }
+
+    void fillTopic(String name) {
+        TextView h = text(name, 16, MainActivity.TEXT, true);
+        h.setPadding(0, a.dp(10), 0, a.dp(2));
+        memCol.addView(h);
+        KmemMemoryModel.TopicView v = topicCache.get(name);
+        if (v == null) {
+            if (memError.isEmpty()) {
+                memCol.addView(text("Loading…", 14, MainActivity.MUTED, false));
+            }
+            return;
+        }
+        if (!v.facts.isEmpty()) {
+            heading(memCol, "Facts (" + v.facts.size() + ")");
+        }
+        for (KmemMemoryModel.Fact f : v.facts) {
+            memCol.addView(factRow(f));
+        }
+        if (!v.sections.isEmpty()) {
+            heading(memCol, "Sections");
+        }
+        for (KmemMemoryModel.Topic t : v.sections) {
+            memCol.addView(topicRow(t));
+        }
+        if (v.facts.isEmpty() && v.sections.isEmpty()) {
+            memCol.addView(text("Nothing in this topic.", 14, MainActivity.MUTED, false));
+        }
+        if (v.truncated) {
+            memCol.addView(text("More facts exist than shown.", 12, MainActivity.MUTED, false));
+        }
+    }
+
+    void fillFact(String id) {
+        KmemMemoryModel.Detail d = factCache.get(id);
+        if (d == null) {
+            if (memError.isEmpty()) {
+                memCol.addView(text("Loading…", 14, MainActivity.MUTED, false));
+            }
+            return;
+        }
+        TextView body = text(d.fact.text, 15, MainActivity.TEXT, false);
+        body.setTextIsSelectable(true);
+        body.setPadding(0, a.dp(10), 0, a.dp(6));
+        memCol.addView(body);
+        for (String[] r : KmemMemoryModel.detailRows(d)) {
+            TextView t = text(r[0] + ": " + r[1], 13, MainActivity.MUTED, false);
+            t.setPadding(0, a.dp(2), 0, a.dp(2));
+            t.setTextIsSelectable(true);
+            memCol.addView(t);
+        }
+        if (!d.supersededBy.isEmpty()) {
+            memCol.addView(memRow("Newer fact: " + d.supersededBy + " →", 14, MainActivity.ACCENT, true,
+                    () -> memOpen(KmemMemoryModel.Page.FACT, d.supersededBy)));
+        }
+        if (!d.history.isEmpty()) {
+            heading(memCol, "History");
+            for (KmemMemoryModel.History h : d.history) {
+                TextView t = text(KmemMemoryModel.historyLine(h), 13, MainActivity.TEXT, false);
+                t.setPadding(0, a.dp(2), 0, a.dp(2));
+                memCol.addView(t);
+            }
+        }
+    }
+
+    void memOpen(int type, String key) {
+        memNav.push(type, key);
+        memError = "";
+        fillMemory();
+        memScroll.scrollTo(0, 0);
+        loadPage(false);
+    }
+
+    void memBack() {
+        if (memNav.back()) {
+            memError = "";
+            fillMemory();
+            loadPage(false);
+        }
+    }
+
+    /** Topics for the start page, and the open page's data (refresh = fetch again even when cached). */
+    void loadMemory(boolean refresh) {
+        if (refresh || memTopics == null) {
+            remote.kmem(remote.api::kmemTopics, r -> {
+                if (r.ok()) {
+                    memTopics = KmemMemoryModel.parseTopics(r.body.optJSONArray("topics"));
+                    if (memNav.current().type == KmemMemoryModel.Page.HOME) {
+                        memError = "";
+                    }
+                } else if (r.code != 401 && memNav.current().type == KmemMemoryModel.Page.HOME) {
+                    memError = KmemMemoryModel.errorLine(r.code, r.error());
+                }
+                fillMemory();
+            });
+        }
+        loadPage(refresh);
+    }
+
+    void loadPage(boolean refresh) {
+        KmemMemoryModel.Page p = memNav.current();
+        if (p.type == KmemMemoryModel.Page.TOPIC && (refresh || !topicCache.containsKey(p.key))) {
+            remote.kmem(() -> remote.api.kmemGet(p.key), r -> {
+                if (r.ok()) {
+                    topicCache.put(p.key, KmemMemoryModel.parseTopicView(r.body));
+                    memError = "";
+                } else if (r.code != 401) {
+                    memError = KmemMemoryModel.errorLine(r.code, r.error());
+                }
+                fillMemory();
+            });
+        } else if (p.type == KmemMemoryModel.Page.FACT && (refresh || !factCache.containsKey(p.key))) {
+            remote.kmem(() -> remote.api.kmemFact(p.key), r -> {
+                KmemMemoryModel.Detail d = r.ok() ? KmemMemoryModel.parseDetail(r.body) : null;
+                if (d != null) {
+                    factCache.put(p.key, d);
+                    memError = "";
+                } else if (r.code != 401) {
+                    memError = KmemMemoryModel.errorLine(r.code, r.error());
+                }
+                fillMemory();
+            });
+        }
+    }
+
+    // search: debounced, at most one find per second, 429 waits for Retry-After
+
+    void onMemQuery(String q) {
+        lastTyped = System.currentTimeMillis();
+        memCol.removeCallbacks(findRun);
+        findSeq++;
+        if (!KmemMemoryModel.validQuery(q)) {
+            memResults = null;
+            memFor = "";
+            memError = "";
+            fillMemory();
+            return;
+        }
+        fillMemory();
+        memCol.postDelayed(findRun, KmemMemoryModel.findDelayMs(lastTyped, lastTyped, lastFind, blockedUntil));
+    }
+
+    void runFind() {
+        String q = memSearch.getText().toString().trim();
+        if (!KmemMemoryModel.validQuery(q)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long wait = KmemMemoryModel.findDelayMs(now, lastTyped, lastFind, blockedUntil);
+        if (wait > 0) {
+            memCol.postDelayed(findRun, wait);
+            return;
+        }
+        lastFind = now;
+        int seq = ++findSeq;
+        remote.kmem(() -> remote.api.kmemFind(q), r -> {
+            if (seq != findSeq) {
+                return; // typed on meanwhile; a newer find is scheduled
+            }
+            if (r.ok()) {
+                memResults = KmemMemoryModel.parseFacts(r.body.optJSONArray("facts"));
+                memTruncated = r.body.optBoolean("truncated");
+                memFor = q;
+                memError = "";
+            } else if (r.code == 429) {
+                blockedUntil = System.currentTimeMillis() + PhoneApi.retryAfterMs(r.body == null ? 1 : r.body.optInt("retryAfter", 1));
+                memCol.postDelayed(findRun, KmemMemoryModel.findDelayMs(System.currentTimeMillis(), lastTyped, lastFind, blockedUntil));
+            } else if (r.code != 401) {
+                memError = KmemMemoryModel.errorLine(r.code, r.error());
+                memResults = null;
+            }
+            fillMemory();
+        });
     }
 }
