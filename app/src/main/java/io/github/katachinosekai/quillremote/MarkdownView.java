@@ -1,10 +1,8 @@
 package io.github.katachinosekai.quillremote;
 
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.method.LinkMovementMethod;
@@ -31,6 +29,8 @@ final class MarkdownView extends LinearLayout {
     float sp = 15f;
     int gravity = android.view.Gravity.START;
     String shown;
+    /** Opens file links (null = file links stay plain text; web links need no host). */
+    LinkActions.Host links;
 
     MarkdownView(Context c) {
         super(c);
@@ -228,7 +228,7 @@ final class MarkdownView extends LinearLayout {
                     sb.setSpan(new android.text.style.QuoteSpan(MainActivity.ACCENT, dp(3), dp(10)), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
                 t.setText(sb);
-                if (hasLink(b.runs)) {
+                if (sb.getSpans(0, sb.length(), ClickableSpan.class).length > 0) {
                     t.setMovementMethod(LinkMovementMethod.getInstance());
                 }
                 return t;
@@ -242,17 +242,6 @@ final class MarkdownView extends LinearLayout {
         SpannableStringBuilder sb = new SpannableStringBuilder();
         m.runs(sb, Markdown.inline(md));
         return sb;
-    }
-
-    static boolean hasLink(List<Markdown.Run> runs) {
-        if (runs != null) {
-            for (Markdown.Run r : runs) {
-                if (r.link != null) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     void runs(SpannableStringBuilder sb, List<Markdown.Run> runs) {
@@ -279,22 +268,42 @@ final class MarkdownView extends LinearLayout {
                 sb.setSpan(new RelativeSizeSpan(0.9f), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (r.link != null) {
-                final String url = r.link;
-                sb.setSpan(new ClickableSpan() {
-                    @Override
-                    public void onClick(View w) {
-                        Uri u = Uri.parse(url);
-                        if ("https".equals(u.getScheme()) || "http".equals(u.getScheme())) {
-                            try {
-                                w.getContext().startActivity(new Intent(Intent.ACTION_VIEW, u));
-                            } catch (android.content.ActivityNotFoundException ignored) {
-                            }
-                        }
+                Links.Link cl = Links.classify(r.link);
+                if (linkable(cl)) {
+                    linkSpan(sb, s, e, cl);
+                }
+            } else if ((r.style & Markdown.CODE_SPAN) != 0) {
+                // Inline code is a link only when the whole span is one path (decided, question 2).
+                Links.Link cl = Links.codePath(r.text);
+                if (cl != null && linkable(cl)) {
+                    linkSpan(sb, s, e, cl);
+                }
+            } else {
+                for (Links.Link cl : Links.prose(r.text)) {
+                    if (linkable(cl)) {
+                        linkSpan(sb, s + cl.a, s + cl.b, cl);
                     }
-                }, s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                sb.setSpan(new ForegroundColorSpan(MainActivity.ACCENT), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
             }
         }
+    }
+
+    /** Web and other-scheme links always; file and path links only while the host says files are on. */
+    boolean linkable(Links.Link l) {
+        if (l.kind.isEmpty()) {
+            return false;
+        }
+        return !(l.kind.equals(Links.FILE) || l.kind.equals(Links.PATH)) || (links != null && links.filesOn());
+    }
+
+    void linkSpan(SpannableStringBuilder sb, int s, int e, Links.Link l) {
+        sb.setSpan(new ClickableSpan() {
+            @Override
+            public void onClick(View w) {
+                LinkActions.click(w.getContext(), l, links);
+            }
+        }, s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        sb.setSpan(new ForegroundColorSpan(MainActivity.ACCENT), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     static String table(String raw) {

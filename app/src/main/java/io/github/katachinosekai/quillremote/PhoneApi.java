@@ -272,6 +272,11 @@ final class PhoneApi {
         return post("/phone/hello", obj("name", name, "app", app));
     }
 
+    /** A file the session mentioned (Quill Desktop file endpoint); path as found in the text, without the :N hint. */
+    Reply file(String id, String path) {
+        return get("/phone/session/" + enc(id) + "/file?path=" + enc(path), 20000);
+    }
+
     Reply sessions() {
         return get("/phone/sessions", 8000);
     }

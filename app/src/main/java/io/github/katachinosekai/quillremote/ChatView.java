@@ -160,6 +160,8 @@ final class ChatView extends LinearLayout {
     final LinearLayout pauseBar;
     final TextView pauseText;
     Actions actions;
+    /** Opens file links (null = file links stay plain text); set for the session chat only. */
+    LinkActions.Host linkHost;
     float sp = 15f;
     final Map<Integer, View> views = new HashMap<>();
     final Map<Integer, String> sigs = new HashMap<>();
@@ -1023,6 +1025,12 @@ final class ChatView extends LinearLayout {
     }
 
     /** ⚙ Message times: re-render every message with or without its time. */
+    /** Re-render the messages after the file capability changed (file links appear or turn into plain text). */
+    void relink() {
+        sigs.clear();
+        setItems(items);
+    }
+
     void setShowTimes(boolean on) {
         if (on == showTimes) {
             return;
@@ -1046,6 +1054,7 @@ final class ChatView extends LinearLayout {
         col.setOrientation(VERTICAL);
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp;
+        md.links = linkHost;
         md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
         String shown = expanded.contains(it.seq) ? it.text : fold(it.text);
         // Paragraph by paragraph, the same layout a streaming reply has (Quill Desktop's markdownBlocks), so nothing
@@ -1062,6 +1071,7 @@ final class ChatView extends LinearLayout {
             for (int k = 0; k < paras.size(); k++) {
                 MarkdownView pm = new MarkdownView(getContext());
                 pm.sp = sp;
+                pm.links = linkHost;
                 pm.gravity = md.gravity;
                 pm.setMarkdown(paras.get(k));
                 col.addView(pm, paraParams(k));
@@ -1277,6 +1287,7 @@ final class ChatView extends LinearLayout {
         LinearLayout c = card(pending(it) ? planTitle(it.text) : "Plan: " + stateLabel(it.state), pending(it) ? MainActivity.ACCENT : 0xFF444440);
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp - scale;
+        md.links = linkHost;
         md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
         md.setMarkdown(it.text);
         md.setPadding(0, dp(8), 0, 0);
@@ -1620,6 +1631,7 @@ final class ChatView extends LinearLayout {
     MarkdownView markdown(String text) {
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp;
+        md.links = linkHost;
         md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
         md.setMarkdown(text);
         return md;
@@ -1933,6 +1945,7 @@ final class ChatView extends LinearLayout {
         MarkdownView md() {
             MarkdownView m = new MarkdownView(getContext());
             m.sp = sp;
+            m.links = linkHost;
             m.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
             return m;
         }

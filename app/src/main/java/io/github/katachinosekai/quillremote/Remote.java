@@ -75,6 +75,23 @@ final class Remote implements ChatView.Actions {
     volatile Runnable onSettings;
     /** kmem (hello.kmem api >= 1 and on): the button's data. Written on the stream thread, read on the UI thread. */
     volatile boolean kmemOn;
+    /** Files (hello.files and the stream's "files" change): file links open only while api == 1 and on. */
+    volatile int filesApi;
+    volatile boolean filesOn;
+    final LinkActions.Host linkHost = new LinkActions.Host() {
+        @Override
+        public boolean filesOn() {
+            return filesApi == 1 && Remote.this.filesOn;
+        }
+
+        @Override
+        public void openFile(String path, int line, int lineEnd) {
+            String id = current;
+            if (id != null) {
+                new FileViewer(chat.getContext(), api, id, path, line, lineEnd, host::onLocked).show();
+            }
+        }
+    };
     volatile int kmemCount;
     volatile String kmemState = "", kmemWaiting = "";
     /** The assistant's epoch and rev from the last kmem stream change or overview (the open chat refetches when they move). */
@@ -96,6 +113,7 @@ final class Remote implements ChatView.Actions {
         this.appContext = chat.getContext().getApplicationContext();
         this.current = last;
         chat.actions = this;
+        chat.linkHost = linkHost;
     }
 
     void start() {
@@ -140,6 +158,7 @@ final class Remote implements ChatView.Actions {
                     hello = true;
                     control = h.body.optBoolean("control", true);
                     deskVersion = h.body.optString("quill", "");
+                    setFiles(h.body.optJSONObject("files"));
                     JSONObject km = h.body.optJSONObject("kmem");
                     boolean was = kmemOn;
                     kmemOn = km != null && KmemModels.showButton(km.optInt("api"), km.optBoolean("on"));
@@ -547,6 +566,9 @@ final class Remote implements ChatView.Actions {
                         kmemChanged();
                     }
                     break;
+                case "files":
+                    setFiles(c.optJSONObject("files"));
+                    break;
                 case "settings":
                     setSettings(c.optJSONObject("settings"));
                     break;
@@ -565,6 +587,16 @@ final class Remote implements ChatView.Actions {
                     fetch(id, false);
                 }
             });
+        }
+    }
+
+    /** Hello or stream: the file capability; file links in the open chat appear or turn into plain text. */
+    void setFiles(JSONObject f) {
+        boolean was = linkHost.filesOn();
+        filesApi = f == null ? 0 : f.optInt("api");
+        filesOn = f != null && f.optBoolean("on");
+        if (was != linkHost.filesOn()) {
+            ui.post(chat::relink);
         }
     }
 

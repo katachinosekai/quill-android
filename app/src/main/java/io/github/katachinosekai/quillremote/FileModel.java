@@ -108,14 +108,6 @@ final class FileModel {
         return (v == Math.rint(v) ? String.valueOf((long) v) : String.format(java.util.Locale.ROOT, "%.1f", v)) + " " + u[k];
     }
 
-    /** "/home/user/x" shortened with ~ when it starts with the home folder, else as is. */
-    static String shortPath(String path, String home) {
-        if (home != null && !home.isEmpty() && (path.equals(home) || path.startsWith(home + "/"))) {
-            return "~" + path.substring(home.length());
-        }
-        return path;
-    }
-
     /**
      * A short message for an error reply. http: the status (0 = unreachable), code: the error code, detail: its message
      * (names the rule on file_denied), retryAfter: seconds of a 429.

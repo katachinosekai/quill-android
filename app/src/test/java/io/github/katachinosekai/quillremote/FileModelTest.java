@@ -58,13 +58,6 @@ public class FileModelTest {
     }
 
     @Test
-    public void shortPaths() {
-        assertEquals("~/p/a.go", FileModel.shortPath("/home/user/p/a.go", "/home/user"));
-        assertEquals("/home/username/a", FileModel.shortPath("/home/username/a", "/home/user"));
-        assertEquals("/tmp/a", FileModel.shortPath("/tmp/a", ""));
-    }
-
-    @Test
     public void errorMessages() {
         assertEquals("Turn on 'Let this device open files' for this phone in Quill Desktop → Devices",
                 FileModel.errorMessage(403, "files_off", "", 0));
