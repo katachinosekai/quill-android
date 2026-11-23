@@ -198,6 +198,23 @@ final class QuestionCards {
         return out;
     }
 
+    /**
+     * The extra fields of an approvePlan go-ahead without the approval question's own buttons: the optional quick
+     * choice (an index into request.choices, or null) and the card's "Changes (optional)" text, which Quill Desktop
+     * sends to Claude with the go-ahead.
+     */
+    static Map<String, Object> goAheadExtras(Integer choice, String text) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (choice != null) {
+            out.put("choice", choice);
+        }
+        String t = text == null ? "" : text.trim();
+        if (!t.isEmpty()) {
+            out.put("text", t);
+        }
+        return out;
+    }
+
     /** "Answers to your questions: 1. text: answer; ..." for the questions that have an answer ("" if none). */
     static String describe(List<Question> qs, Map<String, Object> answers) {
         List<String> parts = new ArrayList<>();

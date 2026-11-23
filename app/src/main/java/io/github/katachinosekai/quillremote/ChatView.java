@@ -1301,7 +1301,7 @@ final class ChatView extends LinearLayout {
                 for (int k = 0; k < n; k++) {
                     int index = k;
                     TextView b = button("Approve: " + opts.optString(k), GREEN);
-                    b.setOnClickListener(v -> act(it, "approvePlan", choiceExtra(index)));
+                    b.setOnClickListener(v -> act(it, "approvePlan", toJson(QuestionCards.goAheadExtras(index, fb.getText().toString()))));
                     LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
                     lp.topMargin = dp(8);
                     (rec < 0 || k == rec ? col : others).addView(b, lp);
@@ -1636,7 +1636,7 @@ final class ChatView extends LinearLayout {
         c.addView(note);
         LinearLayout row = buttons(c);
         addButton(row, "Approve plan & send answers", GREEN, v -> {
-            JSONObject extra = new JSONObject();
+            JSONObject extra = toJson(QuestionCards.goAheadExtras(null, fb.getText().toString()));
             try {
                 extra.put("planAnswers", planAnswersJson(it));
             } catch (org.json.JSONException ignored) {
@@ -1728,10 +1728,12 @@ final class ChatView extends LinearLayout {
         act(it, QuestionCards.action(pick), extra);
     }
 
-    static JSONObject choiceExtra(int index) {
+    static JSONObject toJson(Map<String, Object> m) {
         JSONObject o = new JSONObject();
         try {
-            o.put("choice", index);
+            for (Map.Entry<String, Object> e : m.entrySet()) {
+                o.put(e.getKey(), e.getValue());
+            }
         } catch (org.json.JSONException ignored) {
         }
         return o;

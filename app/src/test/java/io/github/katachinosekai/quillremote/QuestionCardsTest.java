@@ -111,6 +111,17 @@ public class QuestionCardsTest {
     }
 
     @Test
+    public void goAheadExtrasCarryChangesText() {
+        Map<String, Object> e = QuestionCards.goAheadExtras(2, "  keep it small ");
+        assertEquals(2, e.get("choice"));
+        assertEquals("keep it small", e.get("text"));
+        Map<String, Object> none = QuestionCards.goAheadExtras(null, "   ");
+        assertTrue(none.isEmpty());
+        assertEquals("x", QuestionCards.goAheadExtras(null, "x").get("text"));
+        assertFalse(QuestionCards.goAheadExtras(null, "x").containsKey("choice"));
+    }
+
+    @Test
     public void goAheadWithoutAnswersHasNoPlanAnswers() {
         Map<String, Object> body = QuestionCards.body(QuestionCards.parseApproval(approvalMap()), 1, new ArrayList<>(), new HashMap<>(), " fix it ");
         assertEquals(1, body.get("approvalChoice"));
