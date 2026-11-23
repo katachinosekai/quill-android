@@ -772,7 +772,7 @@ final class ChatView extends LinearLayout {
         java.util.Set<Integer> hiddenPlans = new java.util.HashSet<>();
         for (int i = 0; i < next.size(); i++) {
             Item p = next.get(i);
-            if (!"plan".equals(p.kind) || !pending(p) || p.planQuestions == null || p.planQuestions.length() == 0) {
+            if (!"plan".equals(p.kind) || !pending(p)) {
                 continue;
             }
             Item reply = null;
@@ -788,7 +788,7 @@ final class ChatView extends LinearLayout {
             if (reply == null || reply.streaming) {
                 continue;
             }
-            int n = p.planQuestions.length();
+            int n = p.planQuestions == null ? 0 : p.planQuestions.length();
             int[] nums = new int[n];
             String[] texts = new String[n];
             for (int k = 0; k < n; k++) {
@@ -796,7 +796,7 @@ final class ChatView extends LinearLayout {
                 nums[k] = q == null ? 0 : q.optInt("num", 0);
                 texts[k] = q == null ? "" : q.optString("text");
             }
-            int[][] m = PlanOverlay.match(reply.text, nums, texts);
+            int[][] m = PlanOverlay.matchPlan(reply.text, nums, texts, planTitle(p.text));
             if (m != null) {
                 ovPlan.put(reply.seq, p);
                 ovMatch.put(reply.seq, m);
@@ -1331,49 +1331,59 @@ final class ChatView extends LinearLayout {
         if (pending(it)) {
             EditText fb = changesField(it);
             c.addView(fb);
-            JSONArray opts = it.planChoices;
-            int n = opts == null ? 0 : opts.length();
             if (it.planQuestions != null && it.planQuestions.length() > 0) {
                 planQuestions(c, it, fb);
-            } else if (it.planApproval != null) {
-                planButtons(c, it, fb);
-            } else if (n > 0) {
-                // Like Quill Desktop's plan card: approve with the answer to the plan's question.
-                int rec = it.planRecommended >= 0 && it.planRecommended < n ? it.planRecommended : -1;
-                LinearLayout col = new LinearLayout(getContext());
-                col.setOrientation(VERTICAL);
-                c.addView(col);
-                LinearLayout others = new LinearLayout(getContext());
-                others.setOrientation(VERTICAL);
-                for (int k = 0; k < n; k++) {
-                    int index = k;
-                    TextView b = button("Approve: " + opts.optString(k), GREEN);
-                    b.setOnClickListener(v -> act(it, "approvePlan", toJson(QuestionCards.goAheadExtras(index, fb.getText().toString()))));
-                    LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-                    lp.topMargin = dp(8);
-                    (rec < 0 || k == rec ? col : others).addView(b, lp);
-                }
-                if (rec >= 0 && n > 1) {
-                    TextView more = button("Other answers…", MainActivity.MUTED);
-                    others.setVisibility(GONE);
-                    more.setOnClickListener(v -> {
-                        others.setVisibility(VISIBLE);
-                        more.setVisibility(GONE);
-                    });
-                    LayoutParams ml = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-                    ml.topMargin = dp(8);
-                    col.addView(more, ml);
-                    col.addView(others);
-                }
-                LinearLayout row = buttons(c);
-                addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
             } else {
-                LinearLayout row = buttons(c);
-                addButton(row, "Approve", GREEN, v -> act(it, "approvePlan", extraText(fb)));
-                addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+                planActions(c, it, fb);
             }
         }
         return spaced(c, 12);
+    }
+
+    /**
+     * A pending plan's buttons when it has no questions of its own: the approval question's options, the plan
+     * question's choices, or plain Approve / Keep planning (card or overlay).
+     */
+    void planActions(LinearLayout c, Item it, EditText fb) {
+        JSONArray opts = it.planChoices;
+        int n = opts == null ? 0 : opts.length();
+        if (it.planApproval != null) {
+            planButtons(c, it, fb);
+        } else if (n > 0) {
+            // Like Quill Desktop's plan card: approve with the answer to the plan's question.
+            int rec = it.planRecommended >= 0 && it.planRecommended < n ? it.planRecommended : -1;
+            LinearLayout col = new LinearLayout(getContext());
+            col.setOrientation(VERTICAL);
+            c.addView(col);
+            LinearLayout others = new LinearLayout(getContext());
+            others.setOrientation(VERTICAL);
+            for (int k = 0; k < n; k++) {
+                int index = k;
+                TextView b = button("Approve: " + opts.optString(k), GREEN);
+                b.setOnClickListener(v -> act(it, "approvePlan", toJson(QuestionCards.goAheadExtras(index, fb.getText().toString()))));
+                LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+                lp.topMargin = dp(8);
+                (rec < 0 || k == rec ? col : others).addView(b, lp);
+            }
+            if (rec >= 0 && n > 1) {
+                TextView more = button("Other answers…", MainActivity.MUTED);
+                others.setVisibility(GONE);
+                more.setOnClickListener(v -> {
+                    others.setVisibility(VISIBLE);
+                    more.setVisibility(GONE);
+                });
+                LayoutParams ml = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+                ml.topMargin = dp(8);
+                col.addView(more, ml);
+                col.addView(others);
+            }
+            LinearLayout row = buttons(c);
+            addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+        } else {
+            LinearLayout row = buttons(c);
+            addButton(row, "Approve", GREEN, v -> act(it, "approvePlan", extraText(fb)));
+            addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+        }
     }
 
     static String planTitle(String text) {
@@ -1636,7 +1646,7 @@ final class ChatView extends LinearLayout {
         Map<String, Object> ans = answers(plan);
         int at = 0;
         for (int k = 0; k < m.length; k++) {
-            JSONObject q = plan.planQuestions.optJSONObject(k);
+            JSONObject q = plan.planQuestions == null ? null : plan.planQuestions.optJSONObject(k);
             String part = PlanOverlay.lines(reply.text, at, m[k][1]);
             if (!part.trim().isEmpty()) {
                 col.addView(markdown(part));
@@ -1657,7 +1667,11 @@ final class ChatView extends LinearLayout {
         LinearLayout c = card(planTitle(plan.text), MainActivity.ACCENT);
         EditText fb = changesField(plan);
         c.addView(fb);
-        planButtons(c, plan, fb);
+        if (m.length == 0) {
+            planActions(c, plan, fb);
+        } else {
+            planButtons(c, plan, fb);
+        }
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         cl.topMargin = dp(10);
         col.addView(c, cl);

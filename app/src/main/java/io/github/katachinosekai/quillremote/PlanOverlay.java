@@ -33,8 +33,8 @@ final class PlanOverlay {
 
     /**
      * Each question's lines in the reply as {start, end} line indexes (end exclusive; a question runs until a blank
-     * line or the next numbered line), in order; null when any question isn't numbered, isn't found, or they are out
-     * of order.
+     * line or the next numbered line), in order; null when any question isn't found or they are out of order. A
+     * question the plan gives no number is found by its text alone.
      */
     static int[][] match(String reply, int[] nums, String[] texts) {
         if (reply == null || nums.length == 0 || nums.length != texts.length) {
@@ -44,14 +44,15 @@ final class PlanOverlay {
         int[][] out = new int[nums.length][];
         int from = 0;
         for (int q = 0; q < nums.length; q++) {
-            if (nums[q] <= 0) {
-                return null;
-            }
             int found = -1;
             for (int i = from; i < lines.length && found < 0; i++) {
                 Matcher m = NUMBERED.matcher(lines[i].replace("**", ""));
-                if (m.matches() && Integer.parseInt(m.group(1)) == nums[q] && same(m.group(2), texts[q])) {
-                    found = i;
+                if (nums[q] > 0) {
+                    if (m.matches() && Integer.parseInt(m.group(1)) == nums[q] && same(m.group(2), texts[q])) {
+                        found = i;
+                    }
+                } else if (same(m.matches() ? m.group(2) : lines[i].replace("**", "").replaceAll("^\\s*[-*+]\\s+", ""), texts[q])) {
+                    found = i; // an unnumbered question: found by its text alone
                 }
             }
             if (found < 0) {
@@ -65,6 +66,30 @@ final class PlanOverlay {
             from = end;
         }
         return out;
+    }
+
+    /**
+     * The overlay's match for a plan: its questions' lines (see match), or for a plan without questions an empty
+     * array when the reply holds the plan's approval question (title) itself; null when the reply can't be matched
+     * (the card is used then).
+     */
+    static int[][] matchPlan(String reply, int[] nums, String[] texts, String title) {
+        if (reply == null || reply.trim().isEmpty()) {
+            return null;
+        }
+        if (nums.length > 0) {
+            return match(reply, nums, texts);
+        }
+        String t = norm(title);
+        if (t.isEmpty()) {
+            return null;
+        }
+        for (String line : reply.split("\n", -1)) {
+            if (norm(line).contains(t)) {
+                return new int[0][];
+            }
+        }
+        return null;
     }
 
     /** Lines [from, to) of text joined back. */

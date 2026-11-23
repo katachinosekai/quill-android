@@ -19,8 +19,25 @@ public class PlanOverlayTest {
     @Test
     public void fallsBackWhenSomethingDoesntLineUp() {
         assertNull(PlanOverlay.match(REPLY, new int[]{1, 3}, new String[]{"Should the beta channel get it first?", "Which build?"}));
-        assertNull(PlanOverlay.match(REPLY, new int[]{0}, new String[]{"Should the beta channel get it first?"}));
+        assertNull(PlanOverlay.match(REPLY, new int[]{0}, new String[]{"Something else entirely here"}));
         assertNull(PlanOverlay.match(REPLY, new int[]{1}, new String[]{"Something else entirely here"}));
         assertNull(PlanOverlay.match("No questions here.", new int[]{1}, new String[]{"Should the beta channel get it first?"}));
+    }
+
+    @Test
+    public void unnumberedQuestionsAreFoundByTheirText() {
+        int[][] m = PlanOverlay.match(REPLY, new int[]{0, 0},
+                new String[]{"Should the beta channel get it first? Yes or no?", "Which build? Stable or beta?"});
+        assertArrayEquals(new int[]{6, 7}, m[0]);
+        assertArrayEquals(new int[]{7, 10}, m[1]);
+    }
+
+    @Test
+    public void aPlanWithoutQuestionsOverlaysWhenTheReplyHoldsItsApprovalQuestion() {
+        String reply = "Plan:\n1. Edit x.\n\n**Can I run steps 1-2? Yes (recommended) or no?**";
+        assertArrayEquals(new int[0][], PlanOverlay.matchPlan(reply, new int[0], new String[0], "Can I run steps 1-2? Yes (recommended) or no?"));
+        assertNull(PlanOverlay.matchPlan("Running the checks first.", new int[0], new String[0], "Can I run steps 1-2? Yes (recommended) or no?"));
+        assertNull(PlanOverlay.matchPlan(reply, new int[0], new String[0], ""));
+        assertArrayEquals(new int[]{6, 7}, PlanOverlay.matchPlan(REPLY, new int[]{1}, new String[]{"Should the beta channel get it first?"}, "x?")[0]);
     }
 }
