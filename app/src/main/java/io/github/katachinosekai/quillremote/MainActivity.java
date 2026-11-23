@@ -867,7 +867,7 @@ public class MainActivity extends Activity {
                         continue;
                     }
                     String hn = h.optString("name");
-                    String saved = h.optLong("savedMs") > 0 ? " · saved " + TimeFmt.format("MMM d ", h.optLong("savedMs")) : "";
+                    String saved = h.optLong("savedMs") > 0 ? " · saved " + TimeFmt.format("MMMd", h.optLong("savedMs")) : "";
                     org.json.JSONObject open = h.optJSONObject("openIn");
                     if (open != null) {
                         TextView t = new TextView(this);

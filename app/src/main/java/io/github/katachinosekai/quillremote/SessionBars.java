@@ -137,7 +137,7 @@ class SessionBars {
             return "";
         }
         boolean far = t * 1000 - System.currentTimeMillis() > 20 * 3600_000L;
-        return " · resets " + TimeFmt.format(far ? "EEE " : "", t * 1000);
+        return " · resets " + TimeFmt.format(far ? "EEE" : "", t * 1000);
     }
 
     static final class UsageItem {
