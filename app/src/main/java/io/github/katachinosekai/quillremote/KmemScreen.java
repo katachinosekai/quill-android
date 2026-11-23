@@ -142,6 +142,10 @@ class KmemScreen {
         holder = new FrameLayout(a);
         holder.setBackgroundColor(MainActivity.BG);
         dialog.setContentView(holder);
+        InsetPad.install(holder);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
         // Back inside the Memory tab goes up one page (fact -> topic -> start) before it closes the screen.
         dialog.setOnKeyListener((d, key, ev) -> {
             if (key == android.view.KeyEvent.KEYCODE_BACK && tab == TAB_MEMORY && memNav.canBack()) {
