@@ -1,0 +1,731 @@
+{
+ "version": 1,
+ "about": "Shared link detection cases for Quill Desktop (cmd/quill/links_test.go) and Quill Android (LinksTest). Rules: docs/design/phone-links.md section 3. Each case: the item text and every link found in it, in order. start/end: the tappable span as Unicode code point offsets into text (end exclusive); text: that span. kind: web | file | path | other. target: web/other: the URL as written; file: the percent-decoded absolute path; path: the path as written (with ~, without the line hint). label: the Markdown link label. line/lineEnd: a :N, :N-M or :N:C hint (paths only). Absent fields mean empty or 0. Changing this file needs a new docs/phone-links-cases.sha256.",
+ "cases": [
+  {
+   "name": "bare web link, trailing dot dropped",
+   "text": "Open https://login.example.com/a/gb77 now.",
+   "links": [
+    {
+     "kind": "web",
+     "start": 5,
+     "end": 37,
+     "text": "https://login.example.com/a/gb77",
+     "target": "https://login.example.com/a/gb77"
+    }
+   ]
+  },
+  {
+   "name": "bold around a URL",
+   "text": "see **https://x.io/a**",
+   "links": [
+    {
+     "kind": "web",
+     "start": 6,
+     "end": 20,
+     "text": "https://x.io/a",
+     "target": "https://x.io/a"
+    }
+   ]
+  },
+  {
+   "name": "URL in parentheses",
+   "text": "(https://x.io/p)",
+   "links": [
+    {
+     "kind": "web",
+     "start": 1,
+     "end": 15,
+     "text": "https://x.io/p",
+     "target": "https://x.io/p"
+    }
+   ]
+  },
+  {
+   "name": "URL in inline code is not a link",
+   "text": "run `curl https://x.io` first",
+   "links": []
+  },
+  {
+   "name": "Markdown link and angle autolink",
+   "text": "[docs](https://x.io/d) and <https://x.io/e>",
+   "links": [
+    {
+     "kind": "web",
+     "start": 0,
+     "end": 22,
+     "text": "[docs](https://x.io/d)",
+     "target": "https://x.io/d",
+     "label": "docs"
+    },
+    {
+     "kind": "web",
+     "start": 27,
+     "end": 43,
+     "text": "<https://x.io/e>",
+     "target": "https://x.io/e"
+    }
+   ]
+  },
+  {
+   "name": "file URL is percent-decoded",
+   "text": "file:///tmp/a%20b.png, ok",
+   "links": [
+    {
+     "kind": "file",
+     "start": 0,
+     "end": 21,
+     "text": "file:///tmp/a%20b.png",
+     "target": "/tmp/a b.png"
+    }
+   ]
+  },
+  {
+   "name": "absolute path, trailing dot dropped",
+   "text": "edited /home/user/Projects/demo/main.go.",
+   "links": [
+    {
+     "kind": "path",
+     "start": 7,
+     "end": 39,
+     "text": "/home/user/Projects/demo/main.go",
+     "target": "/home/user/Projects/demo/main.go"
+    }
+   ]
+  },
+  {
+   "name": "home path with a line hint",
+   "text": "see ~/notes/todo.md:12",
+   "links": [
+    {
+     "kind": "path",
+     "start": 4,
+     "end": 22,
+     "text": "~/notes/todo.md:12",
+     "target": "~/notes/todo.md",
+     "line": 12
+    }
+   ]
+  },
+  {
+   "name": "fractions, and/or and a lone slash are not paths",
+   "text": "and/or 1/2 /",
+   "links": []
+  },
+  {
+   "name": "one-line fence is code",
+   "text": "```fenced /home/user/x```",
+   "links": []
+  },
+  {
+   "name": "Markdown link to a path",
+   "text": "[the plan](/home/user/Projects/demo/PLAN.md)",
+   "links": [
+    {
+     "kind": "path",
+     "start": 0,
+     "end": 44,
+     "text": "[the plan](/home/user/Projects/demo/PLAN.md)",
+     "target": "/home/user/Projects/demo/PLAN.md",
+     "label": "the plan"
+    }
+   ]
+  },
+  {
+   "name": "other scheme in a Markdown link",
+   "text": "[call](tel:+10000000000)",
+   "links": [
+    {
+     "kind": "other",
+     "start": 0,
+     "end": 24,
+     "text": "[call](tel:+10000000000)",
+     "target": "tel:+10000000000",
+     "label": "call"
+    }
+   ]
+  },
+  {
+   "name": "line ranges, line:column, trailing colon",
+   "text": "lines /home/user/a.go:10-20 and /home/user/b.go:7:3, then /home/user/c.go:",
+   "links": [
+    {
+     "kind": "path",
+     "start": 6,
+     "end": 27,
+     "text": "/home/user/a.go:10-20",
+     "target": "/home/user/a.go",
+     "line": 10,
+     "lineEnd": 20
+    },
+    {
+     "kind": "path",
+     "start": 32,
+     "end": 51,
+     "text": "/home/user/b.go:7:3",
+     "target": "/home/user/b.go",
+     "line": 7
+    },
+    {
+     "kind": "path",
+     "start": 58,
+     "end": 73,
+     "text": "/home/user/c.go",
+     "target": "/home/user/c.go"
+    }
+   ]
+  },
+  {
+   "name": "inline code that is one whole path",
+   "text": "open `/home/user/Projects/demo/main.go:40` now",
+   "links": [
+    {
+     "kind": "path",
+     "start": 6,
+     "end": 41,
+     "text": "/home/user/Projects/demo/main.go:40",
+     "target": "/home/user/Projects/demo/main.go",
+     "line": 40
+    }
+   ]
+  },
+  {
+   "name": "inline code with more than a path, relative path in code",
+   "text": "not `cat /home/user/x.go` and not `src/main.go`",
+   "links": []
+  },
+  {
+   "name": "slash commands, // and one-segment paths are not paths",
+   "text": "type /clear or //comment or /tmp",
+   "links": []
+  },
+  {
+   "name": "emphasis around paths",
+   "text": "**/home/user/x.go** and *~/y.md*",
+   "links": [
+    {
+     "kind": "path",
+     "start": 2,
+     "end": 17,
+     "text": "/home/user/x.go",
+     "target": "/home/user/x.go"
+    },
+    {
+     "kind": "path",
+     "start": 25,
+     "end": 31,
+     "text": "~/y.md",
+     "target": "~/y.md"
+    }
+   ]
+  },
+  {
+   "name": "relative paths and anchors are not links",
+   "text": "relative src/main.go and [rel](src/main.go) and [anchor](#top)",
+   "links": []
+  },
+  {
+   "name": "quillpair is not a link; other schemes; file://localhost",
+   "text": "[pair](quillpair:abc) [mail](mailto:user@example.com) [js](javascript:void) <file://localhost/home/user/r.txt>",
+   "links": [
+    {
+     "kind": "other",
+     "start": 22,
+     "end": 53,
+     "text": "[mail](mailto:user@example.com)",
+     "target": "mailto:user@example.com",
+     "label": "mail"
+    },
+    {
+     "kind": "other",
+     "start": 54,
+     "end": 75,
+     "text": "[js](javascript:void)",
+     "target": "javascript:void",
+     "label": "js"
+    },
+    {
+     "kind": "file",
+     "start": 76,
+     "end": 110,
+     "text": "<file://localhost/home/user/r.txt>",
+     "target": "/home/user/r.txt"
+    }
+   ]
+  },
+  {
+   "name": "fenced block lines are code",
+   "text": "```\n/home/user/in/fence.go\nhttps://x.io/in\n```\nafter /home/user/out/fence.go",
+   "links": [
+    {
+     "kind": "path",
+     "start": 53,
+     "end": 76,
+     "text": "/home/user/out/fence.go",
+     "target": "/home/user/out/fence.go"
+    }
+   ]
+  },
+  {
+   "name": "tilde fence, indented and tab-indented code",
+   "text": "~~~go\n/home/user/in/tilde.go\n~~~\n    /home/user/indented/code.go\n\t/home/user/tab/code.go\nok ~/z/w.txt",
+   "links": [
+    {
+     "kind": "path",
+     "start": 92,
+     "end": 101,
+     "text": "~/z/w.txt",
+     "target": "~/z/w.txt"
+    }
+   ]
+  },
+  {
+   "name": "non-ASCII text: ranges count code points",
+   "text": "Grüße: café /home/user/naïve/ü.txt und https://x.io/ü?q=1",
+   "links": [
+    {
+     "kind": "path",
+     "start": 12,
+     "end": 34,
+     "text": "/home/user/naïve/ü.txt",
+     "target": "/home/user/naïve/ü.txt"
+    },
+    {
+     "kind": "web",
+     "start": 39,
+     "end": 57,
+     "text": "https://x.io/ü?q=1",
+     "target": "https://x.io/ü?q=1"
+    }
+   ]
+  },
+  {
+   "name": "path in parentheses; a path label keeps the web target",
+   "text": "(see /home/user/a/b.txt) and [/home/user/c/d.txt](https://x.io/other)",
+   "links": [
+    {
+     "kind": "path",
+     "start": 5,
+     "end": 23,
+     "text": "/home/user/a/b.txt",
+     "target": "/home/user/a/b.txt"
+    },
+    {
+     "kind": "web",
+     "start": 29,
+     "end": 69,
+     "text": "[/home/user/c/d.txt](https://x.io/other)",
+     "target": "https://x.io/other",
+     "label": "/home/user/c/d.txt"
+    }
+   ]
+  },
+  {
+   "name": "the path part of a web URL is not a path",
+   "text": "url path https://x.io/home/user/x.go is web only",
+   "links": [
+    {
+     "kind": "web",
+     "start": 9,
+     "end": 36,
+     "text": "https://x.io/home/user/x.go",
+     "target": "https://x.io/home/user/x.go"
+    }
+   ]
+  },
+  {
+   "name": "file URL with a host or no path is not a link",
+   "text": "file://remote.host/x/y and file:///etc/hosts. and file:///",
+   "links": [
+    {
+     "kind": "file",
+     "start": 27,
+     "end": 44,
+     "text": "file:///etc/hosts",
+     "target": "/etc/hosts"
+    }
+   ]
+  },
+  {
+   "name": "paths after = in options",
+   "text": "--out=/home/user/out/log.txt x=~/a/b",
+   "links": [
+    {
+     "kind": "path",
+     "start": 6,
+     "end": 28,
+     "text": "/home/user/out/log.txt",
+     "target": "/home/user/out/log.txt"
+    },
+    {
+     "kind": "path",
+     "start": 31,
+     "end": 36,
+     "text": "~/a/b",
+     "target": "~/a/b"
+    }
+   ]
+  },
+  {
+   "name": "unclosed inline code stays code",
+   "text": "unclosed `code /home/user/u/v.txt",
+   "links": []
+  },
+  {
+   "name": "at most 50 links per item",
+   "text": "https://x.io/1 https://x.io/2 https://x.io/3 https://x.io/4 https://x.io/5 https://x.io/6 https://x.io/7 https://x.io/8 https://x.io/9 https://x.io/10 https://x.io/11 https://x.io/12 https://x.io/13 https://x.io/14 https://x.io/15 https://x.io/16 https://x.io/17 https://x.io/18 https://x.io/19 https://x.io/20 https://x.io/21 https://x.io/22 https://x.io/23 https://x.io/24 https://x.io/25 https://x.io/26 https://x.io/27 https://x.io/28 https://x.io/29 https://x.io/30 https://x.io/31 https://x.io/32 https://x.io/33 https://x.io/34 https://x.io/35 https://x.io/36 https://x.io/37 https://x.io/38 https://x.io/39 https://x.io/40 https://x.io/41 https://x.io/42 https://x.io/43 https://x.io/44 https://x.io/45 https://x.io/46 https://x.io/47 https://x.io/48 https://x.io/49 https://x.io/50 https://x.io/51",
+   "links": [
+    {
+     "kind": "web",
+     "start": 0,
+     "end": 14,
+     "text": "https://x.io/1",
+     "target": "https://x.io/1"
+    },
+    {
+     "kind": "web",
+     "start": 15,
+     "end": 29,
+     "text": "https://x.io/2",
+     "target": "https://x.io/2"
+    },
+    {
+     "kind": "web",
+     "start": 30,
+     "end": 44,
+     "text": "https://x.io/3",
+     "target": "https://x.io/3"
+    },
+    {
+     "kind": "web",
+     "start": 45,
+     "end": 59,
+     "text": "https://x.io/4",
+     "target": "https://x.io/4"
+    },
+    {
+     "kind": "web",
+     "start": 60,
+     "end": 74,
+     "text": "https://x.io/5",
+     "target": "https://x.io/5"
+    },
+    {
+     "kind": "web",
+     "start": 75,
+     "end": 89,
+     "text": "https://x.io/6",
+     "target": "https://x.io/6"
+    },
+    {
+     "kind": "web",
+     "start": 90,
+     "end": 104,
+     "text": "https://x.io/7",
+     "target": "https://x.io/7"
+    },
+    {
+     "kind": "web",
+     "start": 105,
+     "end": 119,
+     "text": "https://x.io/8",
+     "target": "https://x.io/8"
+    },
+    {
+     "kind": "web",
+     "start": 120,
+     "end": 134,
+     "text": "https://x.io/9",
+     "target": "https://x.io/9"
+    },
+    {
+     "kind": "web",
+     "start": 135,
+     "end": 150,
+     "text": "https://x.io/10",
+     "target": "https://x.io/10"
+    },
+    {
+     "kind": "web",
+     "start": 151,
+     "end": 166,
+     "text": "https://x.io/11",
+     "target": "https://x.io/11"
+    },
+    {
+     "kind": "web",
+     "start": 167,
+     "end": 182,
+     "text": "https://x.io/12",
+     "target": "https://x.io/12"
+    },
+    {
+     "kind": "web",
+     "start": 183,
+     "end": 198,
+     "text": "https://x.io/13",
+     "target": "https://x.io/13"
+    },
+    {
+     "kind": "web",
+     "start": 199,
+     "end": 214,
+     "text": "https://x.io/14",
+     "target": "https://x.io/14"
+    },
+    {
+     "kind": "web",
+     "start": 215,
+     "end": 230,
+     "text": "https://x.io/15",
+     "target": "https://x.io/15"
+    },
+    {
+     "kind": "web",
+     "start": 231,
+     "end": 246,
+     "text": "https://x.io/16",
+     "target": "https://x.io/16"
+    },
+    {
+     "kind": "web",
+     "start": 247,
+     "end": 262,
+     "text": "https://x.io/17",
+     "target": "https://x.io/17"
+    },
+    {
+     "kind": "web",
+     "start": 263,
+     "end": 278,
+     "text": "https://x.io/18",
+     "target": "https://x.io/18"
+    },
+    {
+     "kind": "web",
+     "start": 279,
+     "end": 294,
+     "text": "https://x.io/19",
+     "target": "https://x.io/19"
+    },
+    {
+     "kind": "web",
+     "start": 295,
+     "end": 310,
+     "text": "https://x.io/20",
+     "target": "https://x.io/20"
+    },
+    {
+     "kind": "web",
+     "start": 311,
+     "end": 326,
+     "text": "https://x.io/21",
+     "target": "https://x.io/21"
+    },
+    {
+     "kind": "web",
+     "start": 327,
+     "end": 342,
+     "text": "https://x.io/22",
+     "target": "https://x.io/22"
+    },
+    {
+     "kind": "web",
+     "start": 343,
+     "end": 358,
+     "text": "https://x.io/23",
+     "target": "https://x.io/23"
+    },
+    {
+     "kind": "web",
+     "start": 359,
+     "end": 374,
+     "text": "https://x.io/24",
+     "target": "https://x.io/24"
+    },
+    {
+     "kind": "web",
+     "start": 375,
+     "end": 390,
+     "text": "https://x.io/25",
+     "target": "https://x.io/25"
+    },
+    {
+     "kind": "web",
+     "start": 391,
+     "end": 406,
+     "text": "https://x.io/26",
+     "target": "https://x.io/26"
+    },
+    {
+     "kind": "web",
+     "start": 407,
+     "end": 422,
+     "text": "https://x.io/27",
+     "target": "https://x.io/27"
+    },
+    {
+     "kind": "web",
+     "start": 423,
+     "end": 438,
+     "text": "https://x.io/28",
+     "target": "https://x.io/28"
+    },
+    {
+     "kind": "web",
+     "start": 439,
+     "end": 454,
+     "text": "https://x.io/29",
+     "target": "https://x.io/29"
+    },
+    {
+     "kind": "web",
+     "start": 455,
+     "end": 470,
+     "text": "https://x.io/30",
+     "target": "https://x.io/30"
+    },
+    {
+     "kind": "web",
+     "start": 471,
+     "end": 486,
+     "text": "https://x.io/31",
+     "target": "https://x.io/31"
+    },
+    {
+     "kind": "web",
+     "start": 487,
+     "end": 502,
+     "text": "https://x.io/32",
+     "target": "https://x.io/32"
+    },
+    {
+     "kind": "web",
+     "start": 503,
+     "end": 518,
+     "text": "https://x.io/33",
+     "target": "https://x.io/33"
+    },
+    {
+     "kind": "web",
+     "start": 519,
+     "end": 534,
+     "text": "https://x.io/34",
+     "target": "https://x.io/34"
+    },
+    {
+     "kind": "web",
+     "start": 535,
+     "end": 550,
+     "text": "https://x.io/35",
+     "target": "https://x.io/35"
+    },
+    {
+     "kind": "web",
+     "start": 551,
+     "end": 566,
+     "text": "https://x.io/36",
+     "target": "https://x.io/36"
+    },
+    {
+     "kind": "web",
+     "start": 567,
+     "end": 582,
+     "text": "https://x.io/37",
+     "target": "https://x.io/37"
+    },
+    {
+     "kind": "web",
+     "start": 583,
+     "end": 598,
+     "text": "https://x.io/38",
+     "target": "https://x.io/38"
+    },
+    {
+     "kind": "web",
+     "start": 599,
+     "end": 614,
+     "text": "https://x.io/39",
+     "target": "https://x.io/39"
+    },
+    {
+     "kind": "web",
+     "start": 615,
+     "end": 630,
+     "text": "https://x.io/40",
+     "target": "https://x.io/40"
+    },
+    {
+     "kind": "web",
+     "start": 631,
+     "end": 646,
+     "text": "https://x.io/41",
+     "target": "https://x.io/41"
+    },
+    {
+     "kind": "web",
+     "start": 647,
+     "end": 662,
+     "text": "https://x.io/42",
+     "target": "https://x.io/42"
+    },
+    {
+     "kind": "web",
+     "start": 663,
+     "end": 678,
+     "text": "https://x.io/43",
+     "target": "https://x.io/43"
+    },
+    {
+     "kind": "web",
+     "start": 679,
+     "end": 694,
+     "text": "https://x.io/44",
+     "target": "https://x.io/44"
+    },
+    {
+     "kind": "web",
+     "start": 695,
+     "end": 710,
+     "text": "https://x.io/45",
+     "target": "https://x.io/45"
+    },
+    {
+     "kind": "web",
+     "start": 711,
+     "end": 726,
+     "text": "https://x.io/46",
+     "target": "https://x.io/46"
+    },
+    {
+     "kind": "web",
+     "start": 727,
+     "end": 742,
+     "text": "https://x.io/47",
+     "target": "https://x.io/47"
+    },
+    {
+     "kind": "web",
+     "start": 743,
+     "end": 758,
+     "text": "https://x.io/48",
+     "target": "https://x.io/48"
+    },
+    {
+     "kind": "web",
+     "start": 759,
+     "end": 774,
+     "text": "https://x.io/49",
+     "target": "https://x.io/49"
+    },
+    {
+     "kind": "web",
+     "start": 775,
+     "end": 790,
+     "text": "https://x.io/50",
+     "target": "https://x.io/50"
+    }
+   ]
+  }
+ ]
+}
