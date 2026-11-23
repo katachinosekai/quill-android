@@ -608,7 +608,7 @@ final class Remote implements ChatView.Actions {
             JSONArray order = new JSONArray();
             for (JSONObject s : sessions) {
                 String g = s.optString("project", s.optString("group", "Other"));
-                its.put(new JSONObject().put("id", s.optString("id")).put("folder", g).put("title", s.optString("title")));
+                its.put(new JSONObject().put("id", s.optString("id")).put("folder", g).put("title", s.optString("title")).put("tab", s.optInt("tab", -1)));
                 boolean seen = false;
                 for (int k = 0; k < order.length(); k++) {
                     seen |= order.optString(k).equals(g);

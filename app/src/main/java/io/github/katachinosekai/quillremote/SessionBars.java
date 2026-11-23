@@ -40,28 +40,38 @@ class SessionBars {
 
     static class Item {
         final String id, folder, title;
+        /** Position in Quill Desktop's tab bar (0-based), -1 when not an open tab or not reported. */
+        final int tab;
 
         Item(String id, String folder, String title) {
+            this(id, folder, title, -1);
+        }
+
+        Item(String id, String folder, String title, int tab) {
             this.id = id;
             this.folder = folder;
             this.title = title;
+            this.tab = tab;
         }
     }
 
     /**
-     * Flat portrait order: the order the items arrive in. In Quill Desktop mode that is Desktop's tab order
-     * (/phone/sessions, kept current by the stream's "order" change); in local claude.ai mode it is the page order.
-     * No re-sorting; only repeated ids are dropped (first one wins).
+     * Flat portrait order: open tabs first in Quill Desktop's tab order (the "tab" field of /phone/sessions), then
+     * the remaining items in the order they arrive. Items without a tab (older Quill Desktop builds, local claude.ai
+     * mode) keep their arrival order, which in local mode is the page order. Repeated ids are dropped (first wins).
      */
     static List<Item> portraitOrder(List<Item> in) {
-        List<Item> out = new ArrayList<>();
+        List<Item> tabbed = new ArrayList<>();
+        List<Item> rest = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (Item it : in) {
             if (seen.add(it.id)) {
-                out.add(it);
+                (it.tab >= 0 ? tabbed : rest).add(it);
             }
         }
-        return out;
+        tabbed.sort((x, y) -> Integer.compare(x.tab, y.tab)); // stable
+        tabbed.addAll(rest);
+        return tabbed;
     }
 
     final MainActivity a;
@@ -782,7 +792,7 @@ class SessionBars {
                 JSONObject it = arr.getJSONObject(i);
                 String id = it.optString("id");
                 if (validId(id)) {
-                    items.add(new Item(id, it.optString("folder"), it.optString("title")));
+                    items.add(new Item(id, it.optString("folder"), it.optString("title"), it.optInt("tab", -1)));
                 }
             }
             order.clear();
