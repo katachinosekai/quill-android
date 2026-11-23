@@ -31,21 +31,45 @@ final class KmemAssistant implements ChatView.Actions {
         this.remote = remote;
         this.chat = chat;
         chat.actions = this;
+        chat.hint = "Message the kmem assistant";
+        chat.syncHint();
     }
 
     /** Reload when the stream (or a tap) says the assistant changed; fresh = whole window. */
     void refresh(boolean fresh) {
         if (!fetching.compareAndSet(false, true)) {
+            // A change that arrives during a fetch must not be dropped: the reply's last chunk can come right then and
+            // nothing else would ever bring it (an empty bubble for good). Run once more when this fetch is done.
+            again.set(true);
+            if (fresh) {
+                againFresh.set(true);
+            }
             return;
         }
         remote.work.execute(() -> {
-            try {
-                fetch(fresh);
-            } finally {
+            boolean f = fresh;
+            while (true) {
+                again.set(false);
+                try {
+                    fetch(f);
+                } catch (RuntimeException e) {
+                    android.util.Log.w("QuillKmem", "items fetch failed", e);
+                }
+                f = againFresh.getAndSet(false);
+                if (again.get()) {
+                    continue;
+                }
                 fetching.set(false);
+                // A request that came in between the check and the release goes on from here.
+                if (!again.get() || !fetching.compareAndSet(false, true)) {
+                    return;
+                }
             }
         });
     }
+
+    final java.util.concurrent.atomic.AtomicBoolean again = new java.util.concurrent.atomic.AtomicBoolean();
+    final java.util.concurrent.atomic.AtomicBoolean againFresh = new java.util.concurrent.atomic.AtomicBoolean();
 
     /** The stream's {epoch, rev}: refetch only when they differ from what was loaded. */
     void streamChanged(long streamEpoch, long streamRev) {
@@ -120,6 +144,7 @@ final class KmemAssistant implements ChatView.Actions {
         }
         queue = o.optJSONArray("queue") == null ? new JSONArray() : o.optJSONArray("queue");
         loaded = true;
+        healBlanks(m, fresh);
         List<ChatView.Item> list = new ArrayList<>();
         boolean busy = false;
         for (JSONObject it : items.values()) {
@@ -137,6 +162,48 @@ final class KmemAssistant implements ChatView.Actions {
                 chat.stickToBottom();
             }
         });
+    }
+
+    long lastHeal;
+    final java.util.Set<String> healed = new java.util.HashSet<>();
+
+    /**
+     * Blank self-heal, as in Remote.healBlanks: a reply that stays an empty bubble (the phone kept a half-arrived copy)
+     * gets one fresh reload of the window, at most every 10 s and never from a fresh reload itself.
+     */
+    void healBlanks(KmemAssistModel m, boolean fresh) {
+        if (fresh) {
+            return;
+        }
+        List<String> found = blankKeys(itemList(), m != null && m.can("stop"), epoch, healed);
+        long now = System.currentTimeMillis();
+        if (!found.isEmpty() && now - lastHeal >= 10_000) {
+            healed.addAll(found);
+            lastHeal = now;
+            remote.work.execute(() -> fetch(true));
+        }
+    }
+
+    List<ChatView.Item> itemList() {
+        List<ChatView.Item> l = new ArrayList<>();
+        for (JSONObject it : items.values()) {
+            l.add(ChatView.Item.from(it));
+        }
+        return l;
+    }
+
+    /** Keys ("epoch:seq") of the text items that are blank for good: no text and not streaming, or "streaming" while the assistant isn't running; each is reloaded once. */
+    static List<String> blankKeys(List<ChatView.Item> all, boolean running, int epoch, java.util.Set<String> healed) {
+        List<String> found = new ArrayList<>();
+        for (ChatView.Item it : all) {
+            if (("assistant".equals(it.kind) || "user".equals(it.kind)) && it.text.trim().isEmpty() && (!it.streaming || !running)) {
+                String key = epoch + ":" + it.seq;
+                if (!healed.contains(key)) {
+                    found.add(key);
+                }
+            }
+        }
+        return found;
     }
 
     final java.util.concurrent.atomic.AtomicReference<Runnable> uiItems = new java.util.concurrent.atomic.AtomicReference<>();

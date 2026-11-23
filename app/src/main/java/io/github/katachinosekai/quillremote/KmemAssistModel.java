@@ -136,4 +136,15 @@ final class KmemAssistModel {
     static boolean alreadyDone(int code, String error) {
         return code == 409 && "stale".equals(error);
     }
+
+    /** The header's model line: "Model: Online Claude (default)" for the default model, else the model and where it comes from. */
+    static String modelLine(String model, String source) {
+        if ("New sessions".equals(source)) {
+            source = "Online Claude (default)"; // older Quill Desktop; the assistant no longer follows New sessions
+        }
+        if ("Online Claude (default)".equals(source) && ("default".equals(model) || model.isEmpty())) {
+            return "Model: Online Claude (default)";
+        }
+        return "Model: " + model + (source.isEmpty() ? "" : " (" + source + ")");
+    }
 }

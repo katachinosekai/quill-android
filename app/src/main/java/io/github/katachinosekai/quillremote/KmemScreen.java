@@ -381,7 +381,7 @@ class KmemScreen {
         }
         long now = System.currentTimeMillis();
         if (!m.model.isEmpty()) {
-            assistHeader.addView(text("Model: " + m.model + (m.modelSource.isEmpty() ? "" : " (" + m.modelSource + ")"), 13, MainActivity.MUTED, false));
+            assistHeader.addView(text(KmemAssistModel.modelLine(m.model, m.modelSource), 13, MainActivity.MUTED, false));
         }
         stateView = text("", 14, MainActivity.TEXT, true);
         stateView.setText("● " + m.stateLine(now));

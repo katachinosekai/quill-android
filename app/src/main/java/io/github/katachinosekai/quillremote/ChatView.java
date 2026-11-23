@@ -320,7 +320,7 @@ final class ChatView extends LinearLayout {
         box = new EditText(c);
         box.setTextColor(MainActivity.TEXT);
         box.setHintTextColor(MainActivity.MUTED);
-        box.setHint("Message Quill");
+        box.setHint(hint);
         box.setContentDescription("Message box");
         box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         box.setMaxLines(8);
@@ -472,8 +472,11 @@ final class ChatView extends LinearLayout {
         syncHint();
     }
 
+    /** The message box hint when there is no suggestion (the kmem screen names its assistant). */
+    String hint = "Message Quill";
+
     void syncHint() {
-        box.setHint(readOnly ? "Read only  ·  turn on device control in Quill Desktop" : suggestion.isEmpty() ? "Message Quill" : suggestion);
+        box.setHint(readOnly ? "Read only  ·  turn on device control in Quill Desktop" : suggestion.isEmpty() ? hint : suggestion);
         box.setContentDescription(suggestion.isEmpty() || readOnly ? "Message box" : "Message box, suggestion: " + suggestion);
     }
 
