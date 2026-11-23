@@ -51,4 +51,26 @@ public class ChoicesTest {
         assertEquals(-1, Choices.picked(null, opts));
         assertEquals("I pick the next option: x.", Choices.reply(4, "x"));
     }
+
+    private static final String REC = "1. **Topic names: add all languages (recommended), English letters and numbers only, or leave as is?**";
+
+    @Test
+    public void recommendedOptionIsKeptButNotInTheOptionText() {
+        String[] opts = Choices.parse(REC);
+        assertArrayEquals(new String[]{"Add all languages", "English letters and numbers only", "Leave as is"}, opts);
+        assertEquals(0, Choices.recommended(REC, opts.length));
+        // the reply sent stays the plain option
+        assertEquals("I pick the first option: Add all languages.", Choices.reply(0, opts[0]));
+    }
+
+    @Test
+    public void recommendedPositionsAndNone() {
+        assertEquals(1, Choices.recommended("Ship now or later (recommended)?", 2));
+        assertEquals(1, Choices.recommended("Red, green (recommended), or blue?", 3));
+        assertEquals(2, Choices.recommended("Red, green, or blue (recommended)?", 3));
+        assertEquals(-1, Choices.recommended("Red, green, or blue?", 3));
+        assertEquals(-1, Choices.recommended("Red (not recommended), green, or blue?", 3));
+        assertEquals(-1, Choices.recommended("Red (recommended), green (recommended), or blue?", 3));
+        assertEquals(0, Choices.recommended("Yes (recommended) or no?", 2));
+    }
 }

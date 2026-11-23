@@ -18,7 +18,9 @@ final class Choices {
         if (q < 0) {
             return null;
         }
-        String ask = clean.substring(0, q);
+        // Asides in parentheses explain an option ("add all (recommended)"); the button shows just the option
+        // (Quill Desktop's parenAside), and a leading list number is no part of it.
+        String ask = clean.substring(0, q).replaceAll("\\s*\\([^)]*\\)", "").replaceAll("^\\d+[.)]\\s+", "").trim();
         String sep = ", or ";
         int i = ask.lastIndexOf(sep);
         boolean list = i >= 0;
@@ -62,6 +64,133 @@ final class Choices {
             }
             out[k] = cap(o);
         }
+        return out;
+    }
+
+    static final java.util.regex.Pattern REC_WORD = java.util.regex.Pattern.compile("(?i)(not\\s+)?\\brecommended\\b");
+    static final java.util.regex.Pattern YES = java.util.regex.Pattern.compile("(?i)^\\W*yes\\b");
+    static final java.util.regex.Pattern NO = java.util.regex.Pattern.compile("(?i)^\\W*no\\b");
+    static final String RECOMMENDED = "  (recommended)";
+
+    /**
+     * Which of the n options parse() found a choice line marks "(recommended)", -1 if none or not clear (Quill
+     * Desktop's choiceRecommended / recommendedOption). parse() drops the aside from the option; the reply sent
+     * keeps the plain option.
+     */
+    static int recommended(String line, int n) {
+        String clean = (line == null ? "" : line).replace("**", "").replace("__", "").replace("`", "")
+                .replaceAll("^[#>*\\-_ ]+", "").trim().replaceAll("^\\d+[.)]\\s+", "").replaceAll("[*_ ]+$", "");
+        int q = clean.lastIndexOf('?');
+        String ask = q >= 0 ? clean.substring(0, q) : clean;
+        int p = lastQOutsideParens(ask);
+        if (p >= 0) {
+            ask = ask.substring(p + 1);
+        }
+        List<String> segs = splitLast(ask, ", or ");
+        if (n == 2 && segs.size() < 2) {
+            List<String> yn = splitLast(ask, " or ");
+            if (yn.size() == 2 && yesNo(yn.get(0), yn.get(1))) {
+                segs = yn;
+            }
+        }
+        if (segs.size() == 2 && n == 2 && yesNo(segs.get(0), segs.get(1))) {
+            // "Yes, x (recommended), or no, y": keep the pair whole
+        } else if (segs.size() < 2) {
+            segs = splitLast(ask, " or ");
+        } else {
+            List<String> head = new ArrayList<>();
+            for (String part : splitAll(segs.get(0), ", ")) {
+                if (!head.isEmpty() && CONTINUATION.matcher(part.trim()).find()) {
+                    head.set(head.size() - 1, head.get(head.size() - 1) + ", " + part);
+                } else {
+                    head.add(part);
+                }
+            }
+            head.addAll(segs.subList(1, segs.size()));
+            segs = head;
+        }
+        if (segs.size() != n) {
+            return -1;
+        }
+        int rec = -1;
+        for (int k = 0; k < segs.size(); k++) {
+            java.util.regex.Matcher m = REC_WORD.matcher(segs.get(k));
+            boolean yes = false;
+            while (m.find()) {
+                if (m.group(1) == null) {
+                    yes = true;
+                }
+            }
+            if (yes) {
+                if (rec >= 0) {
+                    return -1;
+                }
+                rec = k;
+            }
+        }
+        return rec;
+    }
+
+    static boolean yesNo(String a, String b) {
+        return YES.matcher(a).find() && NO.matcher(b).find();
+    }
+
+    static int lastQOutsideParens(String s) {
+        int depth = 0, at = -1;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth = Math.max(0, depth - 1);
+            } else if (c == '?' && depth == 0) {
+                at = i;
+            }
+        }
+        return at;
+    }
+
+    /** Positions of sep outside parentheses. */
+    static List<Integer> cuts(String s, String sep) {
+        List<Integer> out = new ArrayList<>();
+        int depth = 0;
+        for (int i = 0; i + sep.length() <= s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth = Math.max(0, depth - 1);
+            }
+            if (depth == 0 && s.startsWith(sep, i)) {
+                out.add(i);
+            }
+        }
+        return out;
+    }
+
+    /** Splits at the last sep outside parentheses (one part if none). */
+    static List<String> splitLast(String s, String sep) {
+        List<Integer> c = cuts(s, sep);
+        List<String> out = new ArrayList<>();
+        if (c.isEmpty()) {
+            out.add(s);
+        } else {
+            int at = c.get(c.size() - 1);
+            out.add(s.substring(0, at));
+            out.add(s.substring(at + sep.length()));
+        }
+        return out;
+    }
+
+    /** Splits at every sep outside parentheses. */
+    static List<String> splitAll(String s, String sep) {
+        List<String> out = new ArrayList<>();
+        int prev = 0;
+        for (int at : cuts(s, sep)) {
+            out.add(s.substring(prev, at));
+            prev = at + sep.length();
+        }
+        out.add(s.substring(prev));
         return out;
     }
 

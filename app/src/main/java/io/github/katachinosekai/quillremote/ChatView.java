@@ -57,6 +57,8 @@ final class ChatView extends LinearLayout {
         boolean canAllowAlways = true;
         JSONArray questions;
         JSONArray choices;
+        /** The recommended one of choices (choicesRecommended; -1 = none). */
+        int choicesRecommended = -1;
         /** Plan approval options (request.choices) and the recommended index (request.recommended, -1 = none). */
         JSONArray planChoices;
         int planRecommended = -1;
@@ -98,6 +100,7 @@ final class ChatView extends LinearLayout {
             }
             it.questions = req != null && req.has("questions") ? req.optJSONArray("questions") : o.optJSONArray("questions");
             it.choices = o.optJSONArray("choices");
+            it.choicesRecommended = o.optInt("choicesRecommended", -1);
             if (req != null && "plan".equals(it.kind)) {
                 it.planChoices = req.optJSONArray("choices");
                 it.planQuestions = req.optJSONArray("questions");
@@ -1192,6 +1195,8 @@ final class ChatView extends LinearLayout {
         if (opts != null && opts.length == 0) {
             opts = null;
         }
+        // The option marked "(recommended)": Quill Desktop says which (choicesRecommended), else the line is read here.
+        final int rec = opts == null ? -1 : it.choices != null ? (it.choicesRecommended < opts.length ? it.choicesRecommended : -1) : Choices.recommended(lastLine(it.text), opts.length);
         if (opts != null) {
             // Active: the latest unanswered reply (the server says so with choicesOpen). Otherwise the buttons stay,
             // greyed, with the pick marked (user 2026-11-23, like Quill Desktop).
@@ -1206,7 +1211,9 @@ final class ChatView extends LinearLayout {
             for (int k = 0; k < opts.length; k++) {
                 final String o = opts[k];
                 final int index = k;
-                TextView b = button(o.length() > 60 ? o.substring(0, 59) + "…" : o, MainActivity.ACCENT);
+                String btnText = o.length() > 60 ? o.substring(0, 59) + "…" : o;
+                // The recommended option says so and, while the buttons are live, is highlighted.
+                TextView b = k == rec ? (active ? highlighted(btnText + Choices.RECOMMENDED, MainActivity.ACCENT) : button(btnText + Choices.RECOMMENDED, MainActivity.ACCENT)) : button(btnText, MainActivity.ACCENT);
                 btns.add(b);
                 if (active) {
                     b.setOnClickListener(v -> {
@@ -1261,6 +1268,15 @@ final class ChatView extends LinearLayout {
         String t = text.replaceAll("[\\s]+$", "");
         int cut = t.lastIndexOf('\n');
         return t.substring(cut + 1);
+    }
+
+    /** A button for the recommended option: a stronger fill and outline than button(). */
+    TextView highlighted(String s, int color) {
+        TextView b = button(s, color);
+        GradientDrawable g = round((color & 0x00FFFFFF) | 0x66000000, 10);
+        g.setStroke(dp(2), color);
+        b.setBackground(g);
+        return b;
     }
 
     TextView button(String s, int color) {
@@ -1447,7 +1463,7 @@ final class ChatView extends LinearLayout {
             others.setOrientation(VERTICAL);
             for (int k = 0; k < n; k++) {
                 int index = k;
-                TextView b = button("Approve: " + opts.optString(k), GREEN);
+                TextView b = k == rec ? highlighted("Approve: " + opts.optString(k) + Choices.RECOMMENDED, GREEN) : button("Approve: " + opts.optString(k), GREEN);
                 b.setOnClickListener(v -> act(it, "approvePlan", toJson(QuestionCards.goAheadExtras(index, fb.getText().toString()))));
                 LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
                 lp.topMargin = dp(8);
