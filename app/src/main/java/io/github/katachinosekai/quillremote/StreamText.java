@@ -146,13 +146,7 @@ final class StreamText {
 
     /** Close an open code fence, inline code span or bold run at the end of s, so a half-written paragraph renders. */
     static String closeOpen(String s) {
-        int fences = 0;
-        for (String l : s.split("\n", -1)) {
-            if (l.trim().startsWith("```")) {
-                fences++;
-            }
-        }
-        if (fences % 2 == 1) {
+        if (openFence(s)) {
             return s + "\n```";
         }
         String last = s.substring(s.lastIndexOf("\n\n") + 1);
@@ -172,6 +166,17 @@ final class StreamText {
             add += "**";
         }
         return s + add;
+    }
+
+    /** True when s ends inside a code fence. */
+    static boolean openFence(String s) {
+        int fences = 0;
+        for (String l : s.split("\n", -1)) {
+            if (l.trim().startsWith("```")) {
+                fences++;
+            }
+        }
+        return fences % 2 == 1;
     }
 
     static int count(String s, String sub) {
@@ -244,6 +249,262 @@ final class StreamText {
 
         int length() {
             return len;
+        }
+    }
+
+    /** A last line that may still become a block marker ("#", "-", "1.", "``"): hidden while the reply streams. */
+    static final java.util.regex.Pattern PARTIAL_MARKER = java.util.regex.Pattern.compile("^ {0,3}(#{1,6}|[-*+_~`]{1,2}|\\d{1,9}[.)]?)\\s*$");
+
+    /**
+     * The reveal counts rendered (visible) characters, not source characters: markers (**, *, `, #, list markers, fences,
+     * the "](url)" of a link) are never counted. view(n) is the Markdown to draw for the first n visible characters: the
+     * source up to the n-th one, plus the closing markers its open constructs need, so bold, italics, code, links and
+     * headings show formatted from their first letter and no raw marker shows. While streaming, a marker with no closer
+     * yet stays hidden (it is not counted) until it closes. A finished reply shows its text unchanged at the end.
+     */
+    static final class Reveal {
+        private static final class Blk {
+            final StringBuilder body = new StringBuilder();
+            final java.util.List<Integer> src = new java.util.ArrayList<>();
+            boolean plainText; // code and tables: every character shown as is
+
+            void add(String text, int from, int to, int sepSrc) {
+                while (from < to && Character.isWhitespace(text.charAt(from))) {
+                    from++;
+                }
+                while (to > from && Character.isWhitespace(text.charAt(to - 1))) {
+                    to--;
+                }
+                if (sepSrc >= 0 && body.length() > 0) {
+                    body.append('\n');
+                    src.add(sepSrc);
+                }
+                for (int k = from; k < to; k++) {
+                    body.append(text.charAt(k));
+                    src.add(k);
+                }
+            }
+        }
+
+        final String text;
+        final boolean streaming;
+        /** The visible characters in order (a newline between blocks), for word-boundary steps. */
+        final String visible;
+        private final int[] vsrc;
+        private final java.util.List<int[]> real = new java.util.ArrayList<>(); // {last opener char, closer start, closer end} in text
+        private final java.util.List<int[]> pend = new java.util.ArrayList<>(); // {opener}
+        private final java.util.List<String> pendClose = new java.util.ArrayList<>();
+
+        Reveal(String text, boolean streaming) {
+            this.text = text;
+            this.streaming = streaming;
+            java.util.List<Blk> blocks = blocks(text, streaming);
+            StringBuilder vis = new StringBuilder();
+            java.util.List<Integer> vs = new java.util.ArrayList<>();
+            for (int bi = 0; bi < blocks.size(); bi++) {
+                Blk b = blocks.get(bi);
+                String body = b.body.toString();
+                Markdown.Shown sh = new Markdown.Shown(body.length());
+                if (b.plainText) {
+                    java.util.Arrays.fill(sh.vis, true);
+                } else {
+                    Markdown.inline(body, 0, new java.util.ArrayList<>(), sh, 0, streaming && bi == blocks.size() - 1);
+                }
+                if (bi > 0 && !vs.isEmpty() && body.length() > 0) {
+                    vis.append('\n');
+                    vs.add(vs.get(vs.size() - 1));
+                }
+                for (int k = 0; k < body.length(); k++) {
+                    if (sh.vis[k]) {
+                        vis.append(body.charAt(k));
+                        vs.add(b.src.get(k));
+                    }
+                }
+                for (int[] c : sh.closers) {
+                    real.add(new int[]{b.src.get(c[0] - 1), b.src.get(c[1]), b.src.get(c[2] - 1) + 1});
+                }
+                for (int k = 0; k < sh.pendingAt.size(); k++) {
+                    pend.add(new int[]{b.src.get(sh.pendingAt.get(k))});
+                    pendClose.add(sh.pendingClose.get(k));
+                }
+            }
+            real.sort((x, y) -> Integer.compare(x[1], y[1]));
+            visible = vis.toString();
+            vsrc = new int[vs.size()];
+            for (int k = 0; k < vsrc.length; k++) {
+                vsrc[k] = vs.get(k);
+            }
+        }
+
+        /** Number of visible characters. */
+        int total() {
+            return vsrc.length;
+        }
+
+        /** Length of the source shown for the first n visible characters. */
+        int cut(int n) {
+            if (n >= vsrc.length && !streaming) {
+                return text.length();
+            }
+            return n <= 0 ? 0 : vsrc[Math.min(n, vsrc.length) - 1] + 1;
+        }
+
+        /** The Markdown to draw for the first n visible characters (see the class comment). */
+        String view(int n) {
+            if (n >= vsrc.length && !streaming) {
+                return text;
+            }
+            int cut = cut(n);
+            if (cut == 0) {
+                return "";
+            }
+            StringBuilder tail = new StringBuilder();
+            for (int[] r : real) {
+                if (r[0] < cut && r[1] >= cut) {
+                    tail.append(text, r[1], r[2]);
+                }
+            }
+            for (int k = pend.size() - 1; k >= 0; k--) {
+                if (pend.get(k)[0] < cut) {
+                    tail.append(pendClose.get(k));
+                }
+            }
+            StringBuilder sb = new StringBuilder(text.substring(0, cut));
+            if (tail.length() > 0) {
+                // A closing marker only closes after a non-space: the trailing space shows with the next letter.
+                while (sb.length() > 0 && Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+                    sb.setLength(sb.length() - 1);
+                }
+                sb.append(tail);
+            }
+            String s = sb.toString();
+            return openFence(s) ? s + "\n```" : s;
+        }
+
+        /** The blocks of text the way Markdown.parse reads them, each with the source index of every body character. */
+        private static java.util.List<Blk> blocks(String text, boolean streaming) {
+            java.util.List<Blk> out = new java.util.ArrayList<>();
+            String[] lines = text.split("\n", -1);
+            int[] start = new int[lines.length + 1];
+            for (int k = 0; k < lines.length; k++) {
+                start[k + 1] = start[k] + lines[k].length() + 1;
+            }
+            Blk para = null;
+            boolean lettered = false;
+            int i = 0;
+            while (i < lines.length) {
+                String line = lines[i];
+                java.util.regex.Matcher m;
+                if ((m = Markdown.FENCE.matcher(line)).matches()) {
+                    para = null;
+                    String fence = m.group(1);
+                    Blk b = new Blk();
+                    b.plainText = true;
+                    i++;
+                    int first = i;
+                    while (i < lines.length && !lines[i].trim().startsWith(fence)) {
+                        i++;
+                    }
+                    int last = i; // exclusive
+                    if (streaming && i >= lines.length && last > first && fence.startsWith(lines[last - 1].trim()) && !lines[last - 1].trim().isEmpty()) {
+                        last--; // a closing fence still being typed
+                    }
+                    for (int k = first; k < last; k++) {
+                        if (k > first) {
+                            b.body.append('\n');
+                            b.src.add(start[k] - 1);
+                        }
+                        for (int q = 0; q < lines[k].length(); q++) {
+                            b.body.append(lines[k].charAt(q));
+                            b.src.add(start[k] + q);
+                        }
+                    }
+                    out.add(b);
+                    i++;
+                    continue;
+                }
+                if (line.trim().isEmpty()) {
+                    para = null;
+                    i++;
+                    continue;
+                }
+                if (streaming && i == lines.length - 1 && PARTIAL_MARKER.matcher(line).matches()) {
+                    i++;
+                    continue;
+                }
+                if (Markdown.RULE.matcher(line).matches()) {
+                    para = null;
+                    i++;
+                    continue;
+                }
+                if ((m = Markdown.HEADING.matcher(line)).matches()) {
+                    para = null;
+                    Blk b = new Blk();
+                    b.add(text, start[i] + m.start(2), start[i] + m.end(2), -1);
+                    out.add(b);
+                    i++;
+                    continue;
+                }
+                if (line.contains("|") && i + 1 < lines.length && Markdown.TABLE_SEP.matcher(lines[i + 1]).matches()) {
+                    para = null;
+                    Blk b = new Blk();
+                    b.plainText = true;
+                    b.add(text, start[i], start[i] + line.length(), -1);
+                    i += 2;
+                    while (i < lines.length && lines[i].contains("|") && !lines[i].trim().isEmpty()) {
+                        b.add(text, start[i], start[i] + lines[i].length(), start[i] - 1);
+                        i++;
+                    }
+                    out.add(b);
+                    continue;
+                }
+                if ((m = Markdown.QUOTE.matcher(line)).matches()) {
+                    para = null;
+                    Blk b = new Blk();
+                    b.add(text, start[i] + m.start(1), start[i] + m.end(1), -1);
+                    i++;
+                    while (i < lines.length && (m = Markdown.QUOTE.matcher(lines[i])).matches()) {
+                        b.add(text, start[i] + m.start(1), start[i] + m.end(1), start[i] - 1);
+                        i++;
+                    }
+                    out.add(b);
+                    continue;
+                }
+                int group = -1;
+                if ((m = Markdown.BULLET.matcher(line)).matches() && !Markdown.RULE.matcher(line).matches()) {
+                    group = 2;
+                } else if ((m = Markdown.LETTERED.matcher(line)).matches()
+                        && (lettered || Markdown.LETTERED.matcher(Markdown.nextNonBlank(lines, i + 1)).matches())) {
+                    group = 4;
+                    lettered = true;
+                } else {
+                    lettered = false;
+                    if ((m = Markdown.NUMBERED.matcher(line)).matches()) {
+                        group = 3;
+                    }
+                }
+                if (group > 0) {
+                    para = null;
+                    Blk b = new Blk();
+                    b.add(text, start[i] + m.start(group), start[i] + m.end(group), -1);
+                    int n = Markdown.extra(lines, i);
+                    for (int k = 1; k <= n; k++) {
+                        b.add(text, start[i + k], start[i + k] + lines[i + k].length(), start[i + k] - 1);
+                    }
+                    i += 1 + n;
+                    out.add(b);
+                    continue;
+                }
+                if (para == null) {
+                    para = new Blk();
+                    out.add(para);
+                    para.add(text, start[i], start[i] + line.length(), -1);
+                } else {
+                    para.add(text, start[i], start[i] + line.length(), start[i] - 1);
+                }
+                i++;
+            }
+            return out;
         }
     }
 }

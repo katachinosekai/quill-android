@@ -2159,7 +2159,11 @@ final class ChatView extends LinearLayout {
         final MarkdownView live;
         String text = "";
         boolean streaming = true;
+        /** Revealed visible characters (markers not counted: see StreamText.Reveal). */
         int pos;
+        /** Source length shown by the last draw. */
+        int cutLen;
+        StreamText.Reveal rv = new StreamText.Reveal("", true);
         int done;
         String shown = "";
         boolean ticking;
@@ -2181,12 +2185,13 @@ final class ChatView extends LinearLayout {
         }
 
         boolean caughtUp(String t) {
-            return pos >= t.length();
+            return pos >= new StreamText.Reveal(t, false).total();
         }
 
         void update(String t, boolean stillStreaming) {
-            if (!t.startsWith(text.substring(0, Math.min(pos, text.length())))) {
+            if (!t.startsWith(text.substring(0, Math.min(cutLen, text.length())))) {
                 pos = 0; // the text was replaced, not extended: start over
+                cutLen = 0;
                 done = 0;
                 shown = "";
                 removeAllViews();
@@ -2194,8 +2199,9 @@ final class ChatView extends LinearLayout {
             }
             text = t;
             streaming = stillStreaming;
+            rv = new StreamText.Reveal(text, streaming);
             if (!animate || "instant".equals(animateSpeed)) {
-                pos = text.length();
+                pos = rv.total();
                 draw(false);
                 finishIfDone();
                 return;
@@ -2214,11 +2220,11 @@ final class ChatView extends LinearLayout {
                 return;
             }
             boolean revealed = false;
-            if (pos < text.length()) {
+            if (pos < rv.total()) {
                 // Below one character a frame, the fractions add up; a word shown whole in advance is paid back later.
-                carry += StreamText.rate(animateSpeed, text.length() - pos);
+                carry += StreamText.rate(animateSpeed, rv.total() - pos);
                 if (carry >= 1) {
-                    int n = StreamText.revealBy(text, pos, streaming, (int) carry);
+                    int n = StreamText.revealBy(rv.visible, pos, streaming, (int) carry);
                     carry -= n - pos;
                     pos = n;
                     draw(true);
@@ -2229,7 +2235,7 @@ final class ChatView extends LinearLayout {
             if (!revealed) {
                 fadeFrame(now); // no new characters this frame: the last ones keep fading in
             }
-            if (pos >= text.length() && !fading(now)) {
+            if (pos >= rv.total() && !fading(now)) {
                 ticking = false;
                 finishIfDone();
                 return;
@@ -2239,7 +2245,7 @@ final class ChatView extends LinearLayout {
 
         /** The reply ended and everything is shown: render it the normal way (same layout, plus time and choices). */
         void finishIfDone() {
-            if (!streaming && pos >= text.length() && !stopped) {
+            if (!streaming && pos >= rv.total() && !stopped) {
                 stopped = true;
                 post(() -> {
                     for (Map.Entry<Integer, StreamView> e : streams.entrySet()) {
@@ -2297,7 +2303,8 @@ final class ChatView extends LinearLayout {
         void draw(boolean fadeNew) {
             long now = android.os.SystemClock.uptimeMillis();
             StringBuilder liveText = new StringBuilder();
-            java.util.List<String> paras = StreamText.split(text.substring(0, pos), liveText);
+            java.util.List<String> paras = StreamText.split(rv.view(pos), liveText);
+            cutLen = rv.cut(pos);
             if (paras.size() < drawn.size() || !paras.subList(0, drawn.size()).equals(drawn)) {
                 // A later list item joined finished paragraphs into one list: redraw them once.
                 removeAllViews();
@@ -2327,7 +2334,7 @@ final class ChatView extends LinearLayout {
             String l = liveText.toString();
             if (!l.equals(shown)) {
                 shown = l;
-                live.setMarkdown(l.trim().isEmpty() ? "" : StreamText.closeOpen(l));
+                live.setMarkdown(l.trim().isEmpty() ? "" : l);
             }
             if (fadeNew) {
                 List<TextView> tvs = new ArrayList<>();

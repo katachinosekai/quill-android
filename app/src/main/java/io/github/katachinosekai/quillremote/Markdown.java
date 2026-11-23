@@ -214,17 +214,37 @@ final class Markdown {
 
     static List<Run> inline(String s) {
         List<Run> out = new ArrayList<>();
-        inline(s, 0, out);
+        inline(s, 0, out, null, 0, false);
         return merge(out);
     }
 
-    static void inline(String s, int style, List<Run> out) {
+    /**
+     * Which characters of an inline source are shown (not markers), for the streaming reveal. closers lists the
+     * constructs that closed: {end of the opener, start of the closer, end of the closer} as indexes in the source.
+     * With hidePending (the growing last block), markers that have no closer yet are hidden and listed in pending
+     * (index of the opener, text that would close it), so the text after them can show formatted from its first letter.
+     */
+    static final class Shown {
+        final boolean[] vis;
+        final List<int[]> closers = new ArrayList<>();
+        final List<Integer> pendingAt = new ArrayList<>();
+        final List<String> pendingClose = new ArrayList<>();
+
+        Shown(int len) {
+            vis = new boolean[len];
+        }
+    }
+
+    static void inline(String s, int style, List<Run> out, Shown map, int base, boolean pend) {
         StringBuilder plain = new StringBuilder();
         int i = 0;
         while (i < s.length()) {
             char c = s.charAt(i);
             if (c == '\\' && i + 1 < s.length() && "\\`*_~[]()#>!-|".indexOf(s.charAt(i + 1)) >= 0) {
                 plain.append(s.charAt(i + 1));
+                if (map != null) {
+                    map.vis[base + i + 1] = true;
+                }
                 i += 2;
                 continue;
             }
@@ -238,11 +258,26 @@ final class Markdown {
                 if (end > 0) {
                     emit(out, plain, style);
                     String code = s.substring(i + ticks, end);
+                    int from = i + ticks, to = end;
                     if (code.length() > 1 && code.startsWith(" ") && code.endsWith(" ")) {
                         code = code.substring(1, code.length() - 1);
+                        from++;
+                        to--;
                     }
                     out.add(new Run(code, style | CODE_SPAN, null));
+                    if (map != null) {
+                        for (int k = from; k < to; k++) {
+                            map.vis[base + k] = true;
+                        }
+                        map.closers.add(new int[]{base + i + ticks, base + end, base + end + ticks});
+                    }
                     i = end + ticks;
+                    continue;
+                }
+                if (pend) {
+                    map.pendingAt.add(base + i);
+                    map.pendingClose.add(fence);
+                    i += ticks;
                     continue;
                 }
             }
@@ -258,13 +293,29 @@ final class Markdown {
                             url = url.substring(0, sp);
                         }
                         List<Run> inner = new ArrayList<>();
-                        inline(s.substring(i + 1, close), style, inner);
+                        inline(s.substring(i + 1, close), style, inner, map, base + i + 1, false);
                         for (Run r : inner) {
                             out.add(new Run(r.text, r.style, url));
+                        }
+                        if (map != null) {
+                            map.closers.add(new int[]{base + i + 1, base + close, base + paren + 1});
                         }
                         i = paren + 1;
                         continue;
                     }
+                }
+                if (pend && (close < 0 || close + 1 == s.length() || s.charAt(close + 1) == '(')) {
+                    // A link still being written: its text shows as a link from the first letter, "](url" stays hidden.
+                    map.pendingAt.add(base + i);
+                    map.pendingClose.add("](#)");
+                    if (close < 0) {
+                        i++;
+                    } else {
+                        emit(out, plain, style);
+                        inline(s.substring(i + 1, close), style, new ArrayList<>(), map, base + i + 1, true);
+                        i = s.length();
+                    }
+                    continue;
                 }
             }
             String delim = null;
@@ -279,17 +330,32 @@ final class Markdown {
                 delim = String.valueOf(c);
                 flag = ITALIC;
             }
-            if (delim != null && i + delim.length() < s.length() && !Character.isWhitespace(s.charAt(i + delim.length()))
-                    && !(c == '_' && i > 0 && Character.isLetterOrDigit(s.charAt(i - 1)))) {
+            boolean eligible = delim != null && !(c == '_' && i > 0 && Character.isLetterOrDigit(s.charAt(i - 1)));
+            if (eligible && i + delim.length() < s.length() && !Character.isWhitespace(s.charAt(i + delim.length()))) {
                 int end = closing(s, i + delim.length(), delim);
                 if (end > 0) {
                     emit(out, plain, style);
-                    inline(s.substring(i + delim.length(), end), style | flag, out);
+                    inline(s.substring(i + delim.length(), end), style | flag, out, map, base + i + delim.length(), false);
+                    if (map != null) {
+                        map.closers.add(new int[]{base + i + delim.length(), base + end, base + end + delim.length()});
+                    }
                     i = end + delim.length();
                     continue;
                 }
+                if (pend) {
+                    map.pendingAt.add(base + i);
+                    map.pendingClose.add(delim);
+                    i += delim.length();
+                    continue;
+                }
+            } else if (eligible && pend && i + delim.length() >= s.length()) {
+                i += delim.length(); // a marker at the very end: nothing to format yet
+                continue;
             }
             plain.append(c);
+            if (map != null) {
+                map.vis[base + i] = true;
+            }
             i++;
         }
         emit(out, plain, style);
