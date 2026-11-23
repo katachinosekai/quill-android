@@ -20,6 +20,16 @@ final class KmemModels {
         final String id, status, title, topic, owner, claim;
         final int prio;
         final boolean needsUser, issue;
+        List<String> actions = new ArrayList<>();
+
+        Task(String id, int prio, String status, String title, String topic, String owner, String claim, boolean needsUser, boolean issue, List<String> actions) {
+            this(id, prio, status, title, topic, owner, claim, needsUser, issue);
+            this.actions = actions;
+        }
+
+        boolean can(String action) {
+            return actions.contains(action);
+        }
 
         Task(String id, int prio, String status, String title, String topic, String owner, String claim, boolean needsUser, boolean issue) {
             this.id = id;
@@ -238,8 +248,13 @@ final class KmemModels {
             if (o == null || o.optString("id").isEmpty()) {
                 continue;
             }
+            List<String> acts = new ArrayList<>();
+            JSONArray aa = o.optJSONArray("actions");
+            for (int j = 0; aa != null && j < aa.length(); j++) {
+                acts.add(aa.optString(j));
+            }
             out.add(new Task(o.optString("id"), o.optInt("prio"), o.optString("status"), o.optString("title"),
-                    o.optString("topic"), o.optString("owner"), o.optString("claim"), o.optBoolean("needsUser"), o.optBoolean("issue")));
+                    o.optString("topic"), o.optString("owner"), o.optString("claim"), o.optBoolean("needsUser"), o.optBoolean("issue"), acts));
         }
         return out;
     }

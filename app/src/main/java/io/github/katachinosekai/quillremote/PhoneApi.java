@@ -393,4 +393,22 @@ final class PhoneApi {
     Reply kmemTopics() {
         return get("/phone/kmem/topics", 20000);
     }
+
+    /** kmem phase 4: task text, recycle bin, and the prepare/commit pairs (nothing is written before commit). */
+    Reply kmemTask(String id) {
+        return get("/phone/kmem/task/" + enc(id), 20000);
+    }
+
+    Reply kmemBin() {
+        return get("/phone/kmem/bin", 20000);
+    }
+
+    /** kind "task" or "bin"; action done|release|restore. */
+    Reply kmemPrepare(String kind, String id, String action, JSONObject body) {
+        return post("/phone/kmem/" + kind + "/" + enc(id) + "/" + action + "/prepare", body == null ? new JSONObject() : body);
+    }
+
+    Reply kmemCommit(String kind, String id, String action, String confirm) {
+        return post("/phone/kmem/" + kind + "/" + enc(id) + "/" + action + "/commit", obj("confirm", confirm));
+    }
 }

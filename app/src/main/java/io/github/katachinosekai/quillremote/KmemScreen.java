@@ -518,12 +518,21 @@ class KmemScreen {
             }
             for (String s : KmemModels.needsLines(n.optInt("bin"), n.optString("audit"), n.optInt("maint"),
                     n.optString("maintReport"), n.optString("rolloutWait"), ut)) {
-                ovCol.addView(row(s));
+                TextView rr = row(s);
+                if (s.startsWith("Recycle bin:")) {
+                    rr.setTextColor(MainActivity.ACCENT);
+                    rr.setOnClickListener(v -> openBin());
+                }
+                ovCol.addView(rr);
             }
         }
         if (count == 0) {
             ovCol.addView(text("Nothing is waiting for you.", 14, MainActivity.MUTED, false));
         }
+        TextView binEntry = row("Recycle bin");
+        binEntry.setTextColor(MainActivity.ACCENT);
+        binEntry.setOnClickListener(v -> openBin());
+        ovCol.addView(binEntry);
         JSONObject c = overview.optJSONObject("counts");
         if (c != null) {
             heading(ovCol, "Counts");
@@ -599,6 +608,7 @@ class KmemScreen {
                 r.addView(text(t.title, 14, MainActivity.TEXT, t.needsUser));
                 r.addView(text(KmemModels.taskMeta(t) + (t.needsUser ? " · waiting for you" : ""), 12,
                         t.needsUser ? MainActivity.ACCENT : MainActivity.MUTED, false));
+                r.setOnClickListener(v -> openTask(t));
                 taskCol.addView(r);
             }
         }
@@ -866,5 +876,214 @@ class KmemScreen {
             }
             fillMemory();
         });
+    }
+
+    // ---- Phase 4: task detail, Done/Release, recycle bin, Restore ----
+
+    android.app.AlertDialog taskDlg, binDlg;
+    LinearLayout binCol;
+    List<KmemWriteModel.BinItem> binItems;
+    boolean binTruncated;
+    String binError = "";
+
+    void toast(String s) {
+        android.widget.Toast.makeText(a, s, android.widget.Toast.LENGTH_LONG).show();
+    }
+
+    ScrollView scrolled(View v) {
+        ScrollView sv = new ScrollView(a);
+        sv.addView(v);
+        return sv;
+    }
+
+    void openTask(KmemModels.Task t) {
+        LinearLayout col = column();
+        col.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(6));
+        col.addView(text(t.title, 15, MainActivity.TEXT, true));
+        col.addView(text(KmemModels.taskMeta(t), 12, MainActivity.MUTED, false));
+        TextView body = text("Loading…", 13, MainActivity.TEXT, false);
+        body.setTextIsSelectable(true);
+        body.setPadding(0, a.dp(10), 0, a.dp(10));
+        col.addView(body);
+        boolean doneOk = t.can("done"), relOk = t.can("release");
+        if (remote.control && (doneOk || relOk)) {
+            LinearLayout row = new LinearLayout(a);
+            if (doneOk) {
+                row.addView(pill("Done", () -> askResult(t)));
+            }
+            if (relOk) {
+                row.addView(pill("Release", () -> runFlow("task", t.id, "release", new JSONObject(), "Release task [" + t.id + "]")));
+            }
+            col.addView(row);
+        } else if (!remote.control && (doneOk || relOk)) {
+            col.addView(text(KmemWriteModel.HINT_CONTROL_OFF, 12, MainActivity.MUTED, false));
+        }
+        if (taskDlg != null) {
+            taskDlg.dismiss();
+        }
+        taskDlg = new android.app.AlertDialog.Builder(a).setView(scrolled(col)).setPositiveButton("Close", null).show();
+        remote.kmem(() -> remote.api.kmemTask(t.id), r -> {
+            if (r.ok()) {
+                String x = r.body.optString("text");
+                body.setText(x.isEmpty() ? "(no text)" : x + (r.body.optBoolean("truncated") ? "\n\n(cut off)" : ""));
+            } else {
+                body.setText(r.code == 404 ? "This task no longer exists." : KmemModels.errorLine(r.code, r.error()));
+            }
+        });
+    }
+
+    /** Done needs a result text of 1-300 characters (decision f2b8d3a). */
+    void askResult(KmemModels.Task t) {
+        EditText in = new EditText(a);
+        in.setHint("Result (1-300 characters)");
+        in.setMinLines(2);
+        in.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(KmemWriteModel.RESULT_MAX * 2)});
+        TextView count = text(KmemWriteModel.counter(""), 12, MainActivity.MUTED, false);
+        LinearLayout col = column();
+        col.setPadding(a.dp(20), a.dp(10), a.dp(20), 0);
+        col.addView(text("What was the result of [" + t.id + "] " + t.title + "?", 14, MainActivity.TEXT, false));
+        col.addView(in);
+        col.addView(count);
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a).setTitle("Mark task done").setView(col)
+                .setPositiveButton("Next", null).setNegativeButton("Cancel", null).create();
+        d.setOnShowListener(x -> {
+            android.widget.Button ok = d.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+            ok.setEnabled(false);
+            in.addTextChangedListener(new TextWatcher() {
+                public void beforeTextChanged(CharSequence s, int st, int c, int af) {
+                }
+
+                public void onTextChanged(CharSequence s, int st, int b, int c) {
+                }
+
+                public void afterTextChanged(Editable e) {
+                    String v = KmemWriteModel.validResult(e.toString());
+                    count.setText(KmemWriteModel.counter(e.toString()));
+                    count.setTextColor(v == null && e.length() > 0 ? 0xFFD05050 : MainActivity.MUTED);
+                    ok.setEnabled(v != null);
+                }
+            });
+            ok.setOnClickListener(v -> {
+                String res = KmemWriteModel.validResult(in.getText().toString());
+                if (res != null) {
+                    d.dismiss();
+                    runFlow("task", t.id, "done", PhoneApi.obj("result", res), "Mark task [" + t.id + "] done");
+                }
+            });
+        });
+        d.show();
+    }
+
+    /** prepare -> confirm dialog (summary + commands) -> commit -> refresh. Nothing is written before Confirm. */
+    void runFlow(String kind, String id, String action, JSONObject body, String title) {
+        remote.kmem(() -> remote.api.kmemPrepare(kind, id, action, body), r -> {
+            if (!r.ok()) {
+                failed(r);
+                return;
+            }
+            String confirm = r.body.optString("confirm");
+            new android.app.AlertDialog.Builder(a).setTitle(title)
+                    .setMessage(KmemWriteModel.confirmText(r.body))
+                    .setPositiveButton("Confirm", (d, w) -> remote.kmem(() -> remote.api.kmemCommit(kind, id, action, confirm), c -> {
+                        if (c.ok()) {
+                            String out = KmemWriteModel.brief(c.body.optString("output"));
+                            toast(out.isEmpty() ? "Done." : out);
+                            if (taskDlg != null) {
+                                taskDlg.dismiss();
+                            }
+                            refresh();
+                            if (binDlg != null && binDlg.isShowing()) {
+                                loadBin();
+                            }
+                        } else {
+                            failed(c);
+                        }
+                    }))
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
+    }
+
+    void failed(PhoneApi.Reply r) {
+        toast(KmemWriteModel.failText(r.code, r.error(), r.detail()));
+        if (KmemWriteModel.refreshAfter(r.code, r.error())) {
+            if (taskDlg != null) {
+                taskDlg.dismiss();
+            }
+            refresh();
+            if (binDlg != null && binDlg.isShowing()) {
+                loadBin();
+            }
+        }
+    }
+
+    void openBin() {
+        if (binDlg != null && binDlg.isShowing()) {
+            return;
+        }
+        binCol = column();
+        binCol.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(6));
+        binItems = null;
+        binError = "";
+        fillBin();
+        binDlg = new android.app.AlertDialog.Builder(a).setTitle("Recycle bin").setView(scrolled(binCol))
+                .setPositiveButton("Close", null).show();
+        loadBin();
+    }
+
+    void loadBin() {
+        remote.kmem(remote.api::kmemBin, r -> {
+            if (r.ok()) {
+                binItems = KmemWriteModel.parseBin(r.body.optJSONArray("items"));
+                binTruncated = r.body.optBoolean("truncated");
+                binError = "";
+            } else if (r.code != 401) {
+                binError = KmemModels.errorLine(r.code, r.error());
+            }
+            fillBin();
+        });
+    }
+
+    void fillBin() {
+        if (binCol == null) {
+            return;
+        }
+        binCol.removeAllViews();
+        binCol.addView(text(KmemWriteModel.NOTE_BIN, 12, MainActivity.MUTED, false));
+        if (!remote.control) {
+            binCol.addView(text(KmemWriteModel.HINT_CONTROL_OFF, 12, MainActivity.MUTED, false));
+        }
+        if (!binError.isEmpty()) {
+            binCol.addView(text(binError, 13, MainActivity.ACCENT, false));
+        }
+        if (binItems == null) {
+            if (binError.isEmpty()) {
+                binCol.addView(text("Loading…", 14, MainActivity.MUTED, false));
+            }
+            return;
+        }
+        if (binItems.isEmpty()) {
+            binCol.addView(text("The recycle bin is empty.", 14, MainActivity.MUTED, false));
+        }
+        for (KmemWriteModel.BinItem b : binItems) {
+            LinearLayout r = column();
+            r.setPadding(0, a.dp(8), 0, a.dp(8));
+            r.addView(text(b.label(), 14, MainActivity.TEXT, true));
+            String tp = KmemWriteModel.binTopic(b);
+            if (!tp.isEmpty()) {
+                r.addView(text(tp, 12, MainActivity.MUTED, false));
+            }
+            r.addView(text(KmemWriteModel.binMeta(b), 12, MainActivity.MUTED, false));
+            if (!b.reason.isEmpty()) {
+                r.addView(text("Reason: " + b.reason, 12, MainActivity.MUTED, false));
+            }
+            if (remote.control) {
+                r.addView(pill("Restore", () -> runFlow("bin", b.id, "restore", new JSONObject(), "Restore " + b.label())));
+            }
+            binCol.addView(r);
+        }
+        if (binTruncated) {
+            binCol.addView(text("The list is cut off; more items exist than shown.", 12, MainActivity.MUTED, false));
+        }
     }
 }
