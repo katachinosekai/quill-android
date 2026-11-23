@@ -15,6 +15,11 @@ final class PlanOverlay {
     private PlanOverlay() {
     }
 
+    /** Is a plan with this request.planState current (its buttons answer it)? Older builds send none. */
+    static boolean active(String planState) {
+        return planState == null || planState.isEmpty() || "active".equals(planState);
+    }
+
     static String norm(String s) {
         String t = s.replace("**", "").replace("__", "").replace("`", "").replaceAll("^[#>*\\s]+", "")
                 .replace("(recommended)", "").toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();

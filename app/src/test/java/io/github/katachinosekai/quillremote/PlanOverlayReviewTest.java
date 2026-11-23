@@ -33,4 +33,14 @@ public class PlanOverlayReviewTest {
         assertNotNull(m);
         assertArrayEquals(new int[]{7, 8}, m[0]); // line 7: the reply has 7 lines before it
     }
+
+    /** User 2026-11-23: only an active plan is live; answered, rejected, replaced and moved-on ones are greyed. */
+    @Test
+    public void onlyAnActivePlanIsLive() {
+        org.junit.Assert.assertTrue(PlanOverlay.active(""));
+        org.junit.Assert.assertTrue(PlanOverlay.active("active"));
+        for (String st : new String[]{"approved", "rejected", "replaced", "moved_on"}) {
+            org.junit.Assert.assertFalse(st, PlanOverlay.active(st));
+        }
+    }
 }

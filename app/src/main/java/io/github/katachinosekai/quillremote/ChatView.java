@@ -64,6 +64,8 @@ final class ChatView extends LinearLayout {
         JSONArray planQuestions;
         /** request.approval (Quill Desktop with approval options), null on older builds. */
         QuestionCards.Approval planApproval;
+        /** request.planState on plan items: active, approved, rejected, replaced, moved_on; empty on older builds. */
+        String planState = "";
         boolean choicesOpen;
         JSONObject diff;
         int rev;
@@ -100,6 +102,7 @@ final class ChatView extends LinearLayout {
                 it.planChoices = req.optJSONArray("choices");
                 it.planQuestions = req.optJSONArray("questions");
                 it.planApproval = QuestionCards.parseApproval(Item.plain(req.optJSONObject("approval")));
+                it.planState = req.optString("planState");
                 it.planRecommended = req.has("recommended") ? req.optInt("recommended", -1) : -1;
             }
             it.choicesOpen = o.optBoolean("choicesOpen", it.choices != null);
@@ -132,7 +135,7 @@ final class ChatView extends LinearLayout {
         /** A pending plan card only changes with its question set (text, approval, questions), not with every revision. */
         String sig() {
             if ("plan".equals(kind) && (state.isEmpty() || "pending".equals(state))) {
-                return "plan|pending|" + QuestionCards.setKey(text, planApproval, QuestionCards.parseQuestions(plain(planQuestions)));
+                return "plan|pending|" + planState + "|" + QuestionCards.setKey(text, planApproval, QuestionCards.parseQuestions(plain(planQuestions)));
             }
             return kind + "|" + rev + "|" + text.length() + "|" + text.hashCode() + "|" + streaming + "|" + hasResult + "|" + state + "|" + result.length() + "|" + choicesOpen;
         }
@@ -772,7 +775,8 @@ final class ChatView extends LinearLayout {
         java.util.Set<Integer> hiddenPlans = new java.util.HashSet<>();
         for (int i = 0; i < next.size(); i++) {
             Item p = next.get(i);
-            if (!"plan".equals(p.kind) || !pending(p)) {
+            // An answered, rejected, replaced or moved-on plan keeps its controls in its reply too (greyed).
+            if (!"plan".equals(p.kind)) {
                 continue;
             }
             Item reply = null;
@@ -1279,6 +1283,11 @@ final class ChatView extends LinearLayout {
         return it.state.isEmpty() || "pending".equals(it.state);
     }
 
+    /** A plan whose buttons answer it: pending and current (request.planState active, or absent on older builds). */
+    boolean live(Item it) {
+        return pending(it) && PlanOverlay.active(it.planState);
+    }
+
     static String stateLabel(String s) {
         switch (s) {
             case "allowed": return "allowed";
@@ -1320,7 +1329,7 @@ final class ChatView extends LinearLayout {
     }
 
     View plan(Item it) {
-        LinearLayout c = card(pending(it) ? planTitle(it.text) : "Plan: " + stateLabel(it.state), pending(it) ? MainActivity.ACCENT : 0xFF444440);
+        LinearLayout c = card(live(it) ? planTitle(it.text) : "Plan: " + planStatus(it), live(it) ? MainActivity.ACCENT : 0xFF444440);
         MarkdownView md = new MarkdownView(getContext());
         md.sp = sp - scale;
         md.links = linkHost;
@@ -1328,7 +1337,7 @@ final class ChatView extends LinearLayout {
         md.setMarkdown(it.text);
         md.setPadding(0, dp(8), 0, 0);
         c.addView(md);
-        if (pending(it)) {
+        if (live(it)) {
             EditText fb = changesField(it);
             c.addView(fb);
             if (it.planQuestions != null && it.planQuestions.length() > 0) {
@@ -1383,6 +1392,26 @@ final class ChatView extends LinearLayout {
             LinearLayout row = buttons(c);
             addButton(row, "Approve", GREEN, v -> act(it, "approvePlan", extraText(fb)));
             addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
+        }
+    }
+
+    /** What an inactive plan says about itself: its answer, or that it was replaced or the chat moved on. */
+    String planStatus(Item it) {
+        if (pending(it)) {
+            return "replaced";
+        }
+        return stateLabel(it.state);
+    }
+
+    /** Greys out v and everything in it: the answered plan's controls, with the pick still marked. */
+    static void greyOut(View v) {
+        v.setEnabled(false);
+        v.setAlpha(0.5f);
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                greyOut(g.getChildAt(i));
+            }
         }
     }
 
@@ -1644,6 +1673,7 @@ final class ChatView extends LinearLayout {
             return spaced(col, 14);
         }
         Map<String, Object> ans = answers(plan);
+        List<View> ctls = new ArrayList<>();
         int at = 0;
         for (int k = 0; k < m.length; k++) {
             JSONObject q = plan.planQuestions == null ? null : plan.planQuestions.optJSONObject(k);
@@ -1658,23 +1688,46 @@ final class ChatView extends LinearLayout {
                 planControl(ctl, q, k, ans);
             }
             col.addView(ctl);
+            ctls.add(ctl);
             at = m[k][1];
         }
         String rest = PlanOverlay.lines(reply.text, at, Integer.MAX_VALUE);
         if (!rest.trim().isEmpty()) {
             col.addView(markdown(rest));
         }
-        LinearLayout c = card(planTitle(plan.text), MainActivity.ACCENT);
-        EditText fb = changesField(plan);
-        c.addView(fb);
-        if (m.length == 0) {
-            planActions(c, plan, fb);
+        // The caption, a changes field and the buttons close the reply as part of it: no card of their own
+        // repeating the approval question.
+        newGuard();
+        LinearLayout c = new LinearLayout(getContext());
+        c.setOrientation(VERTICAL);
+        if (live(plan)) {
+            EditText fb = changesField(plan);
+            c.addView(fb);
+            if (m.length == 0) {
+                planActions(c, plan, fb);
+            } else {
+                planButtons(c, plan, fb);
+            }
         } else {
-            planButtons(c, plan, fb);
+            EditText fb = changesField(plan);
+            if (m.length == 0) {
+                planActions(c, plan, fb);
+            } else {
+                planButtons(c, plan, fb);
+            }
+            greyOut(c);
+            TextView status = label("Plan: " + planStatus(plan), MainActivity.MUTED, 12);
+            status.setPadding(0, dp(8), 0, 0);
+            c.addView(status);
         }
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         cl.topMargin = dp(10);
         col.addView(c, cl);
+        if (!live(plan)) {
+            for (View ctl : ctls) {
+                greyOut(ctl); // the questions' controls; the reply text keeps its look
+            }
+        }
         return spaced(col, 14);
     }
 
@@ -1720,58 +1773,43 @@ final class ChatView extends LinearLayout {
         QuestionCards.Approval a = it.planApproval;
         List<QuestionCards.Question> qs = QuestionCards.parseQuestions(Item.plain(it.planQuestions));
         Map<String, Object> ans = answers(it);
-        List<TextView> btns = new ArrayList<>();
-        LinearLayout col = new LinearLayout(getContext());
-        col.setOrientation(VERTICAL);
-        c.addView(col);
-        for (int k = 0; k < a.options.size(); k++) {
-            final int index = k;
-            int color = a.stop[k] ? RED : k == a.recommended ? GREEN : BLUE;
-            String label = a.options.get(k) + (k == a.recommended ? " (recommended)" : "");
-            TextView b = button(label.length() > 60 ? label.substring(0, 59) + "…" : label, color);
-            btns.add(b);
-            b.setOnClickListener(guarded(v -> {
-                if (qs.isEmpty()) {
-                    sendApproval(it, a, index, qs, fb);
-                    return;
-                }
-                ans.put(PICK, index);
-                for (int j = 0; j < btns.size(); j++) {
-                    markPick(btns.get(j), a.stop[j] ? RED : j == a.recommended ? GREEN : BLUE, j == index);
-                }
-            }));
-            // The recommended option is marked by its label and colour only; a pick is always the user's own.
-            markPick(b, color, !qs.isEmpty() && ans.get(PICK) instanceof Integer && (Integer) ans.get(PICK) == k);
-            LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-            lp.topMargin = dp(8);
-            col.addView(b, lp);
+        // The recommended option starts picked, once (user 2026-11-23: a radio group like the other questions).
+        if (!ans.containsKey("seen:" + PICK)) {
+            ans.put("seen:" + PICK, Boolean.TRUE);
+            if (a.recommended >= 0 && a.recommended < a.options.size()) {
+                ans.put(PICK, a.recommended);
+            }
         }
-        if (a.dontRun) {
-            TextView b = button("Don't run", MainActivity.ACCENT);
-            b.setOnClickListener(guarded(v -> sendApproval(it, a, QuestionCards.DONT_RUN, qs, fb)));
-            LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-            lp.topMargin = dp(8);
-            col.addView(b, lp);
-        }
-        if (!qs.isEmpty()) {
-            TextView note = label("Pick an answer above, then send. Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
-            note.setPadding(0, dp(8), 0, 0);
-            c.addView(note);
-            LinearLayout row = buttons(c);
-            addButton(row, "Send answers", GREEN, v -> {
-                Object pick = ans.get(PICK);
-                if (pick instanceof Integer) {
-                    sendApproval(it, a, (Integer) pick, qs, fb);
+        android.widget.RadioGroup g = new android.widget.RadioGroup(getContext());
+        int n = a.options.size() + (a.dontRun ? 1 : 0);
+        for (int k = 0; k < n; k++) {
+            boolean dont = k == a.options.size();
+            int value = dont ? QuestionCards.DONT_RUN : k;
+            android.widget.RadioButton rb = new android.widget.RadioButton(getContext());
+            rb.setText(dont ? "Don't run" : a.options.get(k) + (k == a.recommended ? "  (recommended)" : ""));
+            rb.setTextColor(!dont && a.stop[k] ? RED : MainActivity.TEXT);
+            rb.setId(View.generateViewId());
+            g.addView(rb);
+            if (ans.get(PICK) instanceof Integer && (Integer) ans.get(PICK) == value) {
+                rb.setChecked(true);
+            }
+            rb.setOnCheckedChangeListener((b, on) -> {
+                if (on) {
+                    ans.put(PICK, value);
                 }
             });
         }
-    }
-
-    /** A picked approval button is filled, the others outlined. */
-    void markPick(TextView b, int color, boolean on) {
-        GradientDrawable g = round((color & 0x00FFFFFF) | (on ? 0x80000000 : 0x24000000), 10);
-        g.setStroke(dp(on ? 2 : 1), color);
-        b.setBackground(g);
+        c.addView(g);
+        TextView note = label(qs.isEmpty() ? "Answer the question above, then send." : "Answer the question above, then send. Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
+        note.setPadding(0, dp(8), 0, 0);
+        c.addView(note);
+        LinearLayout row = buttons(c);
+        addButton(row, "Send answers", GREEN, v -> {
+            Object pick = ans.get(PICK);
+            if (pick instanceof Integer) {
+                sendApproval(it, a, (Integer) pick, qs, fb);
+            }
+        });
     }
 
     void sendApproval(Item it, QuestionCards.Approval a, int pick, List<QuestionCards.Question> qs, EditText fb) {
