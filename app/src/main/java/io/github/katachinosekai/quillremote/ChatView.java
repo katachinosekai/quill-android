@@ -144,6 +144,8 @@ final class ChatView extends LinearLayout {
     boolean showTimes = true;
     /** ⚙ Animate new text (pref animateText, like Quill Desktop): finished paragraphs fade in, the last one is revealed word by word. */
     boolean animate = true;
+    /** ⚙ Text animation speed (pref animateSpeed): slow, normal, fast or instant; only matters while animate is on. */
+    String animateSpeed = "normal";
     /** Live views of replies that are still streaming, by seq (updated in place instead of re-rendered). */
     final Map<Integer, StreamView> streams = new HashMap<>();
     static final int BLUE = 0xFF5BA8F5;
@@ -1967,7 +1969,7 @@ final class ChatView extends LinearLayout {
             }
             text = t;
             streaming = stillStreaming;
-            if (!animate) {
+            if (!animate || "instant".equals(animateSpeed)) {
                 pos = text.length();
                 draw();
                 finishIfDone();
@@ -1985,7 +1987,7 @@ final class ChatView extends LinearLayout {
                 return;
             }
             if (pos < text.length()) {
-                pos = StreamText.nextReveal(text, pos, streaming);
+                pos = StreamText.nextReveal(text, pos, streaming, animateSpeed);
                 draw();
             }
             if (pos >= text.length()) {

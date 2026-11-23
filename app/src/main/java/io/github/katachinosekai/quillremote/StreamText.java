@@ -71,11 +71,56 @@ final class StreamText {
      * inside a surrogate pair.
      */
     static int nextReveal(String text, int pos, boolean streaming) {
+        return nextReveal(text, pos, streaming, "normal");
+    }
+
+    /** ⚙ Text animation speed: Slow is half of Normal, Fast double, Instant shows everything. Normal is the pace above. */
+    static final String[] SPEEDS = {"slow", "normal", "fast", "instant"};
+
+    /** The stored value for anything unknown or missing is normal. */
+    static String speed(String s) {
+        for (String k : SPEEDS) {
+            if (k.equals(s)) {
+                return k;
+            }
+        }
+        return "normal";
+    }
+
+    /** "normal" -> "Normal". */
+    static String speedLabel(String s) {
+        s = speed(s);
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** The speed after tapping: Slow, Normal, Fast, Instant, Slow... */
+    static String nextSpeed(String s) {
+        return SPEEDS[(java.util.Arrays.asList(SPEEDS).indexOf(speed(s)) + 1) % SPEEDS.length];
+    }
+
+    static int nextReveal(String text, int pos, boolean streaming, String speed) {
         if (pos >= text.length()) {
             return text.length();
         }
         int gap = text.length() - pos;
-        int step = Math.min(Math.max(REVEAL_MIN, gap / REVEAL_CATCH_UP), REVEAL_MAX);
+        int min = REVEAL_MIN, catchUp = REVEAL_CATCH_UP, max = REVEAL_MAX;
+        switch (speed(speed)) {
+            case "slow":
+                min = 1;
+                catchUp *= 2;
+                max /= 2;
+                break;
+            case "fast":
+                min *= 2;
+                catchUp /= 2;
+                max *= 2;
+                break;
+            case "instant":
+                return text.length();
+            default:
+                break;
+        }
+        int step = Math.min(Math.max(min, gap / catchUp), max);
         int n = Math.min(pos + step, text.length());
         int sp = -1;
         for (int i = n; i < text.length(); i++) {
@@ -85,7 +130,7 @@ final class StreamText {
                 break;
             }
         }
-        if (sp >= 0 && sp <= REVEAL_MAX) {
+        if (sp >= 0 && sp <= max) {
             n += sp;
         } else if (sp < 0 && !streaming) {
             n = text.length();

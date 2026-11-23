@@ -1101,6 +1101,7 @@ public class MainActivity extends Activity {
             chat = new ChatView(this);
             chat.showTimes = prefs.getBoolean("messageTimes", true);
             chat.animate = prefs.getBoolean("animateText", true);
+            chat.animateSpeed = StreamText.speed(prefs.getString("animateSpeed", "normal"));
             webFrame.addView(chat, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
             web.setVisibility(View.GONE);
         }
@@ -1470,6 +1471,19 @@ public class MainActivity extends Activity {
             }
         });
         box.addView(anim);
+        TextView speedLine = line("", TEXT);
+        Runnable syncSpeed = () -> speedLine.setText("Text animation speed  ·  " + StreamText.speedLabel(prefs.getString("animateSpeed", "normal")));
+        syncSpeed.run();
+        TextView speedBtn = textButton("Change", v -> {
+            String next = StreamText.nextSpeed(prefs.getString("animateSpeed", "normal"));
+            prefs.edit().putString("animateSpeed", next).apply();
+            UpdateNotes.userSet(prefs, "animateSpeed");
+            if (chat != null) {
+                chat.animateSpeed = next;
+            }
+            syncSpeed.run();
+        });
+        box.addView(row(speedLine, speedBtn));
         TextView size = line("", TEXT);
         Runnable syncSize = () -> size.setText("Text size  " + prefs.getInt("zoom", 115) + "%  ·  pinch to change");
         syncSize.run();

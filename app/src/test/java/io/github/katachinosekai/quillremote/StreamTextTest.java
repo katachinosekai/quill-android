@@ -57,6 +57,31 @@ public class StreamTextTest {
     }
 
     @Test
+    public void speedNormalIsTodaysPaceAndOthersScale() {
+        String text = "word ".repeat(400);
+        for (int pos = 0; pos < text.length(); pos += 37) {
+            assertEquals(StreamText.nextReveal(text, pos, true), StreamText.nextReveal(text, pos, true, "normal"));
+            assertEquals(StreamText.nextReveal(text, pos, true), StreamText.nextReveal(text, pos, true, "bogus"));
+            assertEquals(text.length(), StreamText.nextReveal(text, pos, true, "instant"));
+        }
+        for (int pos : new int[] {0, 700, 1500}) {
+            int s = StreamText.nextReveal(text, pos, true, "slow") - pos;
+            int n = StreamText.nextReveal(text, pos, true, "normal") - pos;
+            int f = StreamText.nextReveal(text, pos, true, "fast") - pos;
+            assertEquals(true, s < n && n < f);
+        }
+    }
+
+    @Test
+    public void speedNamesAndCycle() {
+        assertEquals("normal", StreamText.speed(null));
+        assertEquals("normal", StreamText.speed("zzz"));
+        assertEquals("Instant", StreamText.speedLabel("instant"));
+        assertEquals("normal", StreamText.nextSpeed("slow"));
+        assertEquals("slow", StreamText.nextSpeed("instant"));
+    }
+
+    @Test
     public void blankLinesBetweenListItemsDontSplit() {
         StringBuilder live = new StringBuilder();
         assertEquals(java.util.List.of("1. one\n\n2. two"), StreamText.split("1. one\n\n2. two\n\nAfter", live));
