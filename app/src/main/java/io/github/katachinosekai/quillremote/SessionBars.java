@@ -48,10 +48,19 @@ class SessionBars {
         }
     }
 
-    /** Flat portrait order: newest activity first; sessions with no timestamp keep their given order, after the dated ones. */
-    static List<Item> recentFirst(List<Item> in, java.util.function.ToLongFunction<Item> lastOf) {
-        List<Item> out = new ArrayList<>(in);
-        out.sort((x, y) -> Long.compare(lastOf.applyAsLong(y), lastOf.applyAsLong(x)));
+    /**
+     * Flat portrait order: the order the items arrive in. In Quill Desktop mode that is Desktop's tab order
+     * (/phone/sessions, kept current by the stream's "order" change); in local claude.ai mode it is the page order.
+     * No re-sorting; only repeated ids are dropped (first one wins).
+     */
+    static List<Item> portraitOrder(List<Item> in) {
+        List<Item> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (Item it : in) {
+            if (seen.add(it.id)) {
+                out.add(it);
+            }
+        }
         return out;
     }
 
@@ -673,7 +682,7 @@ class SessionBars {
             return;
         }
         if (flat) {
-            for (Item it : recentFirst(items, i -> meta.optJSONObject(i.id) == null ? 0 : meta.optJSONObject(i.id).optLong("last"))) {
+            for (Item it : portraitOrder(items)) {
                 View r = twoLine(it, a.dp(34), 14);
                 r.setOnClickListener(v -> picked(it.id));
                 r.setOnLongClickListener(v -> {
