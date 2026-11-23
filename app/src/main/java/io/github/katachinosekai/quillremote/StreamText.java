@@ -116,8 +116,8 @@ final class StreamText {
 
     /**
      * Next reveal position (Quill Desktop's revealLoop) after step characters (at least 1), extended to the end of the
-     * word (if that's within 24), the rest at once when a finished reply has no more spaces, never inside a surrogate
-     * pair. The caller keeps the fractions: see StreamView.tick.
+     * word (if that's within 24), the rest at once when a finished reply has no more spaces, never inside a letter (grapheme
+     * cluster, so not inside a surrogate pair either). The caller keeps the fractions: see StreamView.tick.
      */
     static int revealBy(String text, int pos, boolean streaming, int step) {
         if (pos >= text.length()) {
@@ -138,10 +138,25 @@ final class StreamText {
         } else if (sp < 0 && !streaming) {
             n = text.length();
         }
-        while (n < text.length() && Character.isLowSurrogate(text.charAt(n))) {
-            n++;
+        return letterEnd(text, n);
+    }
+
+    /**
+     * n moved forward to the next grapheme cluster boundary (n itself when it is one): a letter (combining accent,
+     * Indic conjunct, ZWJ emoji, flag, surrogate pair) is never shown half-built. Plain text before U+0300 skips the
+     * BreakIterator.
+     */
+    static int letterEnd(String text, int n) {
+        if (n <= 0 || n >= text.length()) {
+            return Math.min(Math.max(n, 0), text.length());
         }
-        return n;
+        char a = text.charAt(n - 1), b = text.charAt(n);
+        if (a < 0x300 && b < 0x300 && a != '\r') {
+            return n;
+        }
+        java.text.BreakIterator it = java.text.BreakIterator.getCharacterInstance();
+        it.setText(text);
+        return it.isBoundary(n) ? n : it.following(n);
     }
 
     /** Close an open code fence, inline code span or bold run at the end of s, so a half-written paragraph renders. */

@@ -59,6 +59,36 @@ public class StreamTextTest {
     }
 
     @Test
+    public void revealNeverStopsInsideALetter() {
+        String[] texts = {
+            "a\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67b", // ZWJ family
+            "x\uD83C\uDDE9\uD83C\uDDEA\uD83C\uDDEB\uD83C\uDDF7y", // two flags
+            "cafe\u0301 ok", // e + combining acute
+            "\u0915\u094D\u0937\u093F \u0939\u0948", // Hindi conjunct
+            "\u0645\u0631\u062D\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645", // Arabic
+        };
+        for (String text : texts) {
+            java.text.BreakIterator it = java.text.BreakIterator.getCharacterInstance();
+            it.setText(text);
+            for (int step = 1; step <= 3; step++) {
+                for (boolean streaming : new boolean[]{true, false}) {
+                    int pos = 0;
+                    while (pos < text.length()) {
+                        int n = StreamText.revealBy(text, pos, streaming, step);
+                        assertEquals(text + " step " + step + " at " + n, true, n > pos && it.isBoundary(n));
+                        pos = n;
+                    }
+                }
+            }
+        }
+        // a boundary inside a family / flag / accented letter moves to its end
+        assertEquals(8, StreamText.letterEnd("\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67b", 3));
+        assertEquals(4, StreamText.letterEnd("\uD83C\uDDE9\uD83C\uDDEA\uD83C\uDDEB\uD83C\uDDF7", 3));
+        assertEquals(5, StreamText.letterEnd("cafe\u0301", 4));
+        assertEquals(4, StreamText.letterEnd("ab\r\n", 3));
+    }
+
+    @Test
     public void speedsAreFractionsOfTheOldNormal() {
         for (int gap = 1; gap < 2000; gap++) {
             double old = Math.min(Math.max(2, gap / 12), 24);
