@@ -283,6 +283,16 @@ final class PhoneApi {
         return post("/phone/settings", body);
     }
 
+    /** Quill Desktop's pending settings questions after its updates (0.1.25+): [{id, kind, title, text, choices, recommended}]. */
+    Reply settingsQuestions() {
+        return get("/phone/settings/questions", 8000);
+    }
+
+    /** choice = index into the question's choices; null for a Notice (no choice is sent). */
+    Reply settingsAnswer(String id, Integer choice) {
+        return post("/phone/settings/answer", choice == null ? obj("id", id) : obj("id", id, "choice", choice));
+    }
+
     Reply resume() {
         return post("/phone/usage/resume", new JSONObject());
     }

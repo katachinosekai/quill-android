@@ -204,6 +204,130 @@ public class MainActivity extends Activity {
     android.app.AlertDialog unlockDlg;
 
     /** Password prompt for Quill Desktop's paired-device lock (only when this device's Password switch is on there). */
+    android.app.AlertDialog updateDlg;
+    boolean updateAsking;
+    /** Quill Desktop's questions were looked up since this start (after the first unlocked session list). */
+    boolean deskAsked;
+
+    int versionCode() {
+        try {
+            return (int) getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
+     * After an update (user rule 2026-11-22): one dialog with this app's new entries that need the user (questions
+     * with the recommended choice picked, one-time security notices) and Quill Desktop's pending questions (phone API
+     * /phone/settings/questions, 0.1.25+). "Later" applies nothing and asks again at the next start.
+     */
+    void updateQuestions() {
+        if (updateAsking || (updateDlg != null && updateDlg.isShowing())) {
+            return;
+        }
+        int current = versionCode();
+        if (debuggable && getIntent() != null && getIntent().hasExtra("quill.testPrevCode")) {
+            prefs.edit().putInt(UpdateNotes.LAST, getIntent().getIntExtra("quill.testPrevCode", 0)).apply();
+            getIntent().removeExtra("quill.testPrevCode");
+        }
+        UpdateNotes.firstRun(prefs, current);
+        java.util.List<UpdateNotes.Entry> local = UpdateNotes.pending(prefs, current);
+        updateAsking = true;
+        PhoneApi api = phoneApi;
+        new Thread(() -> {
+            org.json.JSONArray desk = null;
+            if (remote != null && api != null) {
+                PhoneApi.Reply r = api.settingsQuestions();
+                if (r.ok()) {
+                    desk = r.body.optJSONArray("questions");
+                }
+            }
+            org.json.JSONArray dq = desk;
+            runOnUiThread(() -> {
+                updateAsking = false;
+                if (!isFinishing() && (!local.isEmpty() || (dq != null && dq.length() > 0))) {
+                    showUpdateDialog(local, dq, current);
+                }
+            });
+        }, "quill-update-questions").start();
+    }
+
+    void showUpdateDialog(java.util.List<UpdateNotes.Entry> local, org.json.JSONArray desk, int current) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(20), dp(8), dp(20), 0);
+        java.util.List<Runnable> apply = new java.util.ArrayList<>();
+        for (UpdateNotes.Entry e : local) {
+            TextView t = line(e.title, TEXT);
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+            t.setPadding(0, dp(10), 0, dp(2));
+            col.addView(t);
+            col.addView(line(e.text, MUTED));
+        }
+        for (int i = 0; desk != null && i < desk.length(); i++) {
+            org.json.JSONObject q = desk.optJSONObject(i);
+            if (q == null) {
+                continue;
+            }
+            String id = q.optString("id");
+            TextView t = line(q.optString("title") + "  (Quill Desktop)", TEXT);
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+            t.setPadding(0, dp(10), 0, dp(2));
+            col.addView(t);
+            if (!q.optString("text").isEmpty()) {
+                col.addView(line(q.optString("text"), MUTED));
+            }
+            if (!q.optString("question").isEmpty()) {
+                TextView qq = line(q.optString("question"), TEXT);
+                qq.setPadding(0, dp(6), 0, 0);
+                col.addView(qq);
+            }
+            org.json.JSONArray ch = q.optJSONArray("choices");
+            if ("notice".equalsIgnoreCase(q.optString("kind")) || ch == null || ch.length() == 0) {
+                apply.add(() -> remote.answerSetting(id, null, null)); // a notice is answered without a choice
+                continue;
+            }
+            int rec = q.optInt("recommended", 0);
+            android.widget.RadioGroup g = new android.widget.RadioGroup(this);
+            int[] picked = {rec};
+            for (int k = 0; k < ch.length(); k++) {
+                android.widget.RadioButton rb = new android.widget.RadioButton(this);
+                String label = ch.optString(k);
+                rb.setText(label + (k == rec && !label.contains("(recommended)") ? "  (recommended)" : ""));
+                rb.setTextColor(TEXT);
+                rb.setId(View.generateViewId());
+                g.addView(rb);
+                rb.setChecked(k == rec);
+                int kk = k;
+                rb.setOnCheckedChangeListener((b, on) -> {
+                    if (on) {
+                        picked[0] = kk;
+                    }
+                });
+            }
+            col.addView(g);
+            apply.add(() -> remote.answerSetting(id, picked[0], m -> {
+                if (m != null) {
+                    toast(m);
+                }
+            }));
+        }
+        updateDlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("After the update")
+                .setView(scroll(col))
+                .setPositiveButton("OK", (dlg, w) -> {
+                    for (Runnable r : apply) {
+                        r.run();
+                    }
+                    UpdateNotes.finished(prefs, local, current);
+                })
+                .setNegativeButton("Later", null) // applies nothing; asks again at the next start
+                .setCancelable(false)
+                .show();
+        accent(updateDlg);
+    }
+
     /** The phone's own unlock prompt (fingerprint or screen lock), for the home-network key (LanKey). */
     void askScreenLock(java.util.function.Consumer<Boolean> done) {
         if (isFinishing()) {
@@ -909,6 +1033,10 @@ public class MainActivity extends Activity {
             remote = new Remote(phoneApi, chat, new Remote.Host() {
                 @Override
                 public void onSessions(String barsJson, String usageJson) {
+                    if (!deskAsked) {
+                        deskAsked = true; // connected and unlocked: Quill Desktop's pending questions can be fetched now
+                        updateQuestions();
+                    }
                     boolean typing = chat.box.hasFocus();
                     bars.update(barsJson);
                     bars.setUsage(usageJson);
@@ -1163,6 +1291,7 @@ public class MainActivity extends Activity {
             bars.toggleSide();
         } else {
             prefs.edit().putBoolean("barsHidden", !prefs.getBoolean("barsHidden", false)).apply();
+            UpdateNotes.userSet(prefs, "barsHidden");
             bars.render();
             bars.syncArrow();
         }
@@ -1206,6 +1335,7 @@ public class MainActivity extends Activity {
             checks[i] = check(CENTER_LABELS[i], centerOn(key));
             checks[i].setOnCheckedChangeListener((b, on) -> {
                 prefs.edit().putBoolean(key, on).apply();
+                UpdateNotes.userSet(prefs, key);
                 syncAll.run();
                 syncCenter();
                 inject();
@@ -1224,6 +1354,7 @@ public class MainActivity extends Activity {
         CheckBox times = check("Message times", prefs.getBoolean("messageTimes", true));
         times.setOnCheckedChangeListener((b, on) -> {
             prefs.edit().putBoolean("messageTimes", on).apply();
+            UpdateNotes.userSet(prefs, "messageTimes");
             if (chat != null) {
                 chat.setShowTimes(on);
             }
@@ -1232,6 +1363,7 @@ public class MainActivity extends Activity {
         CheckBox anim = check("Animate new text", prefs.getBoolean("animateText", true));
         anim.setOnCheckedChangeListener((b, on) -> {
             prefs.edit().putBoolean("animateText", on).apply();
+            UpdateNotes.userSet(prefs, "animateText");
             if (chat != null) {
                 chat.animate = on;
             }
@@ -1350,6 +1482,7 @@ public class MainActivity extends Activity {
             screenLock.setContentDescription("Require this phone's screen lock");
             screenLock.setOnCheckedChangeListener((v, on) -> {
                 prefs.edit().putBoolean("lanScreenLock", on).apply();
+                UpdateNotes.userSet(prefs, "lanScreenLock");
                 // A new key is needed for the new setting; Quill Desktop only takes it from a password-unlocked session.
                 remote.registerKey(m -> toast(m == null ? "Home-network key updated." : m));
             });
@@ -1360,13 +1493,17 @@ public class MainActivity extends Activity {
         for (int i = 0; i < Notifier.TYPES.size(); i++) {
             String key = "notify." + Notifier.TYPES.get(i);
             CheckBox c = check(Notifier.LABELS[i], prefs.getBoolean(key, true));
-            c.setOnCheckedChangeListener((v, on) -> prefs.edit().putBoolean(key, on).apply());
+            c.setOnCheckedChangeListener((v, on) -> {
+                prefs.edit().putBoolean(key, on).apply();
+                UpdateNotes.userSet(prefs, key);
+            });
             box.addView(c);
         }
         CheckBox bg = check("Notify in background (local network)", prefs.getBoolean("notifyBackground", false));
         bg.setContentDescription("Notify in background");
         bg.setOnCheckedChangeListener((v, on) -> {
             prefs.edit().putBoolean("notifyBackground", on).apply();
+            UpdateNotes.userSet(prefs, "notifyBackground");
             if (on) {
                 askNotifyPermission();
             }
@@ -1635,6 +1772,7 @@ public class MainActivity extends Activity {
             return;
         }
         prefs.edit().putInt("zoom", z).apply();
+        UpdateNotes.userSet(prefs, "zoom");
         web.getSettings().setTextZoom(z);
         chatStyle();
         zoomLabel.setText(z + "%");
@@ -2028,6 +2166,7 @@ public class MainActivity extends Activity {
         }
         updateCheck.run();
         showUpdateBlocked();
+        updateQuestions();
         syncNotifyBanner();
         Notifier.appVisible = true;
         if (fgNotifier != null) {

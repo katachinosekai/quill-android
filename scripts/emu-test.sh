@@ -1322,6 +1322,35 @@ if [ -n "${PPORT:-}" ]; then
 	else
 		bad "overlay: questions answered in the reply, no separate card" "no overlay toggle"
 	fi
+	# After an update (user rule 2026-11-22): one dialog with the new entries; Later asks again; OK applies once;
+	# Quill Desktop's pending questions are in the same dialog and the answer reaches it
+	adb_ shell am force-stop "$PKG"
+	launch --ei quill.testPrevCode 40
+	wait_for 'text="After the update"' 20 && has 'Home-network unlock needs your screen lock' && ok "update: one dialog with the new notice after an update" || bad "update: one dialog with the new notice after an update"
+	tap_any "Later" && nap 1
+	adb_ shell am force-stop "$PKG"
+	launch
+	wait_for 'text="After the update"' 20 && ok "update: Later asks again at the next start" || bad "update: Later asks again at the next start"
+	pcurl "/debug/questions?add=1" >/dev/null
+	tap_any "OK" && nap 1
+	gone 'text="After the update"' 5
+	adb_ shell am force-stop "$PKG"
+	launch
+	if wait_for 'Coordinate with subagents  (Quill Desktop)' 25; then
+		! has 'Home-network unlock needs your screen lock' && ok "update: an answered notice doesn't come back" || bad "update: an answered notice doesn't come back"
+		has 'Coordinate with subagents (recommended)' && has 'How should Claude work?' && ok "update: Quill Desktop's question with its recommended choice picked" || bad "update: Quill Desktop's question with its recommended choice picked"
+		tap_any "OK" && nap 1
+		wait_log 'answer coordinator=0' && ok "update: the answer reaches Quill Desktop" || bad "update: the answer reaches Quill Desktop" "$(plog | grep -o 'answer [^"]*' | tail -1)"
+	else
+		bad "update: Quill Desktop's question with its recommended choice picked" "no dialog"
+	fi
+	adb_ shell am force-stop "$PKG"
+	launch --ei quill.testPrevCode 99
+	nap 4
+	DIRTY=1
+	! has 'text="After the update"' && pref_has 'lanScreenLock' && ok "update: a downgrade keeps the answers (no dialog again)" || bad "update: a downgrade keeps the answers (no dialog again)"
+	popen session_A1
+	a1_open 20
 	# Unreachable Quill Desktop: after 2 failed tries the line suggests the VPN, with a help link
 	pcurl "/debug/down?s=45" >/dev/null
 	wait_for 'Not at home? Turn on your VPN' 45 && has 'VPN help' && ok "vpn: hint when Quill Desktop can't be reached" || bad "vpn: hint when Quill Desktop can't be reached"

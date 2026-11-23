@@ -563,6 +563,19 @@ final class Remote implements ChatView.Actions {
         });
     }
 
+    /** Answer one of Quill Desktop's pending settings questions; done (UI thread, may be null) gets null or the reason. */
+    void answerSetting(String id, Integer choice, java.util.function.Consumer<String> done) {
+        work.execute(() -> {
+            PhoneApi.Reply r = api.settingsAnswer(id, choice);
+            String msg = r.ok() ? null : "control_off".equals(r.error())
+                    ? "Quill Desktop doesn't let paired devices change settings; answer it there."
+                    : "Quill Desktop didn't take the answer (" + r.error() + "); it asks again next time.";
+            if (done != null) {
+                ui.post(() -> done.accept(msg));
+            }
+        });
+    }
+
     synchronized JSONObject session(String id) {
         for (JSONObject s : sessions) {
             if (s.optString("id").equals(id)) {

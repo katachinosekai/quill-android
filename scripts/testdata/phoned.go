@@ -61,6 +61,7 @@ type server struct {
 	lanKey    *ecdsa.PublicKey
 	tokPw     bool
 	nonces    map[string]time.Time
+	questions []map[string]any
 	settings  map[string]bool
 	conns     int
 	paths     map[string]int
@@ -311,6 +312,24 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	q := r.URL.Query()
 	switch {
+	case p == "/phone/settings/questions":
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		qs := s.questions
+		if qs == nil {
+			qs = []map[string]any{}
+		}
+		reply(w, 200, map[string]any{"v": 1, "questions": qs})
+	case p == "/debug/questions":
+		// a pending Quill Desktop settings question after its update (?add=1)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if q.Get("add") == "1" {
+			s.questions = append(s.questions, map[string]any{"id": "coordinator", "kind": "New", "title": "Coordinate with subagents",
+				"question": "How should Claude work?", "text": "Online sessions only (Claude models); local models work alone.",
+				"choices": []string{"Coordinate with subagents (recommended)", "One session does everything"}, "recommended": 0})
+		}
+		reply(w, 200, map[string]any{"n": len(s.questions)})
 	case p == "/phone/sessions":
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -810,6 +829,30 @@ func (s *server) post(w http.ResponseWriter, r *http.Request, body map[string]an
 	}
 	if !s.control {
 		fail(w, 403, "control_off")
+		return
+	}
+	if p == "/phone/settings/answer" {
+		// like Quill Desktop 0.1.25: choice is an index into choices (omitted for a Notice); reply = remaining questions
+		id, _ := body["id"].(string)
+		if id == "" {
+			fail(w, 400, "bad_request")
+			return
+		}
+		for i, q := range s.questions {
+			if q["id"] == id {
+				ch, _ := q["choices"].([]string)
+				c, isNum := body["choice"].(float64)
+				if len(ch) > 0 && (!isNum || int(c) < 0 || int(c) >= len(ch)) {
+					fail(w, 404, "not_found")
+					return
+				}
+				s.questions = append(s.questions[:i], s.questions[i+1:]...)
+				s.log = append(s.log, fmt.Sprintf("answer %s=%v", id, body["choice"]))
+				reply(w, 200, map[string]any{"v": 1, "questions": s.questions})
+				return
+			}
+		}
+		fail(w, 404, "not_found")
 		return
 	}
 	if p == "/phone/settings" {
