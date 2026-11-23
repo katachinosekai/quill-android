@@ -132,7 +132,7 @@ final class PhoneApi {
             if (!retry) {
                 return r;
             }
-            long wait = r.code == 429 ? 1000L * Math.max(1, r.body == null ? 1 : r.body.optInt("retryAfter", 1)) : 600L * (attempt + 1);
+            long wait = r.code == 429 ? retryAfterMs(r.body == null ? 1 : r.body.optInt("retryAfter", 1)) : 600L * (attempt + 1);
             try {
                 Thread.sleep(wait);
             } catch (InterruptedException e) {
@@ -141,6 +141,14 @@ final class PhoneApi {
             }
         }
         return r;
+    }
+
+    /** Longest wait for one 429 retry (security review f436bdd: Quill Desktop's Retry-After was taken as is). */
+    static final int MAX_RETRY_AFTER_S = 10;
+
+    /** A 429's Retry-After seconds as a wait: at least 1 s, at most MAX_RETRY_AFTER_S. */
+    static long retryAfterMs(int seconds) {
+        return 1000L * Math.max(1, Math.min(MAX_RETRY_AFTER_S, seconds));
     }
 
     Reply call(String method, String path, JSONObject body, String idem, int readTimeoutMs) {

@@ -1,5 +1,6 @@
 package io.github.katachinosekai.quillremote;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -14,5 +15,14 @@ public class PhoneApiTest {
         assertTrue(PhoneApi.ipLiteral("[fe80::1]"));
         assertFalse(PhoneApi.ipLiteral("desktop.local"));
         assertFalse(PhoneApi.ipLiteral("desktop.tail1234.ts.net"));
+    }
+
+    @Test
+    public void retryAfterIsCapped() {
+        assertEquals(3000, PhoneApi.retryAfterMs(3));
+        assertEquals(1000, PhoneApi.retryAfterMs(0));
+        assertEquals(1000, PhoneApi.retryAfterMs(-5));
+        assertEquals(PhoneApi.MAX_RETRY_AFTER_S * 1000L, PhoneApi.retryAfterMs(86400));
+        assertEquals(PhoneApi.MAX_RETRY_AFTER_S * 1000L, PhoneApi.retryAfterMs(Integer.MAX_VALUE));
     }
 }
