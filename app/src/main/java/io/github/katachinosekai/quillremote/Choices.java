@@ -12,6 +12,35 @@ final class Choices {
             "^(?:with|without|including|plus|so|so that|which|that|where|while|because|but|then|except|unless|since|using|via|like|such as|e\\.g\\.|i\\.e\\.)\\b",
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
+    static final java.util.regex.Pattern SOURCES_HEAD = java.util.regex.Pattern.compile(
+            "^[#>\\s]*[*_]*\\s*(?:sources?|references?|links?|citations?)\\s*:?\\s*[*_]*\\s*:?$", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final String LINK = "(?:\\[[^\\]]*\\]\\([^)\\s]*\\)|<?https?://\\S+>?)";
+    static final java.util.regex.Pattern LINK_ITEM = java.util.regex.Pattern.compile(
+            "^(?:[-*+•]|\\d+[.)])?\\s*" + LINK + "(?:\\s*[,;]?\\s*" + LINK + ")*\\s*$");
+
+    /**
+     * text without a trailing sources/links block (blank lines, a "Sources:" heading, link-only list items), right-trimmed:
+     * the question a web-search reply closes with sits above it (Quill Desktop's chat.SplitSources). Unchanged (just
+     * right-trimmed) when there is no such block or the text is nothing else.
+     */
+    static String withoutSources(String text) {
+        String t = (text == null ? "" : text).replaceAll("\\s+$", "");
+        String[] lines = t.split("\n", -1);
+        int i = lines.length;
+        while (i > 0) {
+            String l = lines[i - 1].trim();
+            if (!l.isEmpty() && !SOURCES_HEAD.matcher(l).find() && !LINK_ITEM.matcher(l).find()) {
+                break;
+            }
+            i--;
+        }
+        if (i == lines.length || i == 0) {
+            return t;
+        }
+        String body = String.join("\n", java.util.Arrays.copyOfRange(lines, 0, i)).replaceAll("\\s+$", "");
+        return body.isEmpty() ? t : body;
+    }
+
     static String[] parse(String line) {
         String clean = (line == null ? "" : line).replace("**", "").replace("__", "").replace("`", "").replaceAll("^[#>*\\-_ ]+", "").trim();
         int q = clean.lastIndexOf('?');
@@ -20,7 +49,13 @@ final class Choices {
         }
         // Asides in parentheses explain an option ("add all (recommended)"); the button shows just the option
         // (Quill Desktop's parenAside), and a leading list number is no part of it.
-        String ask = clean.substring(0, q).replaceAll("\\s*\\([^)]*\\)", "").replaceAll("^\\d+[.)]\\s+", "").trim();
+        // "Have you finished? Yes or no?": the options are the sentence after the earlier question.
+        String body = clean.substring(0, q);
+        int earlier = lastQOutsideParens(body);
+        if (earlier >= 0) {
+            body = body.substring(earlier + 1).trim();
+        }
+        String ask = body.replaceAll("\\s*\\([^)]*\\)", "").replaceAll("^\\d+[.)]\\s+", "").trim();
         String sep = ", or ";
         int i = ask.lastIndexOf(sep);
         boolean list = i >= 0;

@@ -1266,7 +1266,7 @@ final class ChatView extends LinearLayout {
     }
 
     static String lastLine(String text) {
-        String t = text.replaceAll("[\\s]+$", "");
+        String t = Choices.withoutSources(text);
         int cut = t.lastIndexOf('\n');
         return t.substring(cut + 1);
     }

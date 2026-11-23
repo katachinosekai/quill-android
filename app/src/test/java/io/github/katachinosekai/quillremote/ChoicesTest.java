@@ -73,4 +73,22 @@ public class ChoicesTest {
         assertEquals(-1, Choices.recommended("Red (recommended), green (recommended), or blue?", 3));
         assertEquals(0, Choices.recommended("Yes (recommended) or no?", 2));
     }
+
+    private static final String SRC = "\n\nSources:\n- [A review](https://example.com/a)\n- [B review](https://example.com/b)\n- https://example.com/c";
+
+    @Test
+    public void questionBeforeSourcesBlock() {
+        String reply = "...measure the old ones when you open the card.\n\n**Have you finished the bot check? Yes or no?**\n\nSources:\n"
+                + "- [OC3D – XFX RX 7900 XTX Merc 310 review](https://example.com/a)\n"
+                + "- [Overclockers – XFX MERC 310 RX 7900 XT review](https://example.com/b)\n"
+                + "- [overclock.net – Merc Owners Club (p.12)](https://example.com/c)";
+        assertArrayEquals(new String[]{"Yes", "No"}, Choices.parse(ChatView.lastLine(reply)));
+        // a closing sentence that is no link block: no buttons, as before
+        assertNull(Choices.parse(ChatView.lastLine("**Yes or no?**\n\nThat is all I found.")));
+        // a heading without links still counts as the block
+        assertArrayEquals(new String[]{"Yes", "No"}, Choices.parse(ChatView.lastLine("**Yes or no?**\n\n**Sources:**")));
+        // numbered questions, then numbered links
+        assertEquals("2. Merge now or later?", ChatView.lastLine("1. Ship it or hold?\n2. Merge now or later?\n\nReferences\n1. [a](https://example.com/a)\n2. https://example.com/b"));
+        assertEquals("Sources:\n- [a](https://example.com/a)", Choices.withoutSources("Sources:\n- [a](https://example.com/a)\n"));
+    }
 }
