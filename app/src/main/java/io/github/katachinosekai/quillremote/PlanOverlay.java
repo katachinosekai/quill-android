@@ -172,4 +172,20 @@ final class PlanOverlay {
         }
         return sb.toString();
     }
+
+    /** The note above the approval question: what the go-ahead does (Quill Desktop's approvalCaption). */
+    static String approvalCaption(java.util.List<String> options, boolean[] stop, boolean otherQuestions) {
+        String go = "Yes";
+        for (int i = 0; i < options.size(); i++) {
+            if (i >= stop.length || !stop[i]) {
+                go = options.get(i);
+                break;
+            }
+        }
+        if (go.length() > 40) {
+            go = go.substring(0, 39).trim() + "\u2026";
+        }
+        return "Answering \"" + go + "\" runs this plan: every command and change, including its background jobs and subagents, is approved until the plan is done."
+                + (otherQuestions ? " Unanswered questions are sent as \"no answer\"." : "");
+    }
 }

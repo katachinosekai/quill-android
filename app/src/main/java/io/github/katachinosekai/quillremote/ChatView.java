@@ -1787,11 +1787,12 @@ final class ChatView extends LinearLayout {
         for (int k = 0; k < m.length; k++) {
             JSONObject q = plan.planQuestions == null ? null : plan.planQuestions.optJSONObject(k);
             if (!apprDone && apprQ < 0 && apprCut > at && apprCut <= m[k][0]) {
-                String before = PlanOverlay.lines(reply.text, at, apprCut);
+                int from = Math.max(at, span[0]);
+                String before = PlanOverlay.lines(reply.text, at, from);
                 if (!before.trim().isEmpty()) {
                     col.addView(markdown(before));
                 }
-                apprDone = addApprovalRadio(col, plan, ctls);
+                apprDone = addApprovalRadio(col, plan, ctls, PlanOverlay.lines(reply.text, from, apprCut));
                 at = apprCut;
             }
             String part = PlanOverlay.lines(reply.text, at, m[k][1]);
@@ -1807,16 +1808,17 @@ final class ChatView extends LinearLayout {
             col.addView(ctl);
             ctls.add(ctl);
             if (!apprDone && apprQ == k && (k + 1 == m.length || m[k + 1] != m[k] && m[k + 1][0] != m[k][0])) {
-                apprDone = addApprovalRadio(col, plan, ctls);
+                apprDone = addApprovalRadio(col, plan, ctls, ""); // its question is the line above
             }
             at = m[k][1];
         }
         if (!apprDone && apprCut >= at) {
-            String before = PlanOverlay.lines(reply.text, at, apprCut);
+            int from = Math.max(at, span[0]);
+            String before = PlanOverlay.lines(reply.text, at, from);
             if (!before.trim().isEmpty()) {
                 col.addView(markdown(before));
             }
-            apprDone = addApprovalRadio(col, plan, ctls);
+            apprDone = addApprovalRadio(col, plan, ctls, PlanOverlay.lines(reply.text, from, apprCut));
             at = apprCut;
         }
         String rest = PlanOverlay.lines(reply.text, at, Integer.MAX_VALUE);
@@ -1825,7 +1827,7 @@ final class ChatView extends LinearLayout {
         }
         boolean radioHere = plan.planApproval != null && apprDone && span != null;
         if (plan.planApproval != null && span == null) {
-            addApprovalRadio(col, plan, ctls); // no line holds the question: the radio group closes the reply
+            addApprovalRadio(col, plan, ctls, ""); // no line holds the question: the radio group closes the reply
             radioHere = true;
         }
         // The caption, a changes field and the buttons close the reply as part of it: no card of their own
@@ -1944,12 +1946,36 @@ final class ChatView extends LinearLayout {
         return g;
     }
 
-    /** Adds the approval radio group under the reply's question line; true (so callers can mark it placed). */
-    boolean addApprovalRadio(LinearLayout col, Item plan, List<View> ctls) {
+    /**
+     * Adds the approval block: one box (accent outline while the plan waits, muted once answered) holding the
+     * warning, the approval question as written (empty: it is shown above already) and the radio group. True (so
+     * callers can mark it placed).
+     */
+    boolean addApprovalRadio(LinearLayout col, Item plan, List<View> ctls, String question) {
+        LinearLayout box = new LinearLayout(getContext());
+        box.setOrientation(VERTICAL);
+        box.setPadding(dp(10), dp(8), dp(10), dp(6));
+        boolean live = live(plan);
+        GradientDrawable bg = round(live ? 0x24000000 | (MainActivity.ACCENT & 0x00FFFFFF) : 0x00000000, 10);
+        bg.setStroke(dp(live ? 2 : 1), live ? MainActivity.ACCENT : 0xFF444440);
+        box.setBackground(bg);
+        if (live) {
+            boolean qs = plan.planQuestions != null && plan.planQuestions.length() > 0;
+            TextView warn = label(PlanOverlay.approvalCaption(plan.planApproval.options, plan.planApproval.stop, qs), MainActivity.MUTED, 12);
+            warn.setPadding(0, 0, 0, dp(6));
+            box.addView(warn);
+        }
+        if (!question.trim().isEmpty()) {
+            box.addView(markdown(question));
+        }
         View g = approvalRadio(plan);
         g.setPadding(dp(16), 0, 0, dp(6));
-        col.addView(g);
+        box.addView(g);
         ctls.add(g);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(6);
+        lp.bottomMargin = dp(4);
+        col.addView(box, lp);
         return true;
     }
 

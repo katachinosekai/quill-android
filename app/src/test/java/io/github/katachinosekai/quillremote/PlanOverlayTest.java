@@ -1,6 +1,7 @@
 package io.github.katachinosekai.quillremote;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
 import org.junit.Test;
@@ -48,5 +49,22 @@ public class PlanOverlayTest {
         assertArrayEquals(new int[]{2, 2}, PlanOverlay.approvalSpan("a\nb\n**Do you approve?**\n\n", "Do you approve?"));
         assertNull(PlanOverlay.approvalSpan(reply, "Something else entirely?"));
         assertNull(PlanOverlay.approvalSpan(reply, ""));
+    }
+
+    @Test
+    public void approvalCaptionNamesTheGoAheadOption() {
+        java.util.List<String> opts = java.util.Arrays.asList("Yes", "No");
+        assertEquals("Answering \"Yes\" runs this plan: every command and change, including its background jobs and subagents, is approved until the plan is done.",
+                PlanOverlay.approvalCaption(opts, new boolean[]{false, true}, false));
+        assertEquals("Answering \"Go on\" runs this plan: every command and change, including its background jobs and subagents, is approved until the plan is done. Unanswered questions are sent as \"no answer\".",
+                PlanOverlay.approvalCaption(java.util.Arrays.asList("Stop", "Go on"), new boolean[]{true, false}, true));
+    }
+
+    @Test
+    public void theApprovalQuestionSpanStartsAtItsLineSoTheBoxCanHoldIt() {
+        String reply = "Plan:\n1. Edit x.\n\n**Can I run steps 1-2?**\nYes (recommended) or no?\n\nDone.";
+        int[] span = PlanOverlay.approvalSpan(reply, "Can I run steps 1-2? Yes (recommended) or no?");
+        assertArrayEquals(new int[]{3, 4}, span);
+        assertEquals("Plan:\n1. Edit x.\n", PlanOverlay.lines(reply, 0, span[0]));
     }
 }
