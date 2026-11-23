@@ -131,6 +131,7 @@ class KmemScreen {
         chatView = new ChatView(a);
         chatView.showTimes = a.prefs.getBoolean("messageTimes", true);
         chatView.animate = a.prefs.getBoolean("animateText", true);
+        a.styleChat(chatView);
         assist = new KmemAssistant(remote, chatView);
         assist.onModel = this::fillAssist;
         assistHeader = column();

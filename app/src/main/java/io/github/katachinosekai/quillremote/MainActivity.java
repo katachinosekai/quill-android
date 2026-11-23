@@ -1864,8 +1864,16 @@ public class MainActivity extends Activity {
     }
 
     void chatStyle() {
-        if (chat != null) {
-            chat.setStyle(prefs.getInt("zoom", 115) / 115f, centerOn("centerText"), centerOn("centerInput"), centerOn("centerStatus"));
+        styleChat(chat);
+        if (kmemScreen != null) {
+            styleChat(kmemScreen.chatView);
+        }
+    }
+
+    /** The zoom and centering settings of the main chat, for any ChatView (the kmem Assistant tab uses the same). */
+    void styleChat(ChatView v) {
+        if (v != null) {
+            v.setStyle(prefs.getInt("zoom", 115) / 115f, centerOn("centerText"), centerOn("centerInput"), centerOn("centerStatus"));
         }
     }
 
