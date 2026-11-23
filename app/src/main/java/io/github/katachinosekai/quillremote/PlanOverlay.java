@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  * reply; there is no separate card. Anything that doesn't line up falls back to the card. This finds the lines.
  */
 final class PlanOverlay {
-    static final Pattern NUMBERED = Pattern.compile("^\\s*(\\d{1,3})[.)]\\s+(.*)$");
+    static final Pattern NUMBERED = Pattern.compile("^\\s*(?:[-*+]\\s+)?(\\d{1,3})[.)]\\s+(.*)$");
 
     private PlanOverlay() {
     }
@@ -27,8 +27,9 @@ final class PlanOverlay {
         if (a.isEmpty() || b.isEmpty()) {
             return false;
         }
-        int n = Math.min(40, Math.min(a.length(), b.length()));
-        return n >= 8 && a.regionMatches(0, b, 0, n);
+        // The question can follow a lead-in sentence on its line (Quill Desktop sends the question's own sentence).
+        String head = b.length() > 40 ? b.substring(0, 40) : b;
+        return head.length() >= 8 && a.contains(head);
     }
 
     /**
@@ -41,11 +42,33 @@ final class PlanOverlay {
             return null;
         }
         String[] lines = reply.split("\n", -1);
+        // Lines inside a fenced code block are code, not questions.
+        boolean[] code = new boolean[lines.length];
+        boolean fence = false;
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].trim().startsWith("```")) {
+                fence = !fence;
+                code[i] = true;
+            } else {
+                code[i] = fence;
+            }
+        }
         int[][] out = new int[nums.length][];
         int from = 0;
         for (int q = 0; q < nums.length; q++) {
             int found = -1;
+            // Two questions on one numbered line share its lines.
+            if (q > 0 && nums[q] > 0 && nums[q] == nums[q - 1]) {
+                Matcher sm = NUMBERED.matcher(lines[out[q - 1][0]].replace("**", ""));
+                if (sm.matches() && same(lines[out[q - 1][0]], texts[q])) {
+                    out[q] = out[q - 1];
+                    continue;
+                }
+            }
             for (int i = from; i < lines.length && found < 0; i++) {
+                if (code[i]) {
+                    continue;
+                }
                 Matcher m = NUMBERED.matcher(lines[i].replace("**", ""));
                 if (nums[q] > 0) {
                     if (m.matches() && Integer.parseInt(m.group(1)) == nums[q] && same(m.group(2), texts[q])) {
@@ -59,7 +82,7 @@ final class PlanOverlay {
                 return null;
             }
             int end = found + 1;
-            while (end < lines.length && !lines[end].trim().isEmpty() && !NUMBERED.matcher(lines[end].replace("**", "")).matches()) {
+            while (end < lines.length && !code[end] && !lines[end].trim().isEmpty() && !NUMBERED.matcher(lines[end].replace("**", "")).matches()) {
                 end++;
             }
             out[q] = new int[]{found, end};

@@ -31,6 +31,6 @@ public class PlanOverlayReviewTest {
         String reply = "Plan:\n1. Edit x.\n\n```\n1. Which colour should it be?\n```\n\n1. Which colour should it be? Red or blue?";
         int[][] m = PlanOverlay.match(reply, new int[]{1}, new String[]{"Which colour should it be? Red or blue?"});
         assertNotNull(m);
-        assertArrayEquals(new int[]{8, 9}, m[0]);
+        assertArrayEquals(new int[]{7, 8}, m[0]); // line 7: the reply has 7 lines before it
     }
 }
