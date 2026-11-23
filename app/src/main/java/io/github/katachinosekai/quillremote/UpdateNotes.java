@@ -45,7 +45,10 @@ final class UpdateNotes {
                     "Quill Android 0.9.26 can unlock Quill Desktop without its password on your home network, once you "
                             + "switch that on for this phone in Quill Desktop → Devices. By default the phone's key only works "
                             + "right after you unlock your phone, so someone with your phone on your Wi-Fi still can't get in. "
-                            + "You can change this in ⚙ → Home network.", null, -1));
+                            + "You can change this in ⚙ → Home network.", null, -1),
+            new Entry("pairingAsks", 43, "notice", "Safer pairing and approvals",
+                    "Quill Android 0.9.28: pairing links now ask before pairing, and Allow/Deny for approvals "
+                            + "needs an unlocked phone. Nothing to do.", null, -1));
 
     private UpdateNotes() {
     }
