@@ -1078,6 +1078,9 @@ final class Remote implements ChatView.Actions {
                 if (extra.has("choice")) {
                     body.put("choice", extra.optInt("choice"));
                 }
+                if (extra.has("approvalChoice")) {
+                    body.put("approvalChoice", extra.optInt("approvalChoice"));
+                }
                 if (extra.has("planAnswers")) {
                     body.put("planAnswers", extra.get("planAnswers"));
                 }
