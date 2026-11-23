@@ -50,7 +50,7 @@ public class CutTest {
         assertEquals("abc" + EMOJI + "…", Notifier.clip(s, 6));
         assertEquals("abc…", UpdateNotes.clip(s, 5));
         assertEquals("abc" + EMOJI + "…", UpdateNotes.clip(s, 6));
-        String out = "b".repeat(156) + EMOJI + "zz";
+        String out = "b".repeat(156) + EMOJI + "zzzz";
         assertEquals("b".repeat(156) + "...", KmemWriteModel.brief(out));
     }
 }
