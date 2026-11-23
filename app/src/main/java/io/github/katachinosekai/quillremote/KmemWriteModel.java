@@ -183,6 +183,6 @@ final class KmemWriteModel {
     /** Output of a commit, shortened for a toast. */
     static String brief(String output) {
         String o = output == null ? "" : output.trim();
-        return o.length() > 160 ? o.substring(0, 157) + "..." : o;
+        return Cut.ellipsize(o, 160, "...");
     }
 }

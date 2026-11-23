@@ -82,7 +82,7 @@ final class UpdateNotes {
 
     static String clip(String s, int n) {
         s = s == null ? "" : s.trim();
-        return s.length() > n ? s.substring(0, n - 1) + "…" : s;
+        return Cut.ellipsize(s, n, "…");
     }
 
     /**

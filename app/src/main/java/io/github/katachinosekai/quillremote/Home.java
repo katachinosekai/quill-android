@@ -186,7 +186,7 @@ final class Home {
 
     static String label(String title) {
         String t = title == null || title.trim().isEmpty() ? "Session" : title.trim();
-        return t.length() > 24 ? t.substring(0, 23) + "…" : t;
+        return Cut.ellipsize(t, 24, "…");
     }
 
     static ShortcutInfo.Builder session(Context c, String id, String title, Icon icon) {

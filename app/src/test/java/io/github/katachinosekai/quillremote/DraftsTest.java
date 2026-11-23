@@ -65,4 +65,12 @@ public class DraftsTest {
         assertNull(d.load("gone"));
         assertEquals("keep", p.getString("unrelated", null));
     }
+
+    @Test
+    public void overlongDraftIsNotCutThroughAnEmoji() {
+        Drafts d = new Drafts(new FakePrefs());
+        String text = "a".repeat(Drafts.MAX_CHARS - 1) + "\uD83D\uDE00tail";
+        d.save("a", text, 0, 0);
+        assertEquals("a".repeat(Drafts.MAX_CHARS - 1), d.load("a").text);
+    }
 }

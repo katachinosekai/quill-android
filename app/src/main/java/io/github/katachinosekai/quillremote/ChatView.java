@@ -1211,9 +1211,13 @@ final class ChatView extends LinearLayout {
             for (int k = 0; k < opts.length; k++) {
                 final String o = opts[k];
                 final int index = k;
+<<<<<<< HEAD
                 String btnText = o.length() > 60 ? o.substring(0, 59) + "…" : o;
                 // The recommended option says so and, while the buttons are live, is highlighted.
                 TextView b = k == rec ? (active ? highlighted(btnText + Choices.RECOMMENDED, MainActivity.ACCENT) : button(btnText + Choices.RECOMMENDED, MainActivity.ACCENT)) : button(btnText, MainActivity.ACCENT);
+=======
+                TextView b = button(Cut.ellipsize(o, 60, "…"), MainActivity.ACCENT);
+>>>>>>> e0736b4 (Cut long text without splitting surrogate pairs)
                 btns.add(b);
                 if (active) {
                     b.setOnClickListener(v -> {

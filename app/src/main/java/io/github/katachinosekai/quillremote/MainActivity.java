@@ -756,7 +756,7 @@ public class MainActivity extends Activity {
             text = text.isEmpty() ? subj.trim() : subj.trim() + "\n" + text;
         }
         while (text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 32 * 1024) {
-            text = text.substring(0, text.length() * 9 / 10);
+            text = Cut.head(text, text.length() * 9 / 10);
         }
         return text;
     }

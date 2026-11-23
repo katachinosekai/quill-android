@@ -33,7 +33,7 @@ final class PlanOverlay {
             return false;
         }
         // The question can follow a lead-in sentence on its line (Quill Desktop sends the question's own sentence).
-        String head = b.length() > 40 ? b.substring(0, 40) : b;
+        String head = Cut.head(b, 40);
         return head.length() >= 8 && a.contains(head);
     }
 

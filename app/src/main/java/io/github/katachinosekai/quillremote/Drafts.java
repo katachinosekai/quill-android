@@ -38,7 +38,7 @@ final class Drafts {
             return;
         }
         if (text.length() > MAX_CHARS) {
-            text = text.substring(0, MAX_CHARS);
+            text = Cut.head(text, MAX_CHARS);
         }
         int a = Math.max(0, Math.min(start, text.length()));
         int b = Math.max(0, Math.min(end, text.length()));
