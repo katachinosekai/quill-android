@@ -47,6 +47,12 @@ public class NotifyAction extends BroadcastReceiver {
             return;
         }
         Context app = c.getApplicationContext();
+        android.app.KeyguardManager km = app.getSystemService(android.app.KeyguardManager.class);
+        if (km == null || km.isKeyguardLocked()) {
+            // Never answer from the lock screen: someone holding the locked phone must not approve anything.
+            failed(app, id, session, title, "Unlock your phone to answer. Tap to open the session.");
+            return;
+        }
         PendingResult pr = goAsync();
         new Thread(() -> {
             try {

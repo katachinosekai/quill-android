@@ -234,14 +234,26 @@ class Notifier {
                 .setAutoCancel(true)
                 .setCategory(type.equals("finished") ? Notification.CATEGORY_STATUS : Notification.CATEGORY_REMINDER);
         if (req != null) {
-            nb.addAction(new Notification.Action.Builder(null, "Allow", NotifyAction.intent(c, id, quill, req.requestId, "allow", head)).build());
-            nb.addAction(new Notification.Action.Builder(null, "Deny", NotifyAction.intent(c, id, quill, req.requestId, "deny", head)).build());
+            nb.addAction(answerAction("Allow", NotifyAction.intent(c, id, quill, req.requestId, "allow", head)));
+            nb.addAction(answerAction("Deny", NotifyAction.intent(c, id, quill, req.requestId, "deny", head)));
         }
         Notification n = nb.build();
         try {
             c.getSystemService(NotificationManager.class).notify(id, n);
         } catch (SecurityException ignored) {
         }
+    }
+
+    /**
+     * Allow / Deny need the phone unlocked (security review f436bdd): on Android 12+ the system asks for the screen
+     * lock before the button works; NotifyAction also refuses while the phone is locked (Android 11).
+     */
+    static Notification.Action answerAction(String label, PendingIntent pi) {
+        Notification.Action.Builder b = new Notification.Action.Builder(null, label, pi);
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            b.setAuthenticationRequired(true);
+        }
+        return b.build();
     }
 
     /** The newest still-pending permission request in a Quill Desktop session, or null (none, or unreachable). */
