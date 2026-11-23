@@ -377,6 +377,19 @@ final class PhoneApi {
         return post("/phone/kmem/assistant/" + op, body == null ? new JSONObject() : body);
     }
 
+    /** Memory tab (phase 3, read-only): find is limited to one per second (429 + Retry-After). */
+    Reply kmemFind(String q) {
+        return get("/phone/kmem/find?q=" + enc(q), 20000);
+    }
+
+    Reply kmemGet(String topic) {
+        return get("/phone/kmem/get?topic=" + enc(topic), 20000);
+    }
+
+    Reply kmemFact(String id) {
+        return get("/phone/kmem/fact?id=" + enc(id), 20000);
+    }
+
     Reply kmemTopics() {
         return get("/phone/kmem/topics", 20000);
     }
