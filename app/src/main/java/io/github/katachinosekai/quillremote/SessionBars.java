@@ -48,6 +48,13 @@ class SessionBars {
         }
     }
 
+    /** Flat portrait order: newest activity first; sessions with no timestamp keep their given order, after the dated ones. */
+    static List<Item> recentFirst(List<Item> in, java.util.function.ToLongFunction<Item> lastOf) {
+        List<Item> out = new ArrayList<>(in);
+        out.sort((x, y) -> Long.compare(lastOf.applyAsLong(y), lastOf.applyAsLong(x)));
+        return out;
+    }
+
     final MainActivity a;
     final SharedPreferences prefs;
     final HorizontalScrollView tabScroll, bookScroll;
@@ -643,6 +650,7 @@ class SessionBars {
     }
 
     void renderSide(Map<String, List<Item>> groups) {
+        boolean flat = portrait();
         sideList.removeAllViews();
         TextView head = new TextView(a);
         head.setText("Sessions");
@@ -662,6 +670,18 @@ class SessionBars {
             empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
             empty.setPadding(a.dp(8), 0, a.dp(8), 0);
             sideList.addView(empty);
+            return;
+        }
+        if (flat) {
+            for (Item it : recentFirst(items, i -> meta.optJSONObject(i.id) == null ? 0 : meta.optJSONObject(i.id).optLong("last"))) {
+                View r = twoLine(it, a.dp(34), 14);
+                r.setOnClickListener(v -> picked(it.id));
+                r.setOnLongClickListener(v -> {
+                    sessionMenu(it.id);
+                    return true;
+                });
+                sideList.addView(r);
+            }
             return;
         }
         for (Map.Entry<String, List<Item>> e : groups.entrySet()) {
