@@ -507,6 +507,7 @@ final class Remote implements ChatView.Actions {
         JSONArray arr = o.optJSONArray("sessions");
         for (int i = 0; arr != null && i < arr.length(); i++) {
             sessions.add(arr.getJSONObject(i));
+            sawAutoApprove |= sessions.get(i).has("autoApprove");
         }
         if (current == null || session(current) == null) {
             current = sessions.isEmpty() ? null : sessions.get(0).optString("id");
@@ -761,6 +762,9 @@ final class Remote implements ChatView.Actions {
                 if (!s.optString("kmem").isEmpty()) {
                     m.put("kmem", s.optString("kmem"));
                 }
+                if (AutoApprove.on(s)) {
+                    m.put("autoApprove", true);
+                }
                 JSONObject ctx = s.optJSONObject("context");
                 if (ctx != null) {
                     m.put("context", ctx.optLong("used")).put("contextMax", ctx.optLong("max"));
@@ -829,6 +833,7 @@ final class Remote implements ChatView.Actions {
 
     void statusLine(JSONObject s) {
         chat.setReadOnly(!control);
+        chat.setAutoApprove(autoApproveSupported(), control && AutoApprove.on(s));
         chat.setSuggestion(s == null ? "" : s.optString("suggestion"));
         if (s == null) {
             chat.setBusy(false, null);
@@ -1037,6 +1042,46 @@ final class Remote implements ChatView.Actions {
         });
     }
 
+    volatile boolean sawAutoApprove;
+
+    /** Quill Desktop has auto-approve (version, or the field was seen); older ones: nothing is shown. */
+    boolean autoApproveSupported() {
+        return AutoApprove.supported(deskVersion, sawAutoApprove);
+    }
+
+    /** Turns the open session's auto-approve off (POST auto-approve-off); the chip goes away at once, a failure brings it back. */
+    @Override
+    public void autoApproveOff() {
+        String id = current;
+        if (id == null) {
+            return;
+        }
+        setAutoApprove(id, false);
+        work.execute(() -> {
+            PhoneApi.Reply r = api.action(id, AutoApprove.OFF_PATH, null);
+            if (!r.ok()) {
+                ui.post(() -> host.toast("Couldn't turn off auto-approve."));
+                setAutoApprove(id, true);
+            }
+        });
+    }
+
+    synchronized void setAutoApprove(String id, boolean on) {
+        JSONObject s = session(id);
+        if (s == null) {
+            return;
+        }
+        try {
+            if (on) {
+                s.put("autoApprove", true);
+            } else {
+                s.remove("autoApprove");
+            }
+        } catch (JSONException ignored) {
+        }
+        publish();
+    }
+
     /** A session-menu action (rename, resume, end, delete, place) from the long-press menu. */
     void sessionAction(String what, String id, String action, JSONObject body) {
         write(what, () -> api.action(id, action, body), r -> {
@@ -1129,12 +1174,8 @@ final class Remote implements ChatView.Actions {
         write("message", () -> api.send(id, text));
     }
 
-    @Override
-    public void answer(String requestId, String action, JSONObject extra) {
-        String id = current;
-        if (id == null) {
-            return;
-        }
+    /** The POST .../answer body for a card action; null when it can't be built. */
+    static JSONObject answerBody(String requestId, String action, JSONObject extra) {
         JSONObject body = new JSONObject();
         try {
             if ("choice".equals(action)) {
@@ -1156,9 +1197,25 @@ final class Remote implements ChatView.Actions {
                 if (extra.has("planAnswers")) {
                     body.put("planAnswers", extra.get("planAnswers"));
                 }
+                if (extra.optBoolean("keepApproving") && "approvePlan".equals(action)) {
+                    body.put("keepApproving", true);
+                }
             }
             body.put("action", action);
         } catch (JSONException e) {
+            return null;
+        }
+        return body;
+    }
+
+    @Override
+    public void answer(String requestId, String action, JSONObject extra) {
+        String id = current;
+        if (id == null) {
+            return;
+        }
+        JSONObject body = answerBody(requestId, action, extra);
+        if (body == null) {
             return;
         }
         write("answer", () -> api.answer(id, body));

@@ -311,8 +311,12 @@ final class PhoneApi {
         return post("/phone/session/" + enc(id) + "/answer", body);
     }
 
+    static String sessionPath(String id, String action) {
+        return "/phone/session/" + enc(id) + "/" + action;
+    }
+
     Reply action(String id, String action, JSONObject body) {
-        return post("/phone/session/" + enc(id) + "/" + action, body == null ? new JSONObject() : body);
+        return post(sessionPath(id, action), body == null ? new JSONObject() : body);
     }
 
     Reply interrupt(String id) {

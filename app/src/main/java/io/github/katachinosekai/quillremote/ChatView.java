@@ -36,6 +36,10 @@ final class ChatView extends LinearLayout {
 
         void resume();
 
+        /** Turns the open session's auto-approve off (Quill Desktop's chip). */
+        default void autoApproveOff() {
+        }
+
         /** Typing in the message box (soft keyboards don't reach Activity.onUserInteraction); keeps the device unlock alive. */
         default void typing() {
         }
@@ -323,6 +327,23 @@ final class ChatView extends LinearLayout {
         queueBox.setPaddingRelative(dp(12), dp(4), dp(12), 0);
         queueBox.setVisibility(GONE);
         addView(queueBox, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        aaChip = label(AutoApprove.CHIP, MainActivity.TEXT, 13);
+        aaChip.setPadding(dp(12), dp(6), dp(12), dp(6));
+        aaChip.setBackground(round(0x24000000 | (GREEN & 0x00FFFFFF), 14));
+        aaChip.setContentDescription("Auto-approve is on in this tab. Tap to turn it off.");
+        aaChip.setOnClickListener(v -> Touch.show(new android.app.AlertDialog.Builder(getContext())
+                .setTitle("Turn off auto-approve?")
+                .setMessage("This tab will need an approved plan again before Claude runs anything.")
+                .setPositiveButton("Turn off", (d, w) -> {
+                    if (actions != null) {
+                        actions.autoApproveOff();
+                    }
+                })
+                .setNegativeButton("Cancel", null)));
+        aaChip.setVisibility(GONE);
+        LayoutParams aal = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        aal.setMargins(dp(12), dp(4), dp(12), dp(2));
+        addView(aaChip, aal);
         addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         LinearLayout bar = new LinearLayout(c);
@@ -497,6 +518,43 @@ final class ChatView extends LinearLayout {
         send.setContentDescription(b ? "Stop" : "Send");
         status.setText(line == null ? "" : line);
         status.setVisibility(line == null || line.isEmpty() ? GONE : VISIBLE);
+    }
+
+    TextView aaChip;
+    /** Quill Desktop has auto-approve (older builds: the chip and the plan card's checkbox stay hidden). */
+    boolean aaSupported;
+
+    void setAutoApprove(boolean supported, boolean on) {
+        aaSupported = supported;
+        if (aaChip != null) {
+            aaChip.setVisibility(supported && on ? VISIBLE : GONE);
+        }
+    }
+
+    /** The plan card's "Keep approving in this tab until I turn it off" box; its state lives with the plan's answers. */
+    void addKeepBox(LinearLayout c, Item it) {
+        if (!aaSupported) {
+            return;
+        }
+        Map<String, Object> ans = answers(it);
+        android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
+        cb.setText(AutoApprove.CHECK);
+        cb.setTextColor(MainActivity.TEXT);
+        cb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        cb.setChecked(Boolean.TRUE.equals(ans.get(KEEP)));
+        cb.setOnCheckedChangeListener((b, on) -> ans.put(KEEP, on));
+        c.addView(cb);
+    }
+
+    static final String KEEP = "approval:keep";
+
+    boolean keepTicked(Item it) {
+        return aaSupported && Boolean.TRUE.equals(answers(it).get(KEEP));
+    }
+
+    /** approvePlan carrying keepApproving only when the box is ticked. */
+    void approve(Item it, JSONObject extra) {
+        act(it, "approvePlan", AutoApprove.withKeep(extra, AutoApprove.sendKeep(keepTicked(it), aaSupported, "approvePlan")));
     }
 
     boolean readOnly;
@@ -1450,10 +1508,11 @@ final class ChatView extends LinearLayout {
     }
 
     void planActions(LinearLayout c, Item it, EditText fb, boolean radio) {
+        addKeepBox(c, it);
         JSONArray opts = it.planChoices;
         int n = opts == null ? 0 : opts.length();
         if (it.planApproval != null) {
-            planButtons(c, it, fb, radio);
+            planButtonsBody(c, it, fb, radio);
         } else if (n > 0) {
             // Like Quill Desktop's plan card: approve with the answer to the plan's question.
             int rec = it.planRecommended >= 0 && it.planRecommended < n ? it.planRecommended : -1;
@@ -1465,7 +1524,7 @@ final class ChatView extends LinearLayout {
             for (int k = 0; k < n; k++) {
                 int index = k;
                 TextView b = k == rec ? highlighted("Approve: " + opts.optString(k) + Choices.RECOMMENDED, GREEN) : button("Approve: " + opts.optString(k), GREEN);
-                b.setOnClickListener(v -> act(it, "approvePlan", toJson(QuestionCards.goAheadExtras(index, fb.getText().toString()))));
+                b.setOnClickListener(v -> approve(it, toJson(QuestionCards.goAheadExtras(index, fb.getText().toString()))));
                 LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
                 lp.topMargin = dp(8);
                 (rec < 0 || k == rec ? col : others).addView(b, lp);
@@ -1486,7 +1545,7 @@ final class ChatView extends LinearLayout {
             addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
         } else {
             LinearLayout row = buttons(c);
-            addButton(row, "Approve", GREEN, v -> act(it, "approvePlan", extraText(fb)));
+            addButton(row, "Approve", GREEN, v -> approve(it, extraText(fb)));
             addButton(row, "Keep planning", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
         }
     }
@@ -1882,6 +1941,11 @@ final class ChatView extends LinearLayout {
 
     /** radio false: the approval radio group is elsewhere (in the reply, under its question). */
     void planButtons(LinearLayout c, Item it, EditText fb, boolean radio) {
+        addKeepBox(c, it);
+        planButtonsBody(c, it, fb, radio);
+    }
+
+    void planButtonsBody(LinearLayout c, Item it, EditText fb, boolean radio) {
         if (it.planApproval != null) {
             approvalButtons(c, it, fb, radio);
             return;
@@ -1896,7 +1960,7 @@ final class ChatView extends LinearLayout {
                 extra.put("planAnswers", planAnswersJson(it));
             } catch (org.json.JSONException ignored) {
             }
-            act(it, "approvePlan", extra);
+            approve(it, extra);
         });
         addButton(row, "Don't run", MainActivity.ACCENT, v -> act(it, "rejectPlan", extraText(fb)));
     }
@@ -2012,7 +2076,11 @@ final class ChatView extends LinearLayout {
             }
         } catch (org.json.JSONException ignored) {
         }
-        act(it, QuestionCards.action(pick), extra);
+        if (pick != QuestionCards.DONT_RUN && !a.stop[pick]) {
+            approve(it, extra);
+        } else {
+            act(it, QuestionCards.action(pick), extra);
+        }
     }
 
     static JSONObject toJson(Map<String, Object> m) {

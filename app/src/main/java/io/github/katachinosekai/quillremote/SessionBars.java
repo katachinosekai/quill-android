@@ -295,6 +295,11 @@ class SessionBars {
             sb.append(txt.isEmpty() ? "" : "  ·  ").append(kmem);
             sb.setSpan(new android.text.style.ForegroundColorSpan(MainActivity.ACCENT), at, sb.length(), 0);
         }
+        if (m.optBoolean("autoApprove")) {
+            int at = sb.length() + (sb.length() == 0 ? 0 : 5);
+            sb.append(sb.length() == 0 ? "" : "  ·  ").append(AutoApprove.listMark(true));
+            sb.setSpan(new android.text.style.ForegroundColorSpan(0xFF6FCF97), at, sb.length(), 0);
+        }
         // Portrait (the usage panel shows only the open session): each row says its tokens and context, like
         // Quill Desktop's portrait session list (941a3cf): "12.3k tok · ctx 42%".
         String usage = rowUsage(m);
