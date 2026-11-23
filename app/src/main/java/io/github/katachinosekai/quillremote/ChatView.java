@@ -155,6 +155,9 @@ final class ChatView extends LinearLayout {
     final ScrollView scroll;
     final LinearLayout list;
     final EditText box;
+    /** Per-chat unsent text and caret (paired mode); null where the box is not tied to a chat. */
+    Drafts drafts;
+    String draftId;
     final TextView send;
     final TextView status;
     TextView conn;
@@ -448,9 +451,37 @@ final class ChatView extends LinearLayout {
         follow = true;
         scroll.post(this::toBottom);
         actions.send(t);
+        if (drafts != null) {
+            drafts.clear(draftId);
+        }
         box.setText("");
         box.requestFocus();
         box.post(box::requestFocus);
+    }
+
+    /** Save the box under chat from, then show chat to's draft with its caret and selection (an empty box if none). */
+    void swapDraft(String from, String to) {
+        if (drafts == null) {
+            return;
+        }
+        saveDraft();
+        draftId = to;
+        Drafts.Draft d = drafts.load(to);
+        String text = d == null ? "" : d.text;
+        if (!box.getText().toString().equals(text)) {
+            box.setText(text);
+        }
+        if (d != null) {
+            box.setSelection(d.start, d.end);
+        }
+        send.setText(busy && text.trim().isEmpty() ? "■" : "➤");
+    }
+
+    /** Store the box's text and selection for the chat it belongs to (switching away, app backgrounded). */
+    void saveDraft() {
+        if (drafts != null && draftId != null) {
+            drafts.save(draftId, box.getText().toString(), box.getSelectionStart(), box.getSelectionEnd());
+        }
     }
 
     void setBusy(boolean b, String line) {

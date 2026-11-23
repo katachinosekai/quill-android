@@ -1102,6 +1102,7 @@ public class MainActivity extends Activity {
             chat.showTimes = prefs.getBoolean("messageTimes", true);
             chat.animate = prefs.getBoolean("animateText", true);
             chat.animateSpeed = StreamText.speed(prefs.getString("animateSpeed", "normal"));
+            chat.drafts = new Drafts(prefs);
             webFrame.addView(chat, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
             web.setVisibility(View.GONE);
         }
@@ -2245,6 +2246,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (chat != null) {
+            chat.saveDraft();
+        }
         updateTick.removeCallbacks(updateCheck);
         CookieManager.getInstance().flush();
         if (sync != null) {

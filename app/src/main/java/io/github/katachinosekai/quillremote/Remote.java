@@ -491,6 +491,22 @@ final class Remote implements ChatView.Actions {
             newBoot = true;
         }
         Notifier.foregroundQuill = current;
+        if (chat.drafts != null) {
+            java.util.Set<String> live = new java.util.HashSet<>();
+            for (JSONObject s : sessions) {
+                live.add(s.optString("id"));
+            }
+            String first = current;
+            boolean initial = chat.draftId == null;
+            ui.post(() -> {
+                if (!live.isEmpty()) {
+                    chat.drafts.prune(live);
+                }
+                if (initial && chat.draftId == null) {
+                    chat.swapDraft(null, first);
+                }
+            });
+        }
         publish();
         if (current != null) {
             String id = current;
@@ -958,11 +974,13 @@ final class Remote implements ChatView.Actions {
         if (id == null || id.equals(current)) {
             return;
         }
+        String from = current;
         current = id;
         Notifier.foregroundQuill = id;
         epoch = -1;
         rev = 0;
         items.clear();
+        chat.swapDraft(from, id);
         chat.clear();
         JSONObject s = session(id);
         host.onOpened(id, s);
