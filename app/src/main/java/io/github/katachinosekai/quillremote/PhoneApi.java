@@ -366,6 +366,17 @@ final class PhoneApi {
         return get("/phone/kmem/tasks?" + (topic.isEmpty() ? "" : "topic=" + enc(topic) + "&") + "all=" + (all ? 1 : 0), 20000);
     }
 
+    /** The kmem assistant's chat (phase 2): same paging as items(); epoch < 0 = the whole window. */
+    Reply kmemAssistItems(int epoch, long since, String have) {
+        String q = epoch >= 0 ? "?epoch=" + epoch + "&since=" + since + (have.isEmpty() ? "" : "&delta=1&have=" + enc(have)) : "";
+        return get("/phone/kmem/assistant/items" + q, 10000);
+    }
+
+    /** op: send, answer, interrupt, queue/delete, queue/send-now, start, stop, restart, save, choose. 409 stale = not offered now. */
+    Reply kmemAssist(String op, JSONObject body) {
+        return post("/phone/kmem/assistant/" + op, body == null ? new JSONObject() : body);
+    }
+
     Reply kmemTopics() {
         return get("/phone/kmem/topics", 20000);
     }

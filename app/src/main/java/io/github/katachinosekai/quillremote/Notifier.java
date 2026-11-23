@@ -22,13 +22,16 @@ import javax.net.ssl.TrustManager;
 class Notifier {
     static final String CHANNEL = "sessions";
     static final String EXTRA_OPEN = "quill.openSession";
-    static final List<String> TYPES = Arrays.asList("approval", "question", "plan", "finished", "error");
-    static final String[] LABELS = {"Approval needed", "Question", "Plan to approve", "Finished", "Error"};
+    static final List<String> TYPES = Arrays.asList("approval", "question", "plan", "finished", "error", "kmem");
+    static final String[] LABELS = {"Approval needed", "Question", "Plan to approve", "Finished", "Error", "kmem assistant needs you"};
     static final long STALE_MS = 10 * 60 * 1000;
     static volatile String foregroundRc;
     static volatile String foregroundQuill;
     static final String EXTRA_OPEN_QUILL = "quill.openQuill";
     static volatile boolean appVisible;
+    static final String EXTRA_OPEN_KMEM = "quill.openKmem";
+    /** The kmem screen is open on the phone: counts as seen for kmem assistant alerts. */
+    static volatile boolean kmemOpen;
 
     final Context c;
     final SharedPreferences prefs;
@@ -201,6 +204,9 @@ class Notifier {
             quill = "";
         }
         boolean remote = new PhoneApi(prefs).available();
+        if (type.equals("kmem") && (!remote || (appVisible && kmemOpen))) {
+            return;
+        }
         if (appVisible && (remote ? !quill.isEmpty() && quill.equals(foregroundQuill) : !rc.isEmpty() && rc.equals(foregroundRc))) {
             return;
         }
@@ -211,12 +217,14 @@ class Notifier {
         String label = LABELS[TYPES.indexOf(type)];
         channel(c);
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        if (remote && !quill.isEmpty()) {
+        if (type.equals("kmem")) {
+            open.putExtra(EXTRA_OPEN_KMEM, true);
+        } else if (remote && !quill.isEmpty()) {
             open.putExtra(EXTRA_OPEN_QUILL, quill);
         } else if (!rc.isEmpty()) {
             open.putExtra(EXTRA_OPEN, rc);
         }
-        int id = (rc.isEmpty() ? e.optString("quill") : rc).hashCode();
+        int id = type.equals("kmem") ? "kmem".hashCode() : (rc.isEmpty() ? e.optString("quill") : rc).hashCode();
         PendingIntent pi = PendingIntent.getActivity(c, id, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String head = label + (title.isEmpty() ? "" : ": " + title);
         // Approvals get Allow / Deny buttons (remote mode): look up the pending permission request in the session.

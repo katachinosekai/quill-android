@@ -83,7 +83,26 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** The kmem notification's tap: open the kmem screen on the Assistant tab (now, or when the connection says kmem is on). */
+    boolean handleKmemIntent(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(Notifier.EXTRA_OPEN_KMEM, false)) {
+            return false;
+        }
+        intent.removeExtra(Notifier.EXTRA_OPEN_KMEM);
+        if (remote != null && remote.kmemOn) {
+            openKmem(KmemScreen.TAB_ASSISTANT);
+        } else {
+            pendingKmemTab = KmemScreen.TAB_ASSISTANT;
+        }
+        return true;
+    }
+
+    int pendingKmemTab = -1;
+
     boolean handleOpen(Intent intent) {
+        if (handleKmemIntent(intent)) {
+            return true;
+        }
         String q = intent == null ? null : intent.getStringExtra(Notifier.EXTRA_OPEN_QUILL);
         if (q != null && remote != null && SessionBars.REMOTE_ID.matcher(q).matches()) {
             android.util.Log.w("QuillOpen", q);
@@ -114,15 +133,29 @@ public class MainActivity extends Activity {
     KmemScreen kmemScreen;
 
     void openKmem() {
-        if (remote == null || !remote.kmemOn || kmemScreen != null) {
+        openKmem(0);
+    }
+
+    void openKmem(int tab) {
+        if (remote == null || !remote.kmemOn) {
+            return;
+        }
+        if (kmemScreen != null) {
+            kmemScreen.selectTab(tab);
             return;
         }
         kmemScreen = new KmemScreen(this, remote);
+        kmemScreen.tab = tab;
         kmemScreen.show();
     }
 
     /** The kmem summary changed (button) or the stream said kmem changed (open screen). */
     void onKmemChanged() {
+        if (pendingKmemTab >= 0 && remote != null && remote.kmemOn) {
+            int t = pendingKmemTab;
+            pendingKmemTab = -1;
+            openKmem(t);
+        }
         if (bars != null) {
             bars.render();
         }
@@ -1198,6 +1231,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (remote != null) {
+            handleKmemIntent(getIntent());
             return;
         }
         if (test != null) {

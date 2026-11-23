@@ -77,6 +77,8 @@ final class Remote implements ChatView.Actions {
     volatile boolean kmemOn;
     volatile int kmemCount;
     volatile String kmemState = "", kmemWaiting = "";
+    /** The assistant's epoch and rev from the last kmem stream change or overview (the open chat refetches when they move). */
+    volatile long kmemEpoch, kmemRev;
     /** Called on the UI thread when the kmem summary changed (button) or the stream says kmem changed (open screen). */
     volatile Runnable onKmem;
     final java.util.Set<String> actions = new java.util.HashSet<>();
@@ -539,6 +541,8 @@ final class Remote implements ChatView.Actions {
                         if (as != null) {
                             kmemState = as.optString("state");
                             kmemWaiting = as.optString("waiting");
+                            kmemEpoch = as.optLong("epoch");
+                            kmemRev = as.optLong("rev");
                         }
                         kmemChanged();
                     }
@@ -579,6 +583,8 @@ final class Remote implements ChatView.Actions {
             kmemCount = n == null ? 0 : n.optInt("count");
             kmemState = as == null ? "" : as.optString("state");
             kmemWaiting = as == null ? "" : as.optString("waiting");
+            kmemEpoch = as == null ? 0 : as.optLong("epoch");
+            kmemRev = as == null ? 0 : as.optLong("rev");
             kmemChanged();
         }
     }
