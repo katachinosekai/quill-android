@@ -51,6 +51,38 @@ final class UpdateNotes {
     }
 
     /**
+     * Limits for Quill Desktop's questions in the after-update dialog (security review f436bdd): more questions than
+     * MAX_QUESTIONS wait for the next start, a question with no or more than MAX_CHOICES choices is shown but left
+     * for Quill Desktop to answer, and long texts are cut.
+     */
+    static final int MAX_QUESTIONS = 20;
+    static final int MAX_CHOICES = 10;
+    static final int MAX_TITLE = 200;
+    static final int MAX_TEXT = 2000;
+    static final int MAX_CHOICE = 300;
+
+    /** What the dialog does with one of Quill Desktop's questions. */
+    enum DeskAction { NOTICE, CHOOSE, DESKTOP_ONLY }
+
+    /** A notice is acknowledged without a choice; a question needs 1..MAX_CHOICES choices, else Quill Desktop answers it. */
+    static DeskAction deskAction(String kind, int choices) {
+        if ("notice".equalsIgnoreCase(kind)) {
+            return DeskAction.NOTICE;
+        }
+        return choices >= 1 && choices <= MAX_CHOICES ? DeskAction.CHOOSE : DeskAction.DESKTOP_ONLY;
+    }
+
+    /** The recommended choice when it names one of the n choices, else the first. */
+    static int recommended(int rec, int n) {
+        return rec >= 0 && rec < n ? rec : 0;
+    }
+
+    static String clip(String s, int n) {
+        s = s == null ? "" : s.trim();
+        return s.length() > n ? s.substring(0, n - 1) + "…" : s;
+    }
+
+    /**
      * Entries to show now: those added after the version the user last finished with (lastCode), not done yet.
      * A fresh install (no lastCode yet) shows none: the defaults are simply the defaults.
      */

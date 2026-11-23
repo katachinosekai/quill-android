@@ -259,41 +259,52 @@ public class MainActivity extends Activity {
         col.setPadding(dp(20), dp(8), dp(20), 0);
         java.util.List<Runnable> apply = new java.util.ArrayList<>();
         for (UpdateNotes.Entry e : local) {
-            TextView t = line(e.title, TEXT);
+            TextView t = para(e.title, TEXT);
             t.setTypeface(Typeface.DEFAULT_BOLD);
             t.setPadding(0, dp(10), 0, dp(2));
             col.addView(t);
-            col.addView(line(e.text, MUTED));
+            col.addView(para(e.text, MUTED));
         }
-        for (int i = 0; desk != null && i < desk.length(); i++) {
+        // Texts wrap (para, never cut off); Quill Desktop's questions are capped and checked (security review f436bdd).
+        int shown = 0;
+        for (int i = 0; desk != null && i < desk.length() && shown < UpdateNotes.MAX_QUESTIONS; i++) {
             org.json.JSONObject q = desk.optJSONObject(i);
-            if (q == null) {
+            if (q == null || q.optString("id").isEmpty()) {
                 continue;
             }
+            shown++;
             String id = q.optString("id");
-            TextView t = line(q.optString("title") + "  (Quill Desktop)", TEXT);
+            TextView t = para(UpdateNotes.clip(q.optString("title"), UpdateNotes.MAX_TITLE) + "  (Quill Desktop)", TEXT);
             t.setTypeface(Typeface.DEFAULT_BOLD);
             t.setPadding(0, dp(10), 0, dp(2));
             col.addView(t);
             if (!q.optString("text").isEmpty()) {
-                col.addView(line(q.optString("text"), MUTED));
+                col.addView(para(UpdateNotes.clip(q.optString("text"), UpdateNotes.MAX_TEXT), MUTED));
             }
             if (!q.optString("question").isEmpty()) {
-                TextView qq = line(q.optString("question"), TEXT);
+                TextView qq = para(UpdateNotes.clip(q.optString("question"), UpdateNotes.MAX_TEXT), TEXT);
                 qq.setPadding(0, dp(6), 0, 0);
                 col.addView(qq);
             }
             org.json.JSONArray ch = q.optJSONArray("choices");
-            if ("notice".equalsIgnoreCase(q.optString("kind")) || ch == null || ch.length() == 0) {
+            int n = ch == null ? 0 : ch.length();
+            UpdateNotes.DeskAction act = UpdateNotes.deskAction(q.optString("kind"), n);
+            if (act == UpdateNotes.DeskAction.NOTICE) {
                 apply.add(() -> remote.answerSetting(id, null, null)); // a notice is answered without a choice
                 continue;
             }
-            int rec = q.optInt("recommended", 0);
+            if (act == UpdateNotes.DeskAction.DESKTOP_ONLY) {
+                TextView d = para("Answer this one in Quill Desktop.", MUTED); // never answered without a real choice
+                d.setPadding(0, dp(4), 0, 0);
+                col.addView(d);
+                continue;
+            }
+            int rec = UpdateNotes.recommended(q.optInt("recommended", 0), n);
             android.widget.RadioGroup g = new android.widget.RadioGroup(this);
             int[] picked = {rec};
-            for (int k = 0; k < ch.length(); k++) {
+            for (int k = 0; k < n; k++) {
                 android.widget.RadioButton rb = new android.widget.RadioButton(this);
-                String label = ch.optString(k);
+                String label = UpdateNotes.clip(ch.optString(k), UpdateNotes.MAX_CHOICE);
                 rb.setText(label + (k == rec && !label.contains("(recommended)") ? "  (recommended)" : ""));
                 rb.setTextColor(TEXT);
                 rb.setId(View.generateViewId());
