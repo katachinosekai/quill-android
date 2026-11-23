@@ -182,4 +182,68 @@ final class StreamText {
         return n;
     }
 
+
+    /** Overlay controls and fallback cards fade in over this long when they first appear (under the 600 ms tap guard). */
+    static final long FADE_IN_MS = 200;
+    /** A newly revealed character goes from transparent to full over this long. */
+    static final long CHAR_FADE_MS = 150;
+    /** The fade is drawn in this many alpha steps, so one run of equal steps is one span. */
+    static final int FADE_STEPS = 8;
+
+    /**
+     * Reveal times of the characters of the growing paragraph (as laid out, markup gone), to fade each new character
+     * in. Pure bookkeeping: it never changes when or how many characters are revealed.
+     */
+    static final class Fade {
+        private long[] at = new long[64];
+        private int len;
+
+        /** The paragraph now has n characters at time now: new ones start fading, a shorter text drops the rest. */
+        void grew(int n, long now) {
+            if (n < len) {
+                len = n;
+                return;
+            }
+            if (n > at.length) {
+                at = java.util.Arrays.copyOf(at, Math.max(n, at.length * 2));
+            }
+            for (; len < n; len++) {
+                at[len] = now;
+            }
+        }
+
+        /** Alpha step 0..FADE_STEPS of character i (FADE_STEPS = fully shown). */
+        int step(int i, long now) {
+            if (i < 0 || i >= len) {
+                return FADE_STEPS;
+            }
+            long age = now - at[i];
+            if (age >= CHAR_FADE_MS) {
+                return FADE_STEPS;
+            }
+            return age <= 0 ? 0 : (int) (age * FADE_STEPS / CHAR_FADE_MS);
+        }
+
+        /** Index of the first character that is still fading (len when none): everything before is fully shown. */
+        int firstFading(long now) {
+            int lo = 0, hi = len; // times never decrease, so the fading ones are a suffix
+            while (lo < hi) {
+                int mid = (lo + hi) >>> 1;
+                if (now - at[mid] >= CHAR_FADE_MS) {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            return lo;
+        }
+
+        boolean active(long now) {
+            return firstFading(now) < len;
+        }
+
+        int length() {
+            return len;
+        }
+    }
 }

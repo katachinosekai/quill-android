@@ -722,6 +722,9 @@ final class ChatView extends LinearLayout {
     void clear() {
         planAns.clear();
         planPlain.clear();
+        faded.clear();
+        settled = false;
+        answerText.clear();
         for (StreamView sv : streams.values()) {
             sv.stop();
         }
@@ -765,6 +768,19 @@ final class ChatView extends LinearLayout {
             kinds.add(x.kind);
             pendingPlan.add("plan".equals(x.kind) && pending(x));
         }
+        // The user's message that answered each reply (the next user item), to mark a greyed choice's pick.
+        answerText.clear();
+        for (int i = 0; i < next.size(); i++) {
+            if (!"assistant".equals(next.get(i).kind)) {
+                continue;
+            }
+            for (int j = i + 1; j < next.size(); j++) {
+                if ("user".equals(next.get(j).kind)) {
+                    answerText.put(next.get(i).seq, next.get(j).text);
+                    break;
+                }
+            }
+        }
         noQuick.clear();
         for (int idx : QuestionCards.quickSuppressed(kinds, pendingPlan)) {
             noQuick.add(next.get(idx).seq);
@@ -800,7 +816,7 @@ final class ChatView extends LinearLayout {
                 nums[k] = q == null ? 0 : q.optInt("num", 0);
                 texts[k] = q == null ? "" : q.optString("text");
             }
-            int[][] m = PlanOverlay.matchPlan(reply.text, nums, texts, planTitle(p.text));
+            int[][] m = PlanOverlay.matchPlan(reply.text, nums, texts, planTitle(p.text), p.text);
             if (m != null) {
                 ovPlan.put(reply.seq, p);
                 ovMatch.put(reply.seq, m);
@@ -814,6 +830,7 @@ final class ChatView extends LinearLayout {
             Item ovp = ovPlan.get(it.seq);
             String sig = it.sig() + (it == lastAssistant ? "|choices" : "") + (noQuick.contains(it.seq) ? "|noquick" : "") + (expanded.contains(it.seq) ? "|open" : "")
                     + (ovp == null ? "" : "|ov" + ovp.seq + ":" + planPlain.contains(ovp.seq) + ":" + ovp.sig())
+                    + (answerText.containsKey(it.seq) ? "|ans" + answerText.get(it.seq).hashCode() : "")
                     + (hiddenPlans.contains(it.seq) ? "|hidden" : "") + ("plan".equals(it.kind) && planPlain.contains(it.seq) ? "|plain" : "");
             View old = views.get(it.seq);
             StreamView sv = streams.get(it.seq);
@@ -848,7 +865,13 @@ final class ChatView extends LinearLayout {
             }
             views.put(it.seq, v);
             sigs.put(it.seq, sig);
+            // Controls that first appear (an overlay's, or a fallback card) fade in once; never again on a re-render.
+            boolean controls = ovp != null ? live(ovp) : !hiddenPlans.contains(it.seq) && isCard(it);
+            if (controls && faded.add(it.seq) && settled) {
+                fadeIn(v);
+            }
         }
+        settled = !next.isEmpty();
         items = all;
         if (typing && !box.hasFocus()) {
             box.requestFocus();
@@ -884,6 +907,32 @@ final class ChatView extends LinearLayout {
             }
         }
         return 0;
+    }
+
+    /** Seqs whose controls were shown (and faded in, if they appeared live): no second fade for them. */
+    final Set<Integer> faded = new java.util.HashSet<>();
+    /** False until the first items are drawn: an opened history shows at once, only later arrivals fade in. */
+    boolean settled;
+    /** Reply seq to the text of the user message that answered it. */
+    final Map<Integer, String> answerText = new HashMap<>();
+
+    /** A card with buttons waiting for the user (plan, question, permission, rotate). */
+    boolean isCard(Item it) {
+        switch (it.kind) {
+            case "plan":
+                return live(it);
+            case "question":
+            case "permission":
+            case "rotate":
+                return pending(it);
+            default:
+                return false;
+        }
+    }
+
+    void fadeIn(View v) {
+        v.setAlpha(0f);
+        v.animate().alpha(1f).setDuration(StreamText.FADE_IN_MS).start();
     }
 
     /** Replies that show no quick-choice buttons because their turn has a pending plan card. */
@@ -1130,6 +1179,153 @@ final class ChatView extends LinearLayout {
             col.addView(more, ml);
         }
         String[] opts = null;
+        if (noQuick.contains(it.seq) || it.streaming) {
+            opts = null;
+        } else if (it.choices != null) {
+            opts = new String[it.choices.length()];
+            for (int k = 0; k < opts.length; k++) {
+                opts[k] = it.choices.optString(k);
+            }
+        } else {
+            opts = Choices.parse(lastLine(it.text));
+        }
+        if (opts != null && opts.length == 0) {
+            opts = null;
+        }
+        if (opts != null) {
+            // Active: the latest unanswered reply (the server says so with choicesOpen). Otherwise the buttons stay,
+            // greyed, with the pick marked (user 2026-11-23, like Quill Desktop).
+            final boolean server = it.choices != null;
+            final String key = it.seq + ":" + it.text.hashCode();
+            final boolean active = !picked.contains(key) && (server ? it.choicesOpen : answerable);
+            LinearLayout row = new LinearLayout(getContext());
+            row.setPadding(0, dp(10), 0, 0);
+            final QuestionCards.ClickGuard guard = newGuard();
+            final int mark = active ? -1 : Choices.picked(answerText.get(it.seq), opts);
+            final List<TextView> btns = new ArrayList<>();
+            for (int k = 0; k < opts.length; k++) {
+                final String o = opts[k];
+                final int index = k;
+                TextView b = button(o.length() > 60 ? o.substring(0, 59) + "…" : o, MainActivity.ACCENT);
+                btns.add(b);
+                if (active) {
+                    b.setOnClickListener(v -> {
+                        if (actions == null || !guard.allows(android.os.SystemClock.uptimeMillis())) {
+                            return;
+                        }
+                        picked.add(key);
+                        if (server) {
+                            JSONObject x = new JSONObject();
+                            try {
+                                x.put("seq", it.seq);
+                                x.put("index", index);
+                            } catch (org.json.JSONException ignored) {
+                            }
+                            actions.answer("seq:" + it.seq, "choice", x);
+                        } else {
+                            actions.send(o);
+                        }
+                        greyChoices(btns, index);
+                    });
+                }
+                LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+                lp.rightMargin = dp(8);
+                row.addView(b, lp);
+            }
+            if (!active) {
+                greyChoices(btns, mark);
+            }
+            col.addView(row);
+        }
+        TextView when = stamp(it, centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.END);
+        if (when == null) {
+            return spaced(row, 16);
+        }
+        LinearLayout col = new LinearLayout(getContext());
+        col.setOrientation(VERTICAL);
+        col.addView(row);
+        col.addView(when);
+        return spaced(col, 16);
+    }
+
+    /** Message time under user/assistant messages (⚙ Message times), in the device's 12/24-hour style. */
+    TextView stamp(Item it, int gravity) {
+        if (!showTimes || it.timeMs <= 0 || it.streaming) {
+            return null;
+        }
+        TextView t = label(TimeFmt.stamp(it.timeMs, System.currentTimeMillis()), MainActivity.MUTED, 11);
+        t.setGravity(gravity);
+        t.setPadding(0, dp(5), 0, 0); // about a third of the way to the next message (Quill Desktop 1be563f)
+        t.setContentDescription("Sent " + t.getText());
+        return t;
+    }
+
+    /** ⚙ Message times: re-render every message with or without its time. */
+    /** Re-render the messages after the file capability changed (file links appear or turn into plain text). */
+    void relink() {
+        sigs.clear();
+        setItems(items);
+    }
+
+    void setShowTimes(boolean on) {
+        if (on == showTimes) {
+            return;
+        }
+        showTimes = on;
+        sigs.clear();
+        setItems(items);
+    }
+
+    View assistant(Item it, boolean answerable) {
+        if (it.streaming && !it.text.isEmpty()) {
+            StreamView sv = new StreamView(getContext());
+            StreamView prev = streams.put(it.seq, sv);
+            if (prev != null) {
+                prev.stop();
+            }
+            sv.update(it.text, true);
+            return spaced(sv, 14);
+        }
+        LinearLayout col = new LinearLayout(getContext());
+        col.setOrientation(VERTICAL);
+        MarkdownView md = new MarkdownView(getContext());
+        md.sp = sp;
+        md.links = linkHost;
+        md.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
+        String shown = expanded.contains(it.seq) ? it.text : fold(it.text);
+        // Paragraph by paragraph, the same layout a streaming reply has (Quill Desktop's markdownBlocks), so nothing
+        // re-flows when a reply ends.
+        StringBuilder liveBuf = new StringBuilder();
+        java.util.List<String> paras = StreamText.split(shown.replaceAll("\\n+$", ""), liveBuf);
+        if (!liveBuf.toString().trim().isEmpty()) {
+            paras.add(liveBuf.toString());
+        }
+        if (paras.size() <= 1) {
+            md.setMarkdown(shown);
+            col.addView(md);
+        } else {
+            for (int k = 0; k < paras.size(); k++) {
+                MarkdownView pm = new MarkdownView(getContext());
+                pm.sp = sp;
+                pm.links = linkHost;
+                pm.gravity = md.gravity;
+                pm.setMarkdown(paras.get(k));
+                col.addView(pm, paraParams(k));
+            }
+        }
+        if (shown.length() < it.text.length()) {
+            int lines = lineCount(it.text);
+            TextView more = button("Show all " + lines + " lines", MainActivity.ACCENT);
+            more.setOnClickListener(v -> {
+                expanded.add(it.seq);
+                setItems(items);
+            });
+            LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+            ml.topMargin = dp(8);
+            ml.gravity = centerChat ? Gravity.CENTER_HORIZONTAL : Gravity.START;
+            col.addView(more, ml);
+        }
+        String[] opts = null;
         if (noQuick.contains(it.seq)) {
             opts = null;
         } else if (it.choices != null) {
@@ -1180,6 +1376,19 @@ final class ChatView extends LinearLayout {
             col.addView(when);
         }
         return spaced(col, 14);
+    }
+
+    /** An answered reply's choice buttons: all greyed and not tappable, the pick (if known) marked. */
+    void greyChoices(List<TextView> btns, int pick) {
+        for (int k = 0; k < btns.size(); k++) {
+            TextView b = btns.get(k);
+            b.setOnClickListener(null);
+            b.setClickable(false);
+            b.setAlpha(k == pick ? 0.9f : 0.4f);
+            if (k == pick) {
+                b.setText("✓  " + b.getText());
+            }
+        }
     }
 
     static String lastLine(String text) {
@@ -1354,10 +1563,14 @@ final class ChatView extends LinearLayout {
      * question's choices, or plain Approve / Keep planning (card or overlay).
      */
     void planActions(LinearLayout c, Item it, EditText fb) {
+        planActions(c, it, fb, true);
+    }
+
+    void planActions(LinearLayout c, Item it, EditText fb, boolean radio) {
         JSONArray opts = it.planChoices;
         int n = opts == null ? 0 : opts.length();
         if (it.planApproval != null) {
-            planButtons(c, it, fb);
+            planButtons(c, it, fb, radio);
         } else if (n > 0) {
             // Like Quill Desktop's plan card: approve with the answer to the plan's question.
             int rec = it.planRecommended >= 0 && it.planRecommended < n ? it.planRecommended : -1;
@@ -1674,9 +1887,28 @@ final class ChatView extends LinearLayout {
         }
         Map<String, Object> ans = answers(plan);
         List<View> ctls = new ArrayList<>();
+        // The approval question's radio group sits under its line in the reply (Quill Desktop); when no line holds
+        // it, it closes the reply above the caption.
+        int[] span = plan.planApproval == null ? null : PlanOverlay.approvalSpan(reply.text, planTitle(plan.text));
+        int apprCut = span == null ? -1 : span[1] + 1; // the line after which the radio group goes
+        int apprQ = -1; // the last question whose lines hold it
+        for (int k = 0; span != null && k < m.length; k++) {
+            if (span[1] >= m[k][0] && span[1] < m[k][1]) {
+                apprQ = k;
+            }
+        }
+        boolean apprDone = span == null;
         int at = 0;
         for (int k = 0; k < m.length; k++) {
             JSONObject q = plan.planQuestions == null ? null : plan.planQuestions.optJSONObject(k);
+            if (!apprDone && apprQ < 0 && apprCut > at && apprCut <= m[k][0]) {
+                String before = PlanOverlay.lines(reply.text, at, apprCut);
+                if (!before.trim().isEmpty()) {
+                    col.addView(markdown(before));
+                }
+                apprDone = addApprovalRadio(col, plan, ctls);
+                at = apprCut;
+            }
             String part = PlanOverlay.lines(reply.text, at, m[k][1]);
             if (!part.trim().isEmpty()) {
                 col.addView(markdown(part));
@@ -1689,11 +1921,27 @@ final class ChatView extends LinearLayout {
             }
             col.addView(ctl);
             ctls.add(ctl);
+            if (!apprDone && apprQ == k && (k + 1 == m.length || m[k + 1] != m[k] && m[k + 1][0] != m[k][0])) {
+                apprDone = addApprovalRadio(col, plan, ctls);
+            }
             at = m[k][1];
+        }
+        if (!apprDone && apprCut >= at) {
+            String before = PlanOverlay.lines(reply.text, at, apprCut);
+            if (!before.trim().isEmpty()) {
+                col.addView(markdown(before));
+            }
+            apprDone = addApprovalRadio(col, plan, ctls);
+            at = apprCut;
         }
         String rest = PlanOverlay.lines(reply.text, at, Integer.MAX_VALUE);
         if (!rest.trim().isEmpty()) {
             col.addView(markdown(rest));
+        }
+        boolean radioHere = plan.planApproval != null && apprDone && span != null;
+        if (plan.planApproval != null && span == null) {
+            addApprovalRadio(col, plan, ctls); // no line holds the question: the radio group closes the reply
+            radioHere = true;
         }
         // The caption, a changes field and the buttons close the reply as part of it: no card of their own
         // repeating the approval question.
@@ -1704,16 +1952,16 @@ final class ChatView extends LinearLayout {
             EditText fb = changesField(plan);
             c.addView(fb);
             if (m.length == 0) {
-                planActions(c, plan, fb);
+                planActions(c, plan, fb, !radioHere);
             } else {
-                planButtons(c, plan, fb);
+                planButtons(c, plan, fb, !radioHere);
             }
         } else {
             EditText fb = changesField(plan);
             if (m.length == 0) {
-                planActions(c, plan, fb);
+                planActions(c, plan, fb, !radioHere);
             } else {
-                planButtons(c, plan, fb);
+                planButtons(c, plan, fb, !radioHere);
             }
             greyOut(c);
             TextView status = label("Plan: " + planStatus(plan), MainActivity.MUTED, 12);
@@ -1742,8 +1990,13 @@ final class ChatView extends LinearLayout {
 
     /** The note and the two buttons that close a plan with questions (card or overlay). */
     void planButtons(LinearLayout c, Item it, EditText fb) {
+        planButtons(c, it, fb, true);
+    }
+
+    /** radio false: the approval radio group is elsewhere (in the reply, under its question). */
+    void planButtons(LinearLayout c, Item it, EditText fb, boolean radio) {
         if (it.planApproval != null) {
-            approvalButtons(c, it, fb);
+            approvalButtons(c, it, fb, radio);
             return;
         }
         TextView note = label("Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
@@ -1770,8 +2023,12 @@ final class ChatView extends LinearLayout {
      * with the answers. Don't run always answers at once (rejectPlan; its answers go in the text).
      */
     void approvalButtons(LinearLayout c, Item it, EditText fb) {
+        approvalButtons(c, it, fb, true);
+    }
+
+    /** The approval question's radio group (recommended pre-selected once), reading and writing the plan's answers. */
+    View approvalRadio(Item it) {
         QuestionCards.Approval a = it.planApproval;
-        List<QuestionCards.Question> qs = QuestionCards.parseQuestions(Item.plain(it.planQuestions));
         Map<String, Object> ans = answers(it);
         // The recommended option starts picked, once (user 2026-11-23: a radio group like the other questions).
         if (!ans.containsKey("seen:" + PICK)) {
@@ -1799,7 +2056,26 @@ final class ChatView extends LinearLayout {
                 }
             });
         }
-        c.addView(g);
+        return g;
+    }
+
+    /** Adds the approval radio group under the reply's question line; true (so callers can mark it placed). */
+    boolean addApprovalRadio(LinearLayout col, Item plan, List<View> ctls) {
+        View g = approvalRadio(plan);
+        g.setPadding(dp(16), 0, 0, dp(6));
+        col.addView(g);
+        ctls.add(g);
+        return true;
+    }
+
+    /** radio false: the radio group is drawn elsewhere (in the reply, under its question). */
+    void approvalButtons(LinearLayout c, Item it, EditText fb, boolean radio) {
+        QuestionCards.Approval a = it.planApproval;
+        List<QuestionCards.Question> qs = QuestionCards.parseQuestions(Item.plain(it.planQuestions));
+        Map<String, Object> ans = answers(it);
+        if (radio) {
+            c.addView(approvalRadio(it));
+        }
         TextView note = label(qs.isEmpty() ? "Answer the question above, then send." : "Answer the question above, then send. Unanswered questions are sent as \"no answer\".", MainActivity.MUTED, 12);
         note.setPadding(0, dp(8), 0, 0);
         c.addView(note);
@@ -2054,7 +2330,7 @@ final class ChatView extends LinearLayout {
             streaming = stillStreaming;
             if (!animate || "instant".equals(animateSpeed)) {
                 pos = text.length();
-                draw();
+                draw(false);
                 finishIfDone();
                 return;
             }
@@ -2071,6 +2347,7 @@ final class ChatView extends LinearLayout {
                 ticking = false;
                 return;
             }
+            boolean revealed = false;
             if (pos < text.length()) {
                 // Below one character a frame, the fractions add up; a word shown whole in advance is paid back later.
                 carry += StreamText.rate(animateSpeed, text.length() - pos);
@@ -2078,10 +2355,15 @@ final class ChatView extends LinearLayout {
                     int n = StreamText.revealBy(text, pos, streaming, (int) carry);
                     carry -= n - pos;
                     pos = n;
-                    draw();
+                    draw(true);
+                    revealed = true;
                 }
             }
-            if (pos >= text.length()) {
+            long now = android.os.SystemClock.uptimeMillis();
+            if (!revealed) {
+                fadeFrame(now); // no new characters this frame: the last ones keep fading in
+            }
+            if (pos >= text.length() && !fading(now)) {
                 ticking = false;
                 finishIfDone();
                 return;
@@ -2108,7 +2390,46 @@ final class ChatView extends LinearLayout {
 
         final java.util.List<String> drawn = new ArrayList<>();
 
-        void draw() {
+        /** A paragraph (or the growing one) whose newest characters are still fading in. */
+        final class Tail {
+            final MarkdownView view;
+            final StreamText.Fade fade;
+
+            Tail(MarkdownView view, StreamText.Fade fade) {
+                this.view = view;
+                this.fade = fade;
+            }
+        }
+
+        StreamText.Fade liveFade = new StreamText.Fade();
+        final java.util.List<Tail> tails = new ArrayList<>();
+
+        boolean fading(long now) {
+            if (liveFade.active(now)) {
+                return true;
+            }
+            for (Tail t : tails) {
+                if (t.fade.active(now)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** Repaints the fading characters' alpha (and drops paragraphs that are fully shown). */
+        void fadeFrame(long now) {
+            applyFade(live, liveFade, now);
+            for (java.util.Iterator<Tail> it = tails.iterator(); it.hasNext(); ) {
+                Tail t = it.next();
+                applyFade(t.view, t.fade, now);
+                if (!t.fade.active(now)) {
+                    it.remove();
+                }
+            }
+        }
+
+        void draw(boolean fadeNew) {
+            long now = android.os.SystemClock.uptimeMillis();
             StringBuilder liveText = new StringBuilder();
             java.util.List<String> paras = StreamText.split(text.substring(0, pos), liveText);
             if (paras.size() < drawn.size() || !paras.subList(0, drawn.size()).equals(drawn)) {
@@ -2117,6 +2438,7 @@ final class ChatView extends LinearLayout {
                 addView(live, paraParams(0));
                 drawn.clear();
                 done = 0;
+                tails.clear();
             }
             if (paras.size() > done) {
                 for (int k = done; k < paras.size(); k++) {
@@ -2124,6 +2446,14 @@ final class ChatView extends LinearLayout {
                     MarkdownView b = md();
                     b.setMarkdown(paras.get(k));
                     addView(b, getChildCount() - 1, paraParams(getChildCount() - 1));
+                    if (fadeNew && k == paras.size() - 1) {
+                        // The growing paragraph just finished: its last characters keep fading in here.
+                        tails.add(new Tail(b, liveFade));
+                        liveFade = new StreamText.Fade();
+                    }
+                }
+                if (!fadeNew) {
+                    liveFade = new StreamText.Fade();
                 }
                 done = paras.size();
                 live.setLayoutParams(paraParams(getChildCount() - 1));
@@ -2133,11 +2463,79 @@ final class ChatView extends LinearLayout {
                 shown = l;
                 live.setMarkdown(l.trim().isEmpty() ? "" : StreamText.closeOpen(l));
             }
+            if (fadeNew) {
+                List<TextView> tvs = new ArrayList<>();
+                texts(live, tvs);
+                int n = 0;
+                for (TextView t : tvs) {
+                    n += t.getText().length();
+                }
+                liveFade.grew(n, now);
+                fadeFrame(now);
+            }
             toBottom();
         }
 
         void stop() {
             stopped = true;
+        }
+    }
+
+    /** The leaf TextViews under v, in reading order. */
+    static void texts(View v, List<TextView> out) {
+        if (v instanceof TextView) {
+            out.add((TextView) v);
+        } else if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                texts(g.getChildAt(i), out);
+            }
+        }
+    }
+
+    /** The marker of the alpha spans that fade new characters in (so they can be taken off again). */
+    static final class FadeSpan extends android.text.style.ForegroundColorSpan {
+        FadeSpan(int color) {
+            super(color);
+        }
+    }
+
+    /**
+     * Draws fade's characters at their alpha: the characters of v's text, counted over all its TextViews in order,
+     * from the first one still fading get a text color span at the base color's alpha scaled by their step.
+     */
+    static void applyFade(MarkdownView v, StreamText.Fade fade, long now) {
+        List<TextView> tvs = new ArrayList<>();
+        texts(v, tvs);
+        int first = fade.firstFading(now);
+        int offset = 0;
+        for (TextView t : tvs) {
+            CharSequence cs = t.getText();
+            int len = cs.length();
+            boolean had = cs instanceof android.text.Spanned && ((android.text.Spanned) cs).getSpans(0, len, FadeSpan.class).length > 0;
+            boolean needs = first < offset + len && fade.length() > offset;
+            if (had || needs) {
+                android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder(cs);
+                for (FadeSpan old : sb.getSpans(0, len, FadeSpan.class)) {
+                    sb.removeSpan(old);
+                }
+                int base = t.getCurrentTextColor();
+                int i = Math.max(first - offset, 0);
+                while (needs && i < len && offset + i < fade.length()) {
+                    int step = fade.step(offset + i, now);
+                    int j = i + 1;
+                    while (j < len && offset + j < fade.length() && fade.step(offset + j, now) == step) {
+                        j++;
+                    }
+                    if (step < StreamText.FADE_STEPS) {
+                        int a = Math.round(android.graphics.Color.alpha(base) * (step / (float) StreamText.FADE_STEPS));
+                        sb.setSpan(new FadeSpan((base & 0x00FFFFFF) | (a << 24)), i, j, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
+                    i = j;
+                }
+                t.setText(sb);
+            }
+            offset += len;
         }
     }
 }

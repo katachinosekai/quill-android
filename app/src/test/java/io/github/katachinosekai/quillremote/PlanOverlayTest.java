@@ -40,4 +40,13 @@ public class PlanOverlayTest {
         assertNull(PlanOverlay.matchPlan(reply, new int[0], new String[0], ""));
         assertArrayEquals(new int[]{6, 7}, PlanOverlay.matchPlan(REPLY, new int[]{1}, new String[]{"Should the beta channel get it first?"}, "x?")[0]);
     }
+
+    @Test
+    public void approvalSpanFindsItsLineAndAnOptionsLineBelow() {
+        String reply = "Plan.\n\n1. Edit x.\n\nCan I run steps 1-2?\nYes (recommended) or no?\n\nThanks.";
+        assertArrayEquals(new int[]{4, 5}, PlanOverlay.approvalSpan(reply, "Can I run steps 1-2? Yes (recommended) or no?"));
+        assertArrayEquals(new int[]{2, 2}, PlanOverlay.approvalSpan("a\nb\n**Do you approve?**\n\n", "Do you approve?"));
+        assertNull(PlanOverlay.approvalSpan(reply, "Something else entirely?"));
+        assertNull(PlanOverlay.approvalSpan(reply, ""));
+    }
 }

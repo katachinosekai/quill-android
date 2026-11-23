@@ -3,6 +3,7 @@ package io.github.katachinosekai.quillremote;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNull;
 
+import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 
 public class ChoicesTest {
@@ -39,5 +40,15 @@ public class ChoicesTest {
         assertArrayEquals(new String[]{"Do all of them, with single-action buttons getting their own row", "Only the first"},
                 Choices.parse("Should I do all of them, with single-action buttons getting their own row, or only the first?"));
         assertArrayEquals(new String[]{"Red", "Green", "Blue"}, Choices.parse("Red, green, or blue?"));
+    }
+
+    @Test
+    public void answeredChoiceMarksThePick() {
+        String[] opts = {"Merge them", "Leave both"};
+        assertEquals(1, Choices.picked("I pick the second option: Leave both.", opts));
+        assertEquals(0, Choices.picked("merge them", opts));
+        assertEquals(-1, Choices.picked("something else", opts));
+        assertEquals(-1, Choices.picked(null, opts));
+        assertEquals("I pick the next option: x.", Choices.reply(4, "x"));
     }
 }

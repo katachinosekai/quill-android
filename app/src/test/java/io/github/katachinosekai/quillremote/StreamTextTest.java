@@ -5,6 +5,8 @@ import static org.junit.Assert.assertEquals;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 /** Same cases as Quill Desktop's TestStreamCut and closeOpenMarkdown tests. */
@@ -85,5 +87,33 @@ public class StreamTextTest {
         assertEquals("After", live.toString());
         assertEquals(java.util.List.of("a. one\n\nb) two"), StreamText.split("a. one\n\nb) two\n\nAfter", live));
         assertEquals(java.util.List.of("- x"), StreamText.split("- x\n\nText", live));
+    }
+
+    @Test
+    public void newCharactersFadeInOverTheFadeTime() {
+        StreamText.Fade f = new StreamText.Fade();
+        f.grew(4, 1000);
+        f.grew(10, 1100);
+        assertEquals(0, f.step(0, 1000));
+        assertEquals(StreamText.FADE_STEPS, f.step(0, 1000 + StreamText.CHAR_FADE_MS));
+        assertEquals(StreamText.FADE_STEPS / 2, f.step(0, 1000 + StreamText.CHAR_FADE_MS / 2));
+        assertEquals(0, f.step(7, 1100));
+        assertEquals(StreamText.FADE_STEPS, f.step(99, 1100)); // beyond the text: shown
+        assertEquals(0, f.firstFading(1100));
+        assertEquals(4, f.firstFading(1000 + StreamText.CHAR_FADE_MS)); // the first four are done
+        assertTrue(f.active(1100));
+        assertFalse(f.active(1100 + StreamText.CHAR_FADE_MS));
+    }
+
+    @Test
+    public void shorterTextDropsFadesAndFadeIsUnderTheTapGuard() {
+        StreamText.Fade f = new StreamText.Fade();
+        f.grew(8, 0);
+        f.grew(3, 10);
+        assertEquals(3, f.length());
+        f.grew(5, 20);
+        assertEquals(0, f.step(3, 20));
+        assertEquals(StreamText.FADE_STEPS, f.step(3, 20 + StreamText.CHAR_FADE_MS));
+        assertTrue(StreamText.FADE_IN_MS < QuestionCards.GUARD_MS);
     }
 }

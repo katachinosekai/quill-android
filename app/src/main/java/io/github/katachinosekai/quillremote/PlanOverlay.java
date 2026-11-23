@@ -98,23 +98,66 @@ final class PlanOverlay {
 
     /**
      * The overlay's match for a plan: its questions' lines (see match), or for a plan without questions an empty
-     * array when the reply holds the plan's approval question (title) itself; null when the reply can't be matched
-     * (the card is used then).
+     * array when the reply holds the plan's approval question (title) itself or is the plan's own text (Quill
+     * Desktop's planOverlayQs); null when the reply can't be matched (the card is used then).
      */
-    static int[][] matchPlan(String reply, int[] nums, String[] texts, String title) {
+    static int[][] matchPlan(String reply, int[] nums, String[] texts, String title, String planText) {
         if (reply == null || reply.trim().isEmpty()) {
             return null;
         }
         if (nums.length > 0) {
             return match(reply, nums, texts);
         }
-        String t = norm(title);
-        if (t.isEmpty()) {
+        if (approvalSpan(reply, title) != null) {
+            return new int[0][];
+        }
+        if (planText != null && planText.trim().equals(reply.trim())) {
+            return new int[0][]; // the reply is the plan: the buttons close it
+        }
+        return null;
+    }
+
+    static int[][] matchPlan(String reply, int[] nums, String[] texts, String title) {
+        return matchPlan(reply, nums, texts, title, null);
+    }
+
+    static final Pattern NUMBERED_Q = Pattern.compile("^\\s*(?:[-*]\\s*)?(?:\\*\\*)?\\d+[.)]\\s+");
+    static final Pattern OR = Pattern.compile("\\bor\\b", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The reply's lines {first, last} that hold the approval question (title): its options may sit on the next line
+     * ("Can I run it?\nYes (recommended) or no?", Quill Desktop's JoinOptionLineSpans); the last such place wins.
+     * null if no line does.
+     */
+    static int[] approvalSpan(String text, String title) {
+        String t = norm(title == null ? "" : title);
+        if (text == null || t.isEmpty()) {
             return null;
         }
-        for (String line : reply.split("\n", -1)) {
-            if (norm(line).contains(t)) {
-                return new int[0][];
+        String[] lines = text.split("\n", -1);
+        java.util.List<String> joined = new java.util.ArrayList<>();
+        java.util.List<Integer> first = new java.util.ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            String l = lines[i].trim();
+            int n = joined.size();
+            if (n > 0 && !l.isEmpty() && !NUMBERED_Q.matcher(l).find() && OR.matcher(l).find() && l.split("\\s+").length <= 30) {
+                String prev = joined.get(n - 1).trim().replaceAll("[*_ ]+$", "");
+                if (prev.endsWith("?")) {
+                    joined.set(n - 1, prev + " " + l);
+                    continue;
+                }
+            }
+            joined.add(lines[i]);
+            first.add(i);
+        }
+        for (int i = joined.size() - 1; i >= 0; i--) {
+            String n = norm(joined.get(i));
+            if (!n.isEmpty() && n.contains(t)) {
+                int end = i + 1 < first.size() ? first.get(i + 1) - 1 : lines.length - 1;
+                while (end > first.get(i) && lines[end].trim().isEmpty()) {
+                    end--;
+                }
+                return new int[]{first.get(i), end};
             }
         }
         return null;

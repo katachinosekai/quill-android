@@ -79,4 +79,27 @@ final class Choices {
         int cp = s.codePointAt(0);
         return new String(Character.toChars(Character.toUpperCase(cp))) + s.substring(Character.charCount(cp));
     }
+
+    /** Quill Desktop's reply to a quick choice: "I pick the first option: X." (choiceReply). */
+    static String reply(int n, String option) {
+        String which = n >= 0 && n < 4 ? new String[]{"first", "second", "third", "fourth"}[n] : "next";
+        return "I pick the " + which + " option: " + option + ".";
+    }
+
+    /**
+     * Which option the user's answer picked: the reply sent for a server choice (Quill Desktop's wording) or the
+     * option's own text (a choice sent as a message); -1 when the answer is none of them.
+     */
+    static int picked(String answer, String[] opts) {
+        if (answer == null || opts == null) {
+            return -1;
+        }
+        String a = answer.trim();
+        for (int k = 0; k < opts.length; k++) {
+            if (a.equals(reply(k, opts[k])) || a.equalsIgnoreCase(opts[k].trim())) {
+                return k;
+            }
+        }
+        return -1;
+    }
 }

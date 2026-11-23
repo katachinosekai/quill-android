@@ -59,11 +59,19 @@ public class ReviewOverlayFable2Test {
         assertArrayEquals(new int[]{4, 5}, m[1]);
     }
 
-    /** OK: approval alone overlays only when the reply holds the approval question; a made-up title falls back. */
+    /**
+     * OK: approval alone overlays when the reply holds the approval question or is the plan's own text (Quill Desktop's
+     * planOverlayQs); a made-up title with the plan's text elsewhere falls back to the card.
+     */
     @Test
     public void ok_approvalAloneNeedsItsQuestionInTheReply() {
         String reply = "1. Edit x.\n2. Build.\n\n**Do you approve steps 1-2?**";
         assertArrayEquals(new int[0][], PlanOverlay.matchPlan(reply, new int[0], new String[0], "Do you approve steps 1-2?"));
-        assertNull(PlanOverlay.matchPlan("**Plan (needs your yes):**\n1. Edit x.", new int[0], new String[0], "Approve this plan?"));
+        String noQuestion = "**Plan (needs your yes):**\n1. Edit x.";
+        // The reply is the plan's own text: overlaid, the buttons close it.
+        assertArrayEquals(new int[0][], PlanOverlay.matchPlan(noQuestion, new int[0], new String[0], "Approve this plan?", noQuestion + "\n"));
+        // The plan's text is elsewhere: the card.
+        assertNull(PlanOverlay.matchPlan(noQuestion, new int[0], new String[0], "Approve this plan?", "A different plan."));
+        assertNull(PlanOverlay.matchPlan(noQuestion, new int[0], new String[0], "Approve this plan?"));
     }
 }

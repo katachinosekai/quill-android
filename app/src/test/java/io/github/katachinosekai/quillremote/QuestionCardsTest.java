@@ -150,4 +150,34 @@ public class QuestionCardsTest {
         assertFalse(g.allows(1599));
         assertTrue(g.allows(1600));
     }
+
+    @Test
+    public void approvalRadioYesApprovesWithItsAnswers() {
+        QuestionCards.Approval a = QuestionCards.parseApproval(approvalMap());
+        List<QuestionCards.Question> qs = QuestionCards.parseQuestions(Arrays.asList(q("a", "Which?", "choice", "red", "blue")));
+        Map<String, Object> ans = new HashMap<>();
+        ans.put("a", 1);
+        ans.put("seen:approval:pick", true);
+        ans.put("approval:pick", 0);
+        assertEquals("approvePlan", QuestionCards.action(0));
+        Map<String, Object> body = QuestionCards.body(a, 0, qs, ans, "");
+        assertEquals(0, body.get("approvalChoice"));
+        assertEquals(1, ((Map<?, ?>) body.get("planAnswers")).get("a"));
+        assertFalse(body.containsKey("planAnswers") && ((Map<?, ?>) body.get("planAnswers")).containsKey("approval:pick"));
+    }
+
+    @Test
+    public void approvalRadioNoIsTheStopOptionAndStillSendsTheAnswers() {
+        QuestionCards.Approval a = QuestionCards.parseApproval(approvalMap());
+        assertTrue(a.stop[1]);
+        List<QuestionCards.Question> qs = QuestionCards.parseQuestions(Arrays.asList(q("a", "Which?", "choice", "red", "blue")));
+        Map<String, Object> ans = new HashMap<>();
+        ans.put("a", 0);
+        // Quill Desktop turns a stop approvalChoice into rejectPlan and sends the answers to Claude after the refusal.
+        assertEquals("approvePlan", QuestionCards.action(1));
+        Map<String, Object> body = QuestionCards.body(a, 1, qs, ans, "later");
+        assertEquals(1, body.get("approvalChoice"));
+        assertEquals(0, ((Map<?, ?>) body.get("planAnswers")).get("a"));
+        assertEquals("later", body.get("text"));
+    }
 }
