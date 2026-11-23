@@ -66,15 +66,31 @@ final class StreamText {
     static final int REVEAL_MIN = 2, REVEAL_CATCH_UP = 12, REVEAL_MAX = 24;
 
     /**
-     * Next reveal position (Quill Desktop's revealLoop): 2..24 characters a frame, faster when far behind, extended to
-     * the end of the word (if that's within 24), the rest at once when a finished reply has no more spaces, never
-     * inside a surrogate pair.
+     * Text animation speed (rescaled 2026-11-23, even Slow felt fast): each speed is a fraction of the old Normal pace
+     * (2..24 characters a frame, faster when far behind). Retune a speed by changing its one constant.
      */
-    static int nextReveal(String text, int pos, boolean streaming) {
-        return nextReveal(text, pos, streaming, "normal");
+    static final double SCALE_FAST = 1.0 / 2, SCALE_NORMAL = 1.0 / 4, SCALE_SLOW = 1.0 / 8;
+
+    /** Characters per frame (can be below one) with gap characters still hidden; Instant: all of them. */
+    static double rate(String speed, int gap) {
+        double scale;
+        switch (speed(speed)) {
+            case "slow":
+                scale = SCALE_SLOW;
+                break;
+            case "fast":
+                scale = SCALE_FAST;
+                break;
+            case "instant":
+                return gap;
+            default:
+                scale = SCALE_NORMAL;
+                break;
+        }
+        return Math.min(Math.max(REVEAL_MIN, gap / REVEAL_CATCH_UP), REVEAL_MAX) * scale;
     }
 
-    /** ⚙ Text animation speed: Slow is half of Normal, Fast double, Instant shows everything. Normal is the pace above. */
+    /** ⚙ Text animation speeds (see rate): Slow 1/8, Normal 1/4 (the default), Fast 1/2 of the old Normal, Instant shows everything. */
     static final String[] SPEEDS = {"slow", "normal", "fast", "instant"};
 
     /** The stored value for anything unknown or missing is normal. */
@@ -98,30 +114,17 @@ final class StreamText {
         return SPEEDS[(java.util.Arrays.asList(SPEEDS).indexOf(speed(s)) + 1) % SPEEDS.length];
     }
 
-    static int nextReveal(String text, int pos, boolean streaming, String speed) {
+    /**
+     * Next reveal position (Quill Desktop's revealLoop) after step characters (at least 1), extended to the end of the
+     * word (if that's within 24), the rest at once when a finished reply has no more spaces, never inside a surrogate
+     * pair. The caller keeps the fractions: see StreamView.tick.
+     */
+    static int revealBy(String text, int pos, boolean streaming, int step) {
         if (pos >= text.length()) {
             return text.length();
         }
-        int gap = text.length() - pos;
-        int min = REVEAL_MIN, catchUp = REVEAL_CATCH_UP, max = REVEAL_MAX;
-        switch (speed(speed)) {
-            case "slow":
-                min = 1;
-                catchUp *= 2;
-                max /= 2;
-                break;
-            case "fast":
-                min *= 2;
-                catchUp /= 2;
-                max *= 2;
-                break;
-            case "instant":
-                return text.length();
-            default:
-                break;
-        }
-        int step = Math.min(Math.max(min, gap / catchUp), max);
-        int n = Math.min(pos + step, text.length());
+        int max = REVEAL_MAX;
+        int n = Math.min(pos + Math.max(1, step), text.length());
         int sp = -1;
         for (int i = n; i < text.length(); i++) {
             char ch = text.charAt(i);

@@ -44,7 +44,7 @@ public class StreamTextTest {
         String text = "The first paragraph has bold words and a list of reasons to stream smoothly to the end.";
         int pos = 0, frames = 0, maxStep = 0;
         while (pos < text.length()) {
-            int n = StreamText.nextReveal(text, pos, true);
+            int n = StreamText.revealBy(text, pos, true, Math.max(1, (int) StreamText.rate("fast", text.length() - pos)));
             maxStep = Math.max(maxStep, n - pos);
             assertEquals("whole words: " + n, true, n == text.length() || text.charAt(n) == ' ' || text.indexOf(' ', n) < 0); // the last word may show partly while streaming
             pos = n;
@@ -52,23 +52,20 @@ public class StreamTextTest {
         }
         assertEquals(true, maxStep <= 2 * StreamText.REVEAL_MAX);
         assertEquals(true, frames > 5);
-        assertEquals(2, StreamText.nextReveal("ab", 0, false)); // a finished reply shows its last word at once
-        assertEquals(3, StreamText.nextReveal("a\uD83D\uDE00b", 0, true)); // never between a surrogate pair
+        assertEquals(2, StreamText.revealBy("ab", 0, false, 1)); // a finished reply shows its last word at once
+        assertEquals(3, StreamText.revealBy("a\uD83D\uDE00b", 0, true, 2)); // never between a surrogate pair
     }
 
     @Test
-    public void speedNormalIsTodaysPaceAndOthersScale() {
-        String text = "word ".repeat(400);
-        for (int pos = 0; pos < text.length(); pos += 37) {
-            assertEquals(StreamText.nextReveal(text, pos, true), StreamText.nextReveal(text, pos, true, "normal"));
-            assertEquals(StreamText.nextReveal(text, pos, true), StreamText.nextReveal(text, pos, true, "bogus"));
-            assertEquals(text.length(), StreamText.nextReveal(text, pos, true, "instant"));
-        }
-        for (int pos : new int[] {0, 700, 1500}) {
-            int s = StreamText.nextReveal(text, pos, true, "slow") - pos;
-            int n = StreamText.nextReveal(text, pos, true, "normal") - pos;
-            int f = StreamText.nextReveal(text, pos, true, "fast") - pos;
-            assertEquals(true, s < n && n < f);
+    public void speedsAreFractionsOfTheOldNormal() {
+        for (int gap = 1; gap < 2000; gap++) {
+            double old = Math.min(Math.max(2, gap / 12), 24);
+            assertEquals(old / 2, StreamText.rate("fast", gap), 1e-9);
+            assertEquals(old / 4, StreamText.rate("normal", gap), 1e-9);
+            assertEquals(old / 8, StreamText.rate("slow", gap), 1e-9);
+            assertEquals(old / 4, StreamText.rate(null, gap), 1e-9);
+            assertEquals(old / 4, StreamText.rate("bogus", gap), 1e-9);
+            assertEquals(gap, StreamText.rate("instant", gap), 1e-9);
         }
     }
 

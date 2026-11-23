@@ -2012,14 +2012,22 @@ final class ChatView extends LinearLayout {
             }
         }
 
+        double carry;
+
         void tick() {
             if (stopped) {
                 ticking = false;
                 return;
             }
             if (pos < text.length()) {
-                pos = StreamText.nextReveal(text, pos, streaming, animateSpeed);
-                draw();
+                // Below one character a frame, the fractions add up; a word shown whole in advance is paid back later.
+                carry += StreamText.rate(animateSpeed, text.length() - pos);
+                if (carry >= 1) {
+                    int n = StreamText.revealBy(text, pos, streaming, (int) carry);
+                    carry -= n - pos;
+                    pos = n;
+                    draw();
+                }
             }
             if (pos >= text.length()) {
                 ticking = false;
