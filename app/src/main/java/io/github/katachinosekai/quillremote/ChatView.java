@@ -667,8 +667,9 @@ final class ChatView extends LinearLayout {
     }
 
     void setItems(List<Item> all) {
-        int hidden = Math.max(0, all.size() - shownLimit);
-        List<Item> next = hidden == 0 ? all : all.subList(hidden, all.size());
+        int start = windowStart(all, shownLimit);
+        int hidden = visibleCount(all, 0, start);
+        List<Item> next = start == 0 ? all : all.subList(start, all.size());
         earlier.setText("Show earlier messages (" + hidden + ")");
         earlier.setVisibility(hidden > 0 ? VISIBLE : GONE);
         boolean typing = box.hasFocus();
@@ -777,6 +778,32 @@ final class ChatView extends LinearLayout {
         }
     }
 
+    /** How many of all[from, to) produce visible output (see empty). */
+    static int visibleCount(List<Item> all, int from, int to) {
+        int n = 0;
+        for (int i = from; i < to; i++) {
+            if (!empty(all.get(i))) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
+     * Where the shown window starts: the newest `limit` items that produce visible output, so empty ones (blank thinking,
+     * tool-only replies, task notifications with no text) can't use up the window and leave one message on a blank
+     * screen (user 2026-11-22: "Show earlier messages (160)" and one reply). Items before it sit behind "Show earlier".
+     */
+    static int windowStart(List<Item> all, int limit) {
+        int seen = 0;
+        for (int i = all.size() - 1; i >= 0; i--) {
+            if (!empty(all.get(i)) && ++seen == limit) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
     static Item latestAnswerable(List<Item> items) {
         for (int i = items.size() - 1; i >= 0; i--) {
             Item it = items.get(i);
@@ -810,8 +837,14 @@ final class ChatView extends LinearLayout {
             case "error":
             case "notice":
                 return true;
-            default:
+            case "tool":
+            case "permission":
+            case "plan":
+            case "question":
+            case "rotate":
                 return false;
+            default:
+                return true; // an unknown kind with no text has nothing to draw
         }
     }
 
