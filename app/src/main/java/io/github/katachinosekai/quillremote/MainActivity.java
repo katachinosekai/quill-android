@@ -564,13 +564,46 @@ public class MainActivity extends Activity {
             return false;
         }
         intent.setData(null);
-        acceptPair(data);
+        acceptPair(data, false);
         return true;
     }
 
-    void acceptPair(Uri data) {
-        String name = FolderSync.pair(prefs, data);
-        android.widget.Toast.makeText(this, name == null ? "Not a valid Quill Desktop pairing link" : "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
+    android.app.AlertDialog pairDlg;
+
+    /**
+     * A pairing link or code (security review f436bdd): a quillpair:// link can come from any web page, app or chat
+     * link, so it never pairs silently. It shows what it would pair with (name, address, certificate) and pairs only
+     * after "Pair"; only an in-app QR scan on an unpaired phone skips the question (the user just pointed the camera
+     * at Quill Desktop's code).
+     */
+    void acceptPair(Uri data, boolean scanned) {
+        FolderSync.Pairing p = FolderSync.parse(data);
+        if (p == null) {
+            toast("Not a valid Quill Desktop pairing link");
+            return;
+        }
+        boolean paired = FolderSync.paired(prefs);
+        if (scanned && !paired) {
+            applyPair(p);
+            return;
+        }
+        if (pairDlg != null && pairDlg.isShowing()) {
+            pairDlg.dismiss();
+        }
+        TextView msg = para(FolderSync.confirmText(p, paired ? prefs.getString("pair.name", "") : null), TEXT);
+        msg.setPadding(dp(24), dp(8), dp(24), 0);
+        pairDlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(paired ? "Replace the pairing?" : "Pair with Quill Desktop?")
+                .setView(scroll(msg))
+                .setPositiveButton(paired ? "Replace" : "Pair", (d, w) -> applyPair(p))
+                .setNegativeButton("Cancel", null)
+                .show();
+        accent(pairDlg);
+    }
+
+    void applyPair(FolderSync.Pairing p) {
+        String name = FolderSync.apply(prefs, p);
+        android.widget.Toast.makeText(this, "Paired with " + name, android.widget.Toast.LENGTH_LONG).show();
         if (name != null && phoneApi != null && (remote != null) != phoneApi.available()) {
             recreate();
             return;
@@ -1403,7 +1436,7 @@ public class MainActivity extends Activity {
             android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
             CharSequence t = cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0
                     ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
-            acceptPair(t == null ? null : Uri.parse(t.toString().trim()));
+            acceptPair(t == null ? null : Uri.parse(t.toString().trim()), false);
         }));
         box.addView(textButton("Choose synced file", v -> {
             Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -1554,6 +1587,16 @@ public class MainActivity extends Activity {
         t.setSingleLine(true);
         t.setPadding(0, dp(10), 0, dp(2));
         box.addView(t);
+    }
+
+    /** Wrapping text (dialogs): never cut off, unlike line(). */
+    TextView para(String text, int color) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(color);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        t.setLineSpacing(0, 1.1f);
+        return t;
     }
 
     TextView line(String text, int color) {
@@ -2077,7 +2120,7 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int req, int res, Intent data) {
         if (req == PAIR_SCAN) {
             if (res == RESULT_OK && data != null && data.getData() != null) {
-                acceptPair(data.getData());
+                acceptPair(data.getData(), true);
             }
             return;
         }

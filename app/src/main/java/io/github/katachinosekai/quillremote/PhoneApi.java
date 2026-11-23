@@ -48,8 +48,40 @@ final class PhoneApi {
 
     final SharedPreferences prefs;
     final SecureRandom random = new SecureRandom();
-    /** Quill Desktop's paired-device unlock token (POST /phone/unlock), memory only; sent as X-Quill-Unlock. */
-    static volatile String unlockToken;
+    /**
+     * Quill Desktop's paired-device unlock token (POST /phone/unlock), memory only; sent as X-Quill-Unlock. Bound to
+     * the certificate fingerprint of the Quill Desktop that issued it, so after a re-pair it is never sent to another
+     * host (security review f436bdd); pairing and unpairing also drop it.
+     */
+    static final class Unlock {
+        final String token;
+        final String fp;
+
+        Unlock(String token, String fp) {
+            this.token = token;
+            this.fp = fp;
+        }
+    }
+
+    static volatile Unlock unlock;
+
+    static void unlocked(String token, String fp) {
+        unlock = token == null || token.isEmpty() || fp == null || fp.isEmpty() ? null : new Unlock(token, fp);
+    }
+
+    static void dropUnlock() {
+        unlock = null;
+    }
+
+    static boolean isUnlocked() {
+        return unlock != null;
+    }
+
+    /** The unlock token for the Quill Desktop with this certificate fingerprint, or null. */
+    static String unlockToken(String fp) {
+        Unlock u = unlock;
+        return u != null && fp != null && !fp.isEmpty() && u.fp.equals(fp) ? u.token : null;
+    }
 
     PhoneApi(SharedPreferences prefs) {
         this.prefs = prefs;
@@ -137,7 +169,7 @@ final class PhoneApi {
                 conn.setRequestMethod(method);
                 conn.setRequestProperty("X-Quill-Key", key);
                 conn.setRequestProperty("Accept", "application/json");
-                String unlock = unlockToken;
+                String unlock = unlockToken(fp);
                 if (unlock != null) {
                     conn.setRequestProperty("X-Quill-Unlock", unlock);
                 }

@@ -132,7 +132,7 @@ final class Remote implements ChatView.Actions {
                     hello = true;
                     control = h.body.optBoolean("control", true);
                     deskVersion = h.body.optString("quill", "");
-                    if (h.body.optBoolean("unlock") && PhoneApi.unlockToken == null) {
+                    if (h.body.optBoolean("unlock") && !PhoneApi.isUnlocked()) {
                         lockedWait(g);
                         continue;
                     }
@@ -240,7 +240,7 @@ final class Remote implements ChatView.Actions {
             }
             PhoneApi.Reply r = api.unlockSigned(nonce, sig);
             if (r.ok() && !r.body.optString("token").isEmpty()) {
-                PhoneApi.unlockToken = r.body.optString("token");
+                PhoneApi.unlocked(r.body.optString("token"), fp);
                 passwordSession = false;
                 lastTouch = System.currentTimeMillis();
                 return true;
@@ -275,7 +275,7 @@ final class Remote implements ChatView.Actions {
     }
 
     void dropToken() {
-        PhoneApi.unlockToken = null;
+        PhoneApi.dropUnlock();
         passwordSession = false;
     }
 
@@ -300,7 +300,7 @@ final class Remote implements ChatView.Actions {
         ui.post(host::onLocked);
         publish();
         connection("Locked by Quill Desktop. Enter its device password to continue.");
-        while (running && g == gen && PhoneApi.unlockToken == null) {
+        while (running && g == gen && !PhoneApi.isUnlocked()) {
             sleep(500);
         }
         connection("");
@@ -357,10 +357,11 @@ final class Remote implements ChatView.Actions {
     /** POST /phone/unlock; done gets "" on success, else the message to show. */
     void unlock(String password, java.util.function.Consumer<String> done) {
         work.execute(() -> {
+            String fp = api.prefs.getString("pair.fp", ""); // the Quill Desktop asked; a re-pair meanwhile won't get its token
             PhoneApi.Reply r = api.unlock(password);
             String msg;
             if (r.ok() && !r.body.optString("token").isEmpty()) {
-                PhoneApi.unlockToken = r.body.optString("token");
+                PhoneApi.unlocked(r.body.optString("token"), fp);
                 passwordSession = true;
                 ui.post(host::onUnlocked);
                 lastTouch = System.currentTimeMillis();
@@ -397,7 +398,7 @@ final class Remote implements ChatView.Actions {
     /** Your own activity (touches, keys, typing) keeps Quill Desktop's device unlock alive; sent at most once a minute. Without activity the desktop's idle timer (15 min default) runs out and the app asks for the password again. */
     void touch() {
         long now = System.currentTimeMillis();
-        if (PhoneApi.unlockToken == null || now - lastTouch < 60_000) {
+        if (!PhoneApi.isUnlocked() || now - lastTouch < 60_000) {
             return;
         }
         lastTouch = now;

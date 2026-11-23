@@ -103,18 +103,38 @@ class FolderSync {
     }
 
     boolean paired() {
-        return !prefs.getString("pair.key", "").isEmpty() || !prefs.getString("pair.gist", "").isEmpty() || !prefs.getString("pair.file", "").isEmpty();
+        return paired(prefs);
     }
 
-    static String pair(SharedPreferences prefs, Uri u) {
+    /** A pairing link read but not applied yet: the user confirms it first (security review f436bdd). */
+    static final class Pairing {
+        String hosts = "";
+        int port = -1;
+        String key = "";
+        String fp = "";
+        String id = "";
+        String gist = "";
+        String fileName = "quill-folders.json";
+        String name = "your computer";
+
+        boolean lan() {
+            return !key.isEmpty();
+        }
+    }
+
+    static Pairing parse(Uri u) {
         if (u == null || !"quillpair".equals(u.getScheme()) || !"pair".equals(u.getHost())) {
             return null;
         }
-        String h = u.getQueryParameter("h"), p = u.getQueryParameter("p"), k = u.getQueryParameter("k");
-        String fp = u.getQueryParameter("fp"), f = u.getQueryParameter("f"), g = u.getQueryParameter("g");
-        String n = u.getQueryParameter("n"), id = u.getQueryParameter("i"), v = u.getQueryParameter("v");
-        SharedPreferences.Editor e = prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
-                .remove("pair.id").remove("pair.v").remove("pair.lastHost").remove("phone.unsupported");
+        return parse(u::getQueryParameter);
+    }
+
+    /** The link's query parameters (q = name → value or null), checked; null when nothing usable is in it. */
+    static Pairing parse(java.util.function.Function<String, String> q) {
+        String h = q.apply("h"), p = q.apply("p"), k = q.apply("k");
+        String fp = q.apply("fp"), f = q.apply("f"), g = q.apply("g");
+        String n = q.apply("n"), id = q.apply("i"), v = q.apply("v");
+        Pairing out = new Pairing();
         boolean any = false;
         if (h != null && p != null && k != null && fp != null) {
             List<String> hosts = new ArrayList<>();
@@ -131,30 +151,103 @@ class FolderSync {
             }
             fp = fp.toLowerCase(Locale.ROOT);
             if (!hosts.isEmpty() && port > 1024 && port < 65536 && KEY.matcher(k).matches() && HEX64.matcher(fp).matches()) {
-                e.putString("pair.hosts", String.join(",", hosts)).putInt("pair.port", port).putString("pair.key", k).putString("pair.fp", fp);
+                out.hosts = String.join(",", hosts);
+                out.port = port;
+                out.key = k;
+                out.fp = fp;
                 if (id != null && PHONE_ID.matcher(id).matches() && "2".equals(v)) {
-                    e.putString("pair.id", id).putInt("pair.v", 2);
+                    out.id = id;
                 }
                 any = true;
             }
         }
         if (g != null && GIST.matcher(g).matches()) {
-            e.putString("pair.gist", g);
+            out.gist = g;
             any = true;
         }
-        e.putString("pair.fileName", f != null && FILE.matcher(f).matches() ? f : "quill-folders.json");
-        if (!any) {
-            return null;
+        if (f != null && FILE.matcher(f).matches()) {
+            out.fileName = f;
         }
-        String name = n != null && n.length() <= 64 ? n : "your computer";
-        e.putString("pair.name", name).apply();
-        return name;
+        if (n != null && !n.isEmpty() && n.length() <= 64) {
+            out.name = Notifier.clip(n, 64);
+        }
+        return any ? out : null;
+    }
+
+    /**
+     * Saves a confirmed pairing, replacing the old one. Quill Desktop's unlock token is dropped (it belongs to the old
+     * pairing and must never reach a new host), and a home-network key registered with a different Quill Desktop
+     * (other certificate) is forgotten, so the next unlock asks for the password instead of failing signatures.
+     */
+    static String apply(SharedPreferences prefs, Pairing p) {
+        PhoneApi.dropUnlock();
+        SharedPreferences.Editor e = prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
+                .remove("pair.id").remove("pair.v").remove("pair.lastHost").remove("phone.unsupported");
+        if (!prefs.getString("pair.fp", "").equals(p.fp)) {
+            e.remove("lanKey.registered");
+        }
+        if (p.lan()) {
+            e.putString("pair.hosts", p.hosts).putInt("pair.port", p.port).putString("pair.key", p.key).putString("pair.fp", p.fp);
+            if (!p.id.isEmpty()) {
+                e.putString("pair.id", p.id).putInt("pair.v", 2);
+            }
+        }
+        if (!p.gist.isEmpty()) {
+            e.putString("pair.gist", p.gist);
+        }
+        e.putString("pair.fileName", p.fileName).putString("pair.name", p.name).apply();
+        PhoneApi.dropUnlock();
+        return p.name;
+    }
+
+    static String pair(SharedPreferences prefs, Uri u) {
+        Pairing p = parse(u);
+        return p == null ? null : apply(prefs, p);
+    }
+
+    /** The certificate fingerprint as the user compares it: the first 16 hex digits in groups of 4. */
+    static String shortFp(String fp) {
+        if (fp == null || fp.length() < 16) {
+            return "";
+        }
+        return fp.substring(0, 4) + " " + fp.substring(4, 8) + " " + fp.substring(8, 12) + " " + fp.substring(12, 16);
+    }
+
+    /** What the pairing question shows; current = the name of the pairing it replaces, or null when not paired. */
+    static String confirmText(Pairing p, String current) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Computer: ").append(p.name);
+        if (p.lan()) {
+            sb.append("\nAddress: ").append(p.hosts.replace(",", ", ")).append("  (port ").append(p.port).append(")");
+            sb.append("\nCertificate: ").append(shortFp(p.fp));
+        }
+        if (!p.gist.isEmpty()) {
+            sb.append("\nGist: ").append(p.gist);
+        }
+        if (current != null) {
+            sb.append("\n\nThis replaces the pairing with ").append(current.isEmpty() ? "your computer" : current).append('.');
+        }
+        sb.append("\n\nOnly continue if you opened this link or code yourself from the Devices button in Quill Desktop. "
+                + "A pairing link from a web page, a message or another app can point Quill Android at someone else's "
+                + "computer, which would then ask for your Quill Desktop device password.");
+        return sb.toString();
+    }
+
+    /** A pairing is saved (network, gist or synced file). */
+    static boolean paired(SharedPreferences prefs) {
+        return !prefs.getString("pair.key", "").isEmpty() || !prefs.getString("pair.gist", "").isEmpty() || !prefs.getString("pair.file", "").isEmpty();
+    }
+
+    /** Forgets the pairing, its cached data and Quill Desktop's unlock token. */
+    static void clearPairing(SharedPreferences prefs) {
+        PhoneApi.dropUnlock();
+        prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
+                .remove("pair.id").remove("pair.v").remove("pair.lastHost").remove("pair.name").remove("pair.fileName").remove("pair.file").remove("folders.cache").remove("folders.source")
+                .remove("folders.at").remove("events.boot").remove("events.since").remove("usage.cache").remove("lanKey.registered").apply();
     }
 
     void unpair() {
-        prefs.edit().remove("pair.hosts").remove("pair.port").remove("pair.key").remove("pair.fp").remove("pair.gist")
-                .remove("pair.id").remove("pair.v").remove("pair.lastHost").remove("pair.name").remove("pair.fileName").remove("pair.file").remove("folders.cache").remove("folders.source")
-                .remove("folders.at").remove("events.boot").remove("events.since").remove("usage.cache").apply();
+        clearPairing(prefs);
         listener.onFolders(new LinkedHashMap<>(), new ArrayList<>());
     }
 
@@ -284,7 +377,7 @@ class FolderSync {
                 c.setReadTimeout(4000);
                 c.setRequestProperty("X-Quill-Key", key);
                 // Every paired device needs Quill Desktop's device password; without the token this got 401 (0.9.22).
-                String unlock = PhoneApi.unlockToken;
+                String unlock = PhoneApi.unlockToken(fp);
                 if (unlock != null) {
                     c.setRequestProperty("X-Quill-Unlock", unlock);
                 }
