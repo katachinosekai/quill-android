@@ -668,9 +668,65 @@ class SessionBars {
         return prefs.getBoolean("fold." + name, !name.equals("Archive") && !name.equals("Created by Claude"));
     }
 
+    /** kmem button: count bubble, a dot while the assistant runs, an accent outline and "!" while it waits for the user. */
+    View kmemButton(Remote rm) {
+        boolean waits = !rm.kmemWaiting.isEmpty();
+        LinearLayout l = new LinearLayout(a);
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setGravity(Gravity.CENTER_VERTICAL);
+        l.setMinimumHeight(a.dp(44));
+        l.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(a.dp(8));
+        bg.setColor(CARD);
+        bg.setStroke(a.dp(waits ? 2 : 1), waits ? MainActivity.ACCENT : 0xFF444440);
+        l.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, a.dp(8));
+        l.setLayoutParams(lp);
+        TextView t = new TextView(a);
+        t.setText("kmem");
+        t.setTextColor(MainActivity.TEXT);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        l.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (KmemModels.running(rm.kmemState)) {
+            View dot = new View(a);
+            GradientDrawable d = new GradientDrawable();
+            d.setShape(GradientDrawable.OVAL);
+            d.setColor(0xFF6CC06C);
+            dot.setBackground(d);
+            LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(a.dp(8), a.dp(8));
+            dp.setMargins(0, 0, a.dp(8), 0);
+            l.addView(dot, dp);
+        }
+        String bub = KmemModels.bubble(rm.kmemCount, rm.kmemWaiting);
+        if (!bub.isEmpty()) {
+            TextView b = new TextView(a);
+            b.setText(bub);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setTextColor(waits ? 0xFF1F1F1D : MainActivity.TEXT);
+            b.setGravity(Gravity.CENTER);
+            b.setPadding(a.dp(7), a.dp(1), a.dp(7), a.dp(1));
+            GradientDrawable bb = new GradientDrawable();
+            bb.setCornerRadius(a.dp(10));
+            bb.setColor(waits ? MainActivity.ACCENT : 0xFF5A5A55);
+            b.setBackground(bb);
+            l.addView(b);
+        }
+        l.setContentDescription("kmem, " + rm.kmemCount + " waiting" + (waits ? ", the kmem assistant needs you" : ""));
+        l.setOnClickListener(v -> a.openKmem());
+        return l;
+    }
+
     void renderSide(Map<String, List<Item>> groups) {
         boolean flat = portrait();
         sideList.removeAllViews();
+        Remote rm = remote ? a.remote : null;
+        if (rm != null && rm.kmemOn) {
+            sideList.addView(kmemButton(rm));
+        }
         TextView head = new TextView(a);
         head.setText("Sessions");
         head.setTextColor(MainActivity.TEXT);

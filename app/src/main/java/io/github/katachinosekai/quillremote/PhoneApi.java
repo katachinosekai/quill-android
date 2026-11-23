@@ -355,4 +355,18 @@ final class PhoneApi {
     Reply slug(String title) {
         return get("/phone/handoffs/slug?title=" + enc(title), 5000);
     }
+
+    /** kmem (Quill Desktop's kmem window, phase 1: read-only). 503 kmem_unavailable, 409 kmem_busy, 401 locked. */
+    Reply kmemOverview() {
+        return get("/phone/kmem/overview", 20000);
+    }
+
+    /** all: also the claimed tasks; topic "" = every topic. */
+    Reply kmemTasks(String topic, boolean all) {
+        return get("/phone/kmem/tasks?" + (topic.isEmpty() ? "" : "topic=" + enc(topic) + "&") + "all=" + (all ? 1 : 0), 20000);
+    }
+
+    Reply kmemTopics() {
+        return get("/phone/kmem/topics", 20000);
+    }
 }

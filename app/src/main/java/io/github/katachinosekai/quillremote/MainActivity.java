@@ -111,6 +111,26 @@ public class MainActivity extends Activity {
         return inApp(u) && !githubAuth(u);
     }
 
+    KmemScreen kmemScreen;
+
+    void openKmem() {
+        if (remote == null || !remote.kmemOn || kmemScreen != null) {
+            return;
+        }
+        kmemScreen = new KmemScreen(this, remote);
+        kmemScreen.show();
+    }
+
+    /** The kmem summary changed (button) or the stream said kmem changed (open screen). */
+    void onKmemChanged() {
+        if (bars != null) {
+            bars.render();
+        }
+        if (kmemScreen != null) {
+            kmemScreen.refresh();
+        }
+    }
+
     void toast(String m) {
         android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_LONG).show();
     }
@@ -637,6 +657,9 @@ public class MainActivity extends Activity {
     public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);
         syncTitle();
+        if (kmemScreen != null) {
+            kmemScreen.layout();
+        }
         if (bars != null) {
             bars.applyMode(false);
             inject();
@@ -2209,6 +2232,7 @@ public class MainActivity extends Activity {
             sync.start();
         }
         if (remote != null) {
+            remote.onKmem = this::onKmemChanged;
             remote.start();
         } else if (phoneApi != null && phoneApi.paired2() && prefs.getBoolean("phone.unsupported", false)) {
             new Thread(() -> {

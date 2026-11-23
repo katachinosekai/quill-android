@@ -73,6 +73,12 @@ final class Remote implements ChatView.Actions {
     volatile JSONObject settings;
     /** Called on the UI thread when settings change (the open ⚙ sheet refreshes its switches). */
     volatile Runnable onSettings;
+    /** kmem (hello.kmem api >= 1 and on): the button's data. Written on the stream thread, read on the UI thread. */
+    volatile boolean kmemOn;
+    volatile int kmemCount;
+    volatile String kmemState = "", kmemWaiting = "";
+    /** Called on the UI thread when the kmem summary changed (button) or the stream says kmem changed (open screen). */
+    volatile Runnable onKmem;
     final java.util.Set<String> actions = new java.util.HashSet<>();
     volatile String current;
     int epoch = -1;
@@ -132,6 +138,14 @@ final class Remote implements ChatView.Actions {
                     hello = true;
                     control = h.body.optBoolean("control", true);
                     deskVersion = h.body.optString("quill", "");
+                    JSONObject km = h.body.optJSONObject("kmem");
+                    boolean was = kmemOn;
+                    kmemOn = km != null && KmemModels.showButton(km.optInt("api"), km.optBoolean("on"));
+                    if (kmemOn) {
+                        work.execute(() -> kmemRefresh());
+                    } else if (was) {
+                        kmemChanged();
+                    }
                     if (h.body.optBoolean("unlock") && !PhoneApi.isUnlocked()) {
                         lockedWait(g);
                         continue;
@@ -516,6 +530,19 @@ final class Remote implements ChatView.Actions {
                     control = c.optBoolean("control");
                     list = true;
                     break;
+                case "kmem":
+                    if (kmemOn) {
+                        JSONObject n = c.optJSONObject("needs"), as = c.optJSONObject("assistant");
+                        if (n != null) {
+                            kmemCount = n.optInt("count");
+                        }
+                        if (as != null) {
+                            kmemState = as.optString("state");
+                            kmemWaiting = as.optString("waiting");
+                        }
+                        kmemChanged();
+                    }
+                    break;
                 case "settings":
                     setSettings(c.optJSONObject("settings"));
                     break;
@@ -535,6 +562,44 @@ final class Remote implements ChatView.Actions {
                 }
             });
         }
+    }
+
+    void kmemChanged() {
+        Runnable k = onKmem;
+        if (k != null) {
+            ui.post(k);
+        }
+    }
+
+    /** Fetch the overview once for the button (hello carries no count). */
+    void kmemRefresh() {
+        PhoneApi.Reply r = api.kmemOverview();
+        if (r.ok()) {
+            JSONObject n = r.body.optJSONObject("needs"), as = r.body.optJSONObject("assistant");
+            kmemCount = n == null ? 0 : n.optInt("count");
+            kmemState = as == null ? "" : as.optString("state");
+            kmemWaiting = as == null ? "" : as.optString("waiting");
+            kmemChanged();
+        }
+    }
+
+    /**
+     * Read one kmem panel on the work thread; done runs on the UI thread. A 409 kmem_busy is retried a few times, a 401
+     * locked goes to the unlock prompt.
+     */
+    void kmem(java.util.function.Supplier<PhoneApi.Reply> call, java.util.function.Consumer<PhoneApi.Reply> done) {
+        work.execute(() -> {
+            PhoneApi.Reply r = call.get();
+            for (int i = 0; i < 3 && r.code == 409 && "kmem_busy".equals(r.error()); i++) {
+                sleep(1200);
+                r = call.get();
+            }
+            PhoneApi.Reply fin = r;
+            if (fin.code == 401 && "locked".equals(fin.error())) {
+                ui.post(host::onLocked);
+            }
+            ui.post(() -> done.accept(fin));
+        });
     }
 
     void setSettings(JSONObject s) {
