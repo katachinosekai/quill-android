@@ -179,7 +179,7 @@ public class MainActivity extends Activity {
             updateBanner.setText("Update " + pendingUpdate.version + " was blocked. Tap to retry.");
             updateBanner.setVisibility(View.VISIBLE);
         }
-        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        accent(Touch.show(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Update blocked by your phone's security")
                 .setMessage("Android stopped Quill Android from installing its update. This happens on every update for apps that don't come from a store:\n\n"
                         + "• Samsung Auto Blocker: Settings → Security and privacy → Auto Blocker → turn it off, tap the Quill Android update banner to retry, then turn Auto Blocker back on.\n\n"
@@ -194,7 +194,7 @@ public class MainActivity extends Activity {
                     }
                 })
                 .setNegativeButton("Later", null)
-                .show());
+                ));
     }
 
     TextView notifyBanner;
@@ -388,7 +388,8 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Later", null) // applies nothing; asks again at the next start
                 .setCancelable(false)
-                .show();
+                .create();
+        Touch.watch(updateDlg).show();
         accent(updateDlg);
     }
 
@@ -472,7 +473,7 @@ public class MainActivity extends Activity {
         }));
         unlockDlg.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE | android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         unlockDlg.getWindow().setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        unlockDlg.show();
+        Touch.watch(unlockDlg).show();
         pw.requestFocus();
     }
 
@@ -592,6 +593,7 @@ public class MainActivity extends Activity {
     @Override
     public void onUserInteraction() {
         super.onUserInteraction();
+
         if (remote != null) {
             remote.touch();
         }
@@ -656,12 +658,12 @@ public class MainActivity extends Activity {
         }
         TextView msg = para(FolderSync.confirmText(p, paired ? prefs.getString("pair.name", "") : null), TEXT);
         msg.setPadding(dp(24), dp(8), dp(24), 0);
-        pairDlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        pairDlg = Touch.show(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(paired ? "Replace the pairing?" : "Pair with Quill Desktop?")
                 .setView(scroll(msg))
                 .setPositiveButton(paired ? "Replace" : "Pair", (d, w) -> applyPair(p))
                 .setNegativeButton("Cancel", null)
-                .show();
+                );
         accent(pairDlg);
     }
 
@@ -778,7 +780,7 @@ public class MainActivity extends Activity {
             String f = s.optString("project", s.optString("group", s.optString("folder", "")));
             names[k + 1] = (t.isEmpty() ? "Session" : t) + (f.isEmpty() ? "" : "  ·  " + f);
         }
-        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        accent(Touch.show(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Send to…")
                 .setItems(names, (d, w) -> {
                     if (w > 0) {
@@ -790,7 +792,7 @@ public class MainActivity extends Activity {
                     }
                 })
                 .setNegativeButton("Cancel", null)
-                .show());
+                ));
     }
 
     String openTarget(Intent i) {
@@ -838,6 +840,7 @@ public class MainActivity extends Activity {
 
                     @Override
                     public void afterTextChanged(android.text.Editable e) {
+                        Touch.ping();
                         if (pending[0] != null) {
                             preview.removeCallbacks(pending[0]);
                         }
@@ -950,7 +953,8 @@ public class MainActivity extends Activity {
                         remote.newSession(f.optString("path"), b, String.valueOf(model.getSelectedItem()), String.valueOf(mode.getSelectedItem()), start);
                     })
                     .setNegativeButton("Cancel", null)
-                    .show();
+                    .create();
+            Touch.watch(dlg[0]).show();
         }
     }
 
@@ -963,7 +967,7 @@ public class MainActivity extends Activity {
             }
             remote.handoffAction(name, "resume", null);
         });
-        m.add("Delete handoff...", () -> new android.app.AlertDialog.Builder(this)
+        m.add("Delete handoff...", () -> Touch.show(new android.app.AlertDialog.Builder(this)
                 .setTitle("Delete handoff?")
                 .setMessage("\"" + name + "\" moves to the kmem recycle bin. You can restore it in Quill Desktop.")
                 .setPositiveButton("Delete", (d, w) -> remote.handoffAction(name, "delete", () -> {
@@ -973,7 +977,7 @@ public class MainActivity extends Activity {
                     toast("Moved " + name + " to the kmem recycle bin.");
                 }))
                 .setNegativeButton("Cancel", null)
-                .show());
+                ));
         bars.showMenu(name, m);
     }
 
@@ -1128,6 +1132,11 @@ public class MainActivity extends Activity {
             web.restoreState(state);
         }
         Net.init(this);
+        Touch.sink = () -> {
+            if (remote != null) {
+                remote.touch();
+            }
+        };
         sync = new FolderSync(prefs, getContentResolver(), this::onFolders);
         fgNotifier = new Notifier(this);
         if (chat != null) {
@@ -1296,7 +1305,7 @@ public class MainActivity extends Activity {
         chat.setBusy(false, "Opus 5.5 · idle");
         android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
         d.setContentView(chat);
-        d.show();
+        Touch.watch(d).show();
     }
 
     View bar() {
@@ -1640,11 +1649,11 @@ public class MainActivity extends Activity {
             updater.check(true);
         }));
 
-        AlertDialog settingsDlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog settingsDlg = Touch.show(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Settings")
                 .setView(scroll(box))
                 .setPositiveButton("Done", null)
-                .show();
+                );
         accent(settingsDlg);
         settingsDlg.setOnDismissListener(d -> {
             if (remote != null) {
@@ -1736,7 +1745,7 @@ public class MainActivity extends Activity {
     }
 
     void signInHelp() {
-        accent(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        accent(Touch.show(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Sign in with email")
                 .setMessage("Google and Apple don't allow signing in inside apps, so that button can't work here.\n\n"
                         + "Use \"Continue with email\" with the same address (your Gmail address works) and you get the same Claude account and sessions.\n\n"
@@ -1744,7 +1753,7 @@ public class MainActivity extends Activity {
                         + "or copy the link and use ⚙ → Paste sign-in link.")
                 .setPositiveButton("OK", null)
                 .setNeutralButton("Open claude.ai links in Quill Android", (d, w) -> openLinkSettings())
-                .show());
+                ));
     }
 
     void openLinkSettings() {
@@ -2314,6 +2323,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        Touch.sink = null;
         if (web != null) {
             web.destroy();
             web = null;

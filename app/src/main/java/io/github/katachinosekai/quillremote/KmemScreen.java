@@ -93,6 +93,7 @@ class KmemScreen {
 
             @Override
             public void afterTextChanged(Editable e) {
+                Touch.ping();
                 query = e.toString();
                 fillTasks();
             }
@@ -118,6 +119,7 @@ class KmemScreen {
 
             @Override
             public void afterTextChanged(Editable e) {
+                Touch.ping();
                 onMemQuery(e.toString().trim());
             }
         });
@@ -175,7 +177,7 @@ class KmemScreen {
 
     void show() {
         Notifier.kmemOpen = true;
-        dialog.show();
+        Touch.watch(dialog).show();
         layout();
         refresh();
         assist.refresh(true);
@@ -410,11 +412,11 @@ class KmemScreen {
             row.addView(pill("Save now", () -> assist.lifecycle("save", "save")));
         }
         if (control && m.can("stop")) {
-            row.addView(pill("Stop assistant", () -> new android.app.AlertDialog.Builder(a)
+            row.addView(pill("Stop assistant", () -> Touch.show(new android.app.AlertDialog.Builder(a)
                     .setMessage("Stop the kmem assistant? It saves its kmem handoff first (up to 60 s).")
                     .setPositiveButton("Stop", (d, i) -> assist.lifecycle("stop", "stop"))
                     .setNegativeButton("Cancel", null)
-                    .show()));
+                    )));
         }
         if (row.getChildCount() > 0) {
             HorizontalScrollView hs = new HorizontalScrollView(a);
@@ -926,7 +928,7 @@ class KmemScreen {
         if (taskDlg != null) {
             taskDlg.dismiss();
         }
-        taskDlg = new android.app.AlertDialog.Builder(a).setView(scrolled(col)).setPositiveButton("Close", null).show();
+        taskDlg = Touch.show(new android.app.AlertDialog.Builder(a).setView(scrolled(col)).setPositiveButton("Close", null));
         remote.kmem(() -> remote.api.kmemTask(t.id), r -> {
             if (r.ok()) {
                 String x = r.body.optString("text");
@@ -962,6 +964,7 @@ class KmemScreen {
                 }
 
                 public void afterTextChanged(Editable e) {
+                    Touch.ping();
                     String v = KmemWriteModel.validResult(e.toString());
                     count.setText(KmemWriteModel.counter(e.toString()));
                     count.setTextColor(v == null && e.length() > 0 ? 0xFFD05050 : MainActivity.MUTED);
@@ -976,7 +979,7 @@ class KmemScreen {
                 }
             });
         });
-        d.show();
+        Touch.watch(d).show();
     }
 
     /** prepare -> confirm dialog (summary + commands) -> commit -> refresh. Nothing is written before Confirm. */
@@ -987,7 +990,7 @@ class KmemScreen {
                 return;
             }
             String confirm = r.body.optString("confirm");
-            new android.app.AlertDialog.Builder(a).setTitle(title)
+            Touch.show(new android.app.AlertDialog.Builder(a).setTitle(title)
                     .setMessage(KmemWriteModel.confirmText(r.body))
                     .setPositiveButton("Confirm", (d, w) -> remote.kmem(() -> remote.api.kmemCommit(kind, id, action, confirm), c -> {
                         if (c.ok()) {
@@ -1004,8 +1007,7 @@ class KmemScreen {
                             failed(c);
                         }
                     }))
-                    .setNegativeButton("Cancel", null)
-                    .show();
+                    .setNegativeButton("Cancel", null));
         });
     }
 
@@ -1031,8 +1033,8 @@ class KmemScreen {
         binItems = null;
         binError = "";
         fillBin();
-        binDlg = new android.app.AlertDialog.Builder(a).setTitle("Recycle bin").setView(scrolled(binCol))
-                .setPositiveButton("Close", null).show();
+        binDlg = Touch.show(new android.app.AlertDialog.Builder(a).setTitle("Recycle bin").setView(scrolled(binCol))
+                .setPositiveButton("Close", null));
         loadBin();
     }
 

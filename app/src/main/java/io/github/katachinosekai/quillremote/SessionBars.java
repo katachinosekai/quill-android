@@ -1046,10 +1046,10 @@ class SessionBars {
     }
 
     void showMenu(String title, Menu m) {
-        new android.app.AlertDialog.Builder(a)
+        Touch.show(new android.app.AlertDialog.Builder(a)
                 .setTitle(title)
                 .setItems(m.labels.toArray(new String[0]), (d, w) -> m.acts.get(w).run())
-                .show();
+                );
     }
 
     void folderMenu(View anchor, String folder, List<Item> list) {
@@ -1089,12 +1089,12 @@ class SessionBars {
             m.add("End session", () -> r.sessionAction("end session", id, "end", null));
         }
         if (s != null && r.can("delete")) {
-            m.add("Delete session...", () -> new android.app.AlertDialog.Builder(a)
+            m.add("Delete session...", () -> Touch.show(new android.app.AlertDialog.Builder(a)
                     .setTitle("Delete session?")
                     .setMessage("\"" + title + "\" is removed from Quill Desktop. Its kmem handoff goes to the kmem recycle bin.")
                     .setPositiveButton("Delete", (d, w) -> r.sessionAction("delete", id, "delete", null))
                     .setNegativeButton("Cancel", null)
-                    .show());
+                    ));
         }
         if (s != null && r.can("project")) {
             m.add("Project...", () -> projectMenu(r, id, s.optString("project")));
@@ -1134,6 +1134,7 @@ class SessionBars {
 
     void askName(String title, String current, java.util.function.Consumer<String> done) {
         android.widget.EditText e = new android.widget.EditText(a);
+        Touch.typing(e);
         e.setText(current);
         e.setSingleLine(true);
         e.setSelectAllOnFocus(true);
@@ -1153,7 +1154,7 @@ class SessionBars {
                 .setNegativeButton("Cancel", null)
                 .create();
         d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
-        d.show();
+        Touch.watch(d).show();
         e.requestFocus();
     }
 
@@ -1198,6 +1199,12 @@ class SessionBars {
             a.openSession(list.get(pos).id);
         });
         pop.show();
+        if (pop.getListView() != null) {
+            pop.getListView().setOnTouchListener((v, e) -> {
+                Touch.ping();
+                return false;
+            });
+        }
         if (pop.getListView() != null) {
             pop.getListView().setOnItemLongClickListener((p, v, pos, id) -> {
                 pop.dismiss();

@@ -103,7 +103,7 @@ final class KmemAssistant implements ChatView.Actions {
         if (r.ok()) {
             apply(r.body, fresh);
         } else if (r.code == 401 && "locked".equals(r.error())) {
-            remote.ui.post(remote.host::onLocked);
+            remote.expired();
         }
     }
 
@@ -253,7 +253,7 @@ final class KmemAssistant implements ChatView.Actions {
                 return;
             }
             if (r.code == 401 && "locked".equals(r.error())) {
-                remote.ui.post(remote.host::onLocked);
+                remote.expired();
                 return;
             }
             String msg;

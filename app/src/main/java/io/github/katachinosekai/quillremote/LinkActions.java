@@ -28,11 +28,11 @@ final class LinkActions {
                 openWeb(c, l.target);
                 break;
             case LOCAL_DIALOG:
-                new AlertDialog.Builder(c).setTitle("This address is on Quill Desktop's PC")
+                Touch.show(new AlertDialog.Builder(c).setTitle("This address is on Quill Desktop's PC")
                         .setMessage(l.target + "\n\nIt won't work on this phone unless the same address exists here.")
                         .setPositiveButton("Open anyway", (d, w) -> openWeb(c, l.target))
                         .setNeutralButton("Copy", (d, w) -> copy(c, l.target))
-                        .setNegativeButton("Cancel", null).show();
+                        .setNegativeButton("Cancel", null));
                 break;
             case FILE:
                 if (host != null && host.filesOn()) {
@@ -63,7 +63,7 @@ final class LinkActions {
     }
 
     private static void confirm(Context c, String title, String shown, String target) {
-        new AlertDialog.Builder(c).setTitle(title).setMessage(shown)
+        Touch.show(new AlertDialog.Builder(c).setTitle(title).setMessage(shown)
                 .setPositiveButton("Open", (d, w) -> {
                     Intent i = new Intent(LinkPolicy.scheme(target).equals("mailto") ? Intent.ACTION_SENDTO : Intent.ACTION_VIEW, Uri.parse(target));
                     i.addCategory(Intent.CATEGORY_BROWSABLE);
@@ -71,7 +71,7 @@ final class LinkActions {
                     start(c, i);
                 })
                 .setNeutralButton("Copy", (d, w) -> copy(c, target))
-                .setNegativeButton("Cancel", null).show();
+                .setNegativeButton("Cancel", null));
     }
 
     private static void start(Context c, Intent i) {

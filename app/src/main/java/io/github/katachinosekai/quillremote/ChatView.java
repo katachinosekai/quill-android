@@ -372,6 +372,7 @@ final class ChatView extends LinearLayout {
             return false;
         });
         box.setOnEditorActionListener((v, id, e) -> {
+            Touch.ping();
             if (id == EditorInfo.IME_ACTION_SEND) {
                 submit();
                 return true;
@@ -1579,6 +1580,7 @@ final class ChatView extends LinearLayout {
 
             @Override
             public void afterTextChanged(android.text.Editable x) {
+                Touch.ping();
                 ans.put(CHANGES, x.toString());
             }
         });
@@ -1697,6 +1699,7 @@ final class ChatView extends LinearLayout {
 
                     @Override
                     public void afterTextChanged(android.text.Editable x) {
+                        Touch.ping();
                         String t = x.toString().trim();
                         if (t.isEmpty()) {
                             ans.remove(qid);

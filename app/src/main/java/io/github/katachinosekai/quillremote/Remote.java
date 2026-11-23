@@ -88,7 +88,7 @@ final class Remote implements ChatView.Actions {
         public void openFile(String path, int line, int lineEnd) {
             String id = current;
             if (id != null) {
-                new FileViewer(chat.getContext(), api, id, path, line, lineEnd, host::onLocked).show();
+                new FileViewer(chat.getContext(), api, id, path, line, lineEnd, Remote.this::expired).show();
             }
         }
     };
@@ -112,6 +112,12 @@ final class Remote implements ChatView.Actions {
         this.appVersion = appVersion;
         this.appContext = chat.getContext().getApplicationContext();
         this.current = last;
+        ping = new ActivityPing(() -> {
+        PhoneApi.Reply r = api.touch();
+        boolean ok = r.ok();
+        long left = ok && r.body.has("idleLeftSec") ? r.body.optLong("idleLeftSec", -1) : -1;
+        return new ActivityPing.Result(ok, r.code == 401 && "locked".equals(r.error()), left);
+    }, pings, System::currentTimeMillis, PhoneApi::isUnlocked, this::expired);
         chat.actions = this;
         chat.linkHost = linkHost;
     }
@@ -277,7 +283,7 @@ final class Remote implements ChatView.Actions {
             if (r.ok() && !r.body.optString("token").isEmpty()) {
                 PhoneApi.unlocked(r.body.optString("token"), fp);
                 passwordSession = false;
-                lastTouch = System.currentTimeMillis();
+                ping.reset();
                 return true;
             }
             if ("bad_signature".equals(r.error())) {
@@ -324,15 +330,12 @@ final class Remote implements ChatView.Actions {
         }
         ui.post(chat::clear);
         publish();
-        if (keyUnlock(g)) {
+        if (!Relock.silentFirst(() -> keyUnlock(g), () -> running && g == gen, () -> {
             connection("");
             ui.post(host::onUnlocked);
-            return;
+        }, () -> ui.post(host::onLocked))) {
+            return; // unlocked silently, or a stopped or restarted connection: the newer one decides
         }
-        if (!running || g != gen) {
-            return; // a stopped or restarted connection: the newer one decides
-        }
-        ui.post(host::onLocked);
         publish();
         connection("Locked by Quill Desktop. Enter its device password to continue.");
         while (running && g == gen && !PhoneApi.isUnlocked()) {
@@ -341,7 +344,13 @@ final class Remote implements ChatView.Actions {
         connection("");
     }
 
-    volatile long lastTouch;
+    /** Pings run here, never on `work`: a slow fetch must not hold back the activity signal. */
+    final ExecutorService pings = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "quill-ping");
+        t.setDaemon(true);
+        return t;
+    });
+    final ActivityPing ping;
 
     /**
      * After a password unlock: make sure Quill Desktop has this phone's current home-network key (registering again
@@ -399,7 +408,7 @@ final class Remote implements ChatView.Actions {
                 PhoneApi.unlocked(r.body.optString("token"), fp);
                 passwordSession = true;
                 ui.post(host::onUnlocked);
-                lastTouch = System.currentTimeMillis();
+                ping.reset();
                 msg = "";
                 registerKey(null);
             } else {
@@ -432,12 +441,25 @@ final class Remote implements ChatView.Actions {
 
     /** Your own activity (touches, keys, typing) keeps Quill Desktop's device unlock alive; sent at most once a minute. Without activity the desktop's idle timer (15 min default) runs out and the app asks for the password again. */
     void touch() {
-        long now = System.currentTimeMillis();
-        if (!PhoneApi.isUnlocked() || now - lastTouch < 60_000) {
-            return;
+        ping.touch();
+    }
+
+    /** Idle seconds Quill Desktop reported with the last ping (-1 = unknown). */
+    long idleLeftSec() {
+        return ping.idleLeftSec;
+    }
+
+    /**
+     * Quill Desktop says the unlock ran out (401 locked from any call): drop the token and reconnect. The connection
+     * tries the home-network key first (lockedWait -> keyUnlock) and only asks for the password when that fails.
+     */
+    void expired() {
+        if (running && PhoneApi.isUnlocked()) {
+            dropToken();
+            restart();
+        } else if (!running && !PhoneApi.isUnlocked()) {
+            ui.post(host::onLocked);
         }
-        lastTouch = now;
-        work.execute(api::touch);
     }
 
     void sleep(long ms) {
@@ -650,7 +672,7 @@ final class Remote implements ChatView.Actions {
             }
             PhoneApi.Reply fin = r;
             if (fin.code == 401 && "locked".equals(fin.error())) {
-                ui.post(host::onLocked);
+                expired();
             }
             ui.post(() -> done.accept(fin));
         });

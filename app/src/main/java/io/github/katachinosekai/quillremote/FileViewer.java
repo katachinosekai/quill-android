@@ -100,7 +100,7 @@ final class FileViewer {
     }
 
     void show() {
-        dialog.show();
+        Touch.watch(dialog).show();
         load();
     }
 
