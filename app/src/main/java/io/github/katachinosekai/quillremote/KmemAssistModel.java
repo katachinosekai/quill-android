@@ -66,17 +66,23 @@ final class KmemAssistModel {
     }
 
     static Set<String> actions(JSONArray a) {
-        Set<String> s = new HashSet<>();
+        List<String> l = new ArrayList<>();
         for (int i = 0; a != null && i < a.length(); i++) {
-            String v = a.optString(i);
-            if (!v.isEmpty()) {
+            l.add(a.optString(i));
+        }
+        return actionSet(l);
+    }
+
+    static Set<String> actionSet(List<String> l) {
+        Set<String> s = new HashSet<>();
+        for (String v : l) {
+            if (v != null && !v.isEmpty()) {
                 s.add(v);
             }
         }
         return Collections.unmodifiableSet(s);
     }
 
-    /** A card needs a text and at least one choice; null otherwise. */
     static Question question(JSONObject q) {
         if (q == null) {
             return null;
@@ -86,8 +92,12 @@ final class KmemAssistModel {
         for (int i = 0; arr != null && i < arr.length(); i++) {
             c.add(arr.optString(i));
         }
-        String t = q.optString("text");
-        return t.isEmpty() || c.isEmpty() ? null : new Question(t, c);
+        return question(q.optString("text"), c);
+    }
+
+    /** A card needs a text and at least one choice; null otherwise. */
+    static Question question(String text, List<String> choices) {
+        return text == null || text.isEmpty() || choices == null || choices.isEmpty() ? null : new Question(text, choices);
     }
 
     /** Seconds still left at time now (ms), counting down from the snapshot; -1 = no countdown. */
