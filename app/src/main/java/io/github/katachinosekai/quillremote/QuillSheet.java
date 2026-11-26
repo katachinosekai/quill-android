@@ -47,8 +47,7 @@ class QuillSheet {
         a.styleChat(chatView);
         assist = new KmemAssistant(remote, chatView, true);
         assist.onModel = this::onModel;
-        header = column();
-        header.setPaddingRelative(a.dp(14), a.dp(2), a.dp(14), a.dp(6));
+        header = BottomSheet.operatorHeader(a);
         chatPane = column();
         chatPane.addView(chatView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         changesCol = column();
@@ -95,13 +94,7 @@ class QuillSheet {
 
     void build() {
         LinearLayout root = column();
-        LinearLayout bar = new LinearLayout(a);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPaddingRelative(a.dp(14), 0, a.dp(4), 0);
-        TextView t = text("Quill operator", 17, MainActivity.TEXT, true);
-        bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        bar.addView(a.button("⟳", "Refresh", v -> refresh()));
-        bar.addView(a.button("✕", "Close", v -> dialog.dismiss()));
+        View bar = BottomSheet.operatorTitleBar(a, "Quill operator", this::refresh, dialog::dismiss);
         root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, a.dp(48)));
         root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout tabs = new LinearLayout(a);
@@ -158,13 +151,7 @@ class QuillSheet {
             return;
         }
         String line = s != null ? s.line() : KmemModels.stateText(m.state);
-        TextView st = text("● " + line, 14, MainActivity.TEXT, true);
-        boolean live = s != null && s.dot;
-        st.setCompoundDrawablePadding(0);
-        header.addView(st);
-        if (live) {
-            st.setTextColor(0xFF6CC06C);
-        }
+        header.addView(BottomSheet.operatorStatus(a, line, s != null && s.dot));
         if (m != null && !m.model.isEmpty()) {
             header.addView(text("Model: " + m.model, 13, MainActivity.MUTED, false));
         }

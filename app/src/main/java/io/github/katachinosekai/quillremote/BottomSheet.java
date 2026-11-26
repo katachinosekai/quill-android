@@ -3,6 +3,7 @@ package io.github.katachinosekai.quillremote;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
@@ -12,6 +13,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 /**
  * A bottom sheet in a Dialog (no AndroidX): a drag handle, half or full height, back or a tap outside closes it. Dragging
@@ -71,6 +73,37 @@ final class BottomSheet {
         box.setOnClickListener(v -> { });
         dialog.setContentView(root);
         InsetPad.install(root);
+    }
+
+    static LinearLayout operatorTitleBar(MainActivity a, String title, Runnable refresh, Runnable close) {
+        LinearLayout bar = new LinearLayout(a);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPaddingRelative(a.dp(14), 0, a.dp(4), 0);
+        TextView label = new TextView(a);
+        label.setText(title);
+        label.setTextSize(17);
+        label.setTextColor(MainActivity.TEXT);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        bar.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        bar.addView(a.button("⟳", "Refresh", v -> refresh.run()));
+        bar.addView(a.button("✕", "Close", v -> close.run()));
+        return bar;
+    }
+
+    static LinearLayout operatorHeader(MainActivity a) {
+        LinearLayout header = new LinearLayout(a);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPaddingRelative(a.dp(14), a.dp(2), a.dp(14), a.dp(6));
+        return header;
+    }
+
+    static TextView operatorStatus(MainActivity a, String line, boolean running) {
+        TextView status = new TextView(a);
+        status.setText("● " + line);
+        status.setTextSize(14);
+        status.setTypeface(Typeface.DEFAULT_BOLD);
+        status.setTextColor(running ? 0xFF6CC06C : MainActivity.TEXT);
+        return status;
     }
 
     View handleView(Context c, float d) {

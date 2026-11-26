@@ -41,7 +41,7 @@ class KmemScreen {
     int tab; // 0 Overview, 1 Tasks, 2 Memory, 3 Assistant (portrait only)
     final ChatView chatView;
     final KmemAssistant assist;
-    final LinearLayout assistPane, assistHeader;
+    final LinearLayout assistPane, assistHeader, assistControls;
     TextView stateView, tabAssist;
     final Runnable tick = this::tickState;
     JSONObject overview;
@@ -137,10 +137,11 @@ class KmemScreen {
         a.styleChat(chatView);
         assist = new KmemAssistant(remote, chatView);
         assist.onModel = this::fillAssist;
-        assistHeader = column();
-        assistHeader.setPaddingRelative(a.dp(14), a.dp(8), a.dp(14), a.dp(6));
+        assistHeader = BottomSheet.operatorHeader(a);
+        assistControls = column();
+        assistControls.setPaddingRelative(a.dp(14), 0, a.dp(14), a.dp(6));
         assistPane = column();
-        assistPane.addView(assistHeader, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        assistPane.addView(assistControls, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         assistPane.addView(chatView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         // A bottom sheet (half height, drag to full; landscape starts full because its two columns need the room).
         sheet = new BottomSheet(a, a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
@@ -190,7 +191,7 @@ class KmemScreen {
         if (landscape) {
             sheet.setFull(true);
         }
-        for (View v : new View[]{ovScroll, taskScroll, chips, search, errorLine, assistPane, memPane}) {
+        for (View v : new View[]{ovScroll, taskScroll, chips, search, errorLine, assistHeader, assistPane, memPane}) {
             if (v.getParent() instanceof ViewGroup) {
                 ((ViewGroup) v.getParent()).removeView(v);
             }
@@ -198,7 +199,17 @@ class KmemScreen {
         holder.removeAllViews();
         LinearLayout root = new LinearLayout(a);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.addView(topBar(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, a.dp(48)));
+        View titleBar = BottomSheet.operatorTitleBar(a, "kmem operator", () -> {
+            refresh();
+            assist.refresh(true);
+        }, this::close);
+        root.addView(titleBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, a.dp(48)));
+        LinearLayout.LayoutParams headerLayout = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        if (landscape) {
+            assistPane.addView(assistHeader, 0, headerLayout);
+        } else {
+            root.addView(assistHeader, headerLayout);
+        }
         View panels = panels();
         if (landscape) {
             LinearLayout split = new LinearLayout(a);
@@ -214,26 +225,6 @@ class KmemScreen {
         }
         holder.addView(root, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         showTab();
-    }
-
-    View topBar() {
-        LinearLayout bar = new LinearLayout(a);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setBackgroundColor(MainActivity.SIDE);
-        bar.setPaddingRelative(a.dp(4), 0, a.dp(8), 0);
-        bar.addView(a.button("←", "Back", v -> close()));
-        TextView t = new TextView(a);
-        t.setText("kmem");
-        t.setTextColor(MainActivity.TEXT);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setPaddingRelative(a.dp(8), 0, 0, 0);
-        bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        bar.addView(a.button("⟳", "Refresh", v -> {
-            refresh();
-            assist.refresh(false);
-        }));
-        return bar;
     }
 
     View panels() {
@@ -289,9 +280,8 @@ class KmemScreen {
         return t;
     }
 
-    /** Landscape has no Assistant tab (the chat is always on the right): that choice shows Overview. */
     void selectTab(int index) {
-        tab = landscape && index == TAB_ASSISTANT ? 0 : index;
+        tab = index;
         showTab();
         if (tab == 1 && tasks == null) {
             refreshTasks();
@@ -302,16 +292,15 @@ class KmemScreen {
     }
 
     void showTab() {
-        if (landscape && tab == TAB_ASSISTANT) {
-            tab = 0;
-        }
-        ovScroll.setVisibility(tab == 0 ? View.VISIBLE : View.GONE);
-        tasksHolder.setVisibility(tab == 1 ? View.VISIBLE : View.GONE);
-        memPane.setVisibility(tab == TAB_MEMORY ? View.VISIBLE : View.GONE);
+        // The landscape split shows the chat beside Overview while Assistant is selected.
+        int panel = landscape && tab == TAB_ASSISTANT ? 0 : tab;
+        ovScroll.setVisibility(panel == 0 ? View.VISIBLE : View.GONE);
+        tasksHolder.setVisibility(panel == 1 ? View.VISIBLE : View.GONE);
+        memPane.setVisibility(panel == TAB_MEMORY ? View.VISIBLE : View.GONE);
         assistPane.setVisibility(landscape || tab == TAB_ASSISTANT ? View.VISIBLE : View.GONE);
-        style(tabOv, tab == 0);
-        style(tabTasks, tab == 1);
-        style(tabMem, tab == TAB_MEMORY);
+        style(tabOv, panel == 0);
+        style(tabTasks, panel == 1);
+        style(tabMem, panel == TAB_MEMORY);
         if (tabAssist != null) {
             style(tabAssist, tab == TAB_ASSISTANT);
         }
@@ -376,6 +365,8 @@ class KmemScreen {
     void fillAssist() {
         assistHeader.removeCallbacks(tick);
         assistHeader.removeAllViews();
+        assistControls.removeAllViews();
+        assistControls.setVisibility(View.GONE);
         KmemAssistModel m = assist.model;
         if (m == null) {
             assistHeader.addView(text("Loading…", 14, MainActivity.MUTED, false));
@@ -383,15 +374,16 @@ class KmemScreen {
             return;
         }
         long now = System.currentTimeMillis();
+        String waiting = KmemModels.waitingText(m.waiting);
+        boolean live = "live".equals(m.state);
+        String state = live && !waiting.isEmpty() ? waiting : m.stateLine(now);
+        stateView = BottomSheet.operatorStatus(a, state, KmemModels.running(m.state));
+        assistHeader.addView(stateView);
         if (!m.model.isEmpty()) {
             assistHeader.addView(text(KmemAssistModel.modelLine(m.model, m.modelSource), 13, MainActivity.MUTED, false));
         }
-        stateView = text("", 14, MainActivity.TEXT, true);
-        stateView.setText("● " + m.stateLine(now));
-        assistHeader.addView(stateView);
-        String w = KmemModels.waitingText(m.waiting);
-        if (!w.isEmpty()) {
-            assistHeader.addView(text(w, 13, MainActivity.ACCENT, false));
+        if (!live && !waiting.isEmpty()) {
+            assistHeader.addView(text(waiting, 13, MainActivity.ACCENT, false));
         }
         if (!m.reason.isEmpty()) {
             TextView r = text(m.reason, 13, MainActivity.MUTED, false);
@@ -423,7 +415,7 @@ class KmemScreen {
             hs.setHorizontalScrollBarEnabled(false);
             hs.addView(row);
             hs.setPaddingRelative(0, a.dp(6), 0, 0);
-            assistHeader.addView(hs);
+            assistControls.addView(hs);
         }
         KmemAssistModel.Question q = m.question;
         if (q != null) {
@@ -445,7 +437,10 @@ class KmemScreen {
             }
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             cp.topMargin = a.dp(8);
-            assistHeader.addView(card, cp);
+            assistControls.addView(card, cp);
+        }
+        if (assistControls.getChildCount() > 0) {
+            assistControls.setVisibility(View.VISIBLE);
         }
         if (m.leftS(now) > 0) {
             assistHeader.postDelayed(tick, 1000);
