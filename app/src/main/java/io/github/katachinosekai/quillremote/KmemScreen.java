@@ -241,18 +241,18 @@ class KmemScreen {
         p.setOrientation(LinearLayout.VERTICAL);
         LinearLayout tabs = new LinearLayout(a);
         tabs.setBackgroundColor(MainActivity.SIDE);
-        tabOv = tabView("Overview", 0);
-        tabTasks = tabView("Tasks", 1);
-        tabs.addView(tabOv, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
-        tabs.addView(tabTasks, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
-        tabMem = tabView("Memory", TAB_MEMORY);
-        tabs.addView(tabMem, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
         if (!landscape) {
             tabAssist = tabView("Assistant", TAB_ASSISTANT);
             tabs.addView(tabAssist, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
         } else {
             tabAssist = null;
         }
+        tabOv = tabView("Overview", 0);
+        tabTasks = tabView("Tasks", 1);
+        tabs.addView(tabOv, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
+        tabs.addView(tabTasks, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
+        tabMem = tabView("Memory", TAB_MEMORY);
+        tabs.addView(tabMem, new LinearLayout.LayoutParams(0, a.dp(42), 1f));
         p.addView(tabs, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         p.addView(errorLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         errorLine.setPaddingRelative(a.dp(14), a.dp(6), a.dp(14), a.dp(6));

@@ -298,20 +298,8 @@ final class KmemAssistant implements ChatView.Actions {
 
     @Override
     public void answer(String requestId, String action, JSONObject extra) {
-        JSONObject body = new JSONObject();
-        try {
-            if ("choice".equals(action)) {
-                body.put("seq", extra.optInt("seq")).put("index", extra.optInt("index"));
-            } else {
-                body.put("requestId", requestId);
-                for (String k : new String[]{"answers", "text", "choice", "planAnswers"}) {
-                    if (extra.has(k)) {
-                        body.put(k, extra.get(k));
-                    }
-                }
-            }
-            body.put("action", action);
-        } catch (JSONException e) {
+        JSONObject body = Remote.answerBody(requestId, action, extra);
+        if (body == null) {
             return;
         }
         write("answer", () -> opCall("answer", body), null);

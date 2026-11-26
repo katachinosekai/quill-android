@@ -191,7 +191,7 @@ public class MainActivity extends Activity {
     KmemScreen kmemScreen;
 
     void openKmem() {
-        openKmem(0);
+        openKmem(KmemScreen.TAB_ASSISTANT);
     }
 
     void openKmem(int tab) {
