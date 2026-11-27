@@ -40,6 +40,7 @@ class QuillSheet {
         this.a = a;
         this.remote = remote;
         sheet = new BottomSheet(a, a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
+        sheet.enableSessionDrawer(a, () -> Notifier.quillOpen = false);
         dialog = sheet.dialog;
         chatView = new ChatView(a);
         chatView.showTimes = a.prefs.getBoolean("messageTimes", true);

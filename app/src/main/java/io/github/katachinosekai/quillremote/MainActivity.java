@@ -122,7 +122,11 @@ public class MainActivity extends Activity {
             return;
         }
         if (quillSheet != null) {
-            quillSheet.refresh();
+            if (quillSheet.dialog.isShowing()) {
+                quillSheet.refresh();
+            } else {
+                quillSheet.show();
+            }
             return;
         }
         quillSheet = new QuillSheet(this, remote);
@@ -191,6 +195,10 @@ public class MainActivity extends Activity {
     KmemScreen kmemScreen;
 
     void openKmem() {
+        if (kmemScreen != null && !kmemScreen.dialog.isShowing()) {
+            kmemScreen.show();
+            return;
+        }
         openKmem(KmemScreen.TAB_ASSISTANT);
     }
 
@@ -200,6 +208,9 @@ public class MainActivity extends Activity {
         }
         if (kmemScreen != null) {
             kmemScreen.selectTab(tab);
+            if (!kmemScreen.dialog.isShowing()) {
+                kmemScreen.show();
+            }
             return;
         }
         kmemScreen = new KmemScreen(this, remote);
@@ -2390,6 +2401,12 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (quillSheet != null) {
+            quillSheet.dialog.dismiss();
+        }
+        if (kmemScreen != null) {
+            kmemScreen.close();
+        }
         Touch.sink = null;
         if (web != null) {
             web.destroy();

@@ -29,6 +29,9 @@ final class BottomSheet {
     final View sheet;
     final Root root;
     boolean full;
+    MainActivity sessionHost;
+    Runnable onSessionPicked;
+    FrameLayout sessionDrawer;
 
     /** Sheet height in pixels for a window of total height (pure, for tests). */
     static int heightFor(int total, boolean full) {
@@ -41,6 +44,48 @@ final class BottomSheet {
             return 1;
         }
         return dy >= threshold ? -1 : 0;
+    }
+
+    static int sessionSwipe(float dx, float dy, long elapsed, int threshold) {
+        if (elapsed >= 1500 || Math.abs(dx) < threshold || Math.abs(dy) >= Math.abs(dx) * 0.5f) {
+            return 0;
+        }
+        return dx > 0 ? 1 : -1;
+    }
+
+    void enableSessionDrawer(MainActivity host, Runnable onPicked) {
+        sessionHost = host;
+        onSessionPicked = onPicked;
+    }
+
+    void openSessionDrawer() {
+        MainActivity a = sessionHost;
+        if (sessionDrawer != null || a == null || a.bars == null) {
+            return;
+        }
+        sessionDrawer = new FrameLayout(a);
+        View scrim = new View(a);
+        scrim.setBackgroundColor(0x66000000);
+        scrim.setOnClickListener(v -> closeSessionDrawer());
+        sessionDrawer.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+        View panel = a.bars.operatorSessionDrawer(id -> {
+            closeSessionDrawer();
+            dialog.hide();
+            onSessionPicked.run();
+            a.bars.picked(id);
+        });
+        int width = Math.min(root.getWidth() - a.dp(48), a.dp(300));
+        sessionDrawer.addView(panel, new FrameLayout.LayoutParams(Math.max(1, width), -1, Gravity.START));
+        root.addView(sessionDrawer, new FrameLayout.LayoutParams(-1, -1));
+        panel.setTranslationX(root.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL ? width : -width);
+        panel.animate().translationX(0).setDuration(180).start();
+    }
+
+    void closeSessionDrawer() {
+        if (sessionDrawer != null) {
+            root.removeView(sessionDrawer);
+            sessionDrawer = null;
+        }
     }
 
     BottomSheet(Context c, boolean startFull) {
@@ -73,6 +118,7 @@ final class BottomSheet {
         box.setOnClickListener(v -> { });
         dialog.setContentView(root);
         InsetPad.install(root);
+        Touch.watch(dialog);
     }
 
     static LinearLayout operatorTitleBar(MainActivity a, String title, Runnable refresh, Runnable close) {
@@ -152,8 +198,54 @@ final class BottomSheet {
 
     /** The window root: sizes the sheet to half or full of its own height before measuring. */
     final class Root extends FrameLayout {
+        float startX, startY;
+        long startTime;
+        boolean tracking;
+
         Root(Context c) {
             super(c);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent event) {
+            if (sessionHost != null) {
+                boolean rtl = getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startX = event.getRawX();
+                        startY = event.getRawY();
+                        startTime = event.getEventTime();
+                        float fromStart = rtl ? getWidth() - event.getX() : event.getX();
+                        tracking = sessionDrawer != null || fromStart <= sessionHost.dp(56);
+                        break;
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                    case MotionEvent.ACTION_CANCEL:
+                        tracking = false;
+                        break;
+                    case MotionEvent.ACTION_UP:
+                        float dx = event.getRawX() - startX;
+                        int swipe = sessionSwipe(rtl ? -dx : dx, event.getRawY() - startY,
+                                event.getEventTime() - startTime, sessionHost.dp(90));
+                        if (tracking && (sessionDrawer == null ? swipe == 1 : swipe == -1)) {
+                            tracking = false;
+                            MotionEvent cancel = MotionEvent.obtain(event);
+                            cancel.setAction(MotionEvent.ACTION_CANCEL);
+                            super.dispatchTouchEvent(cancel);
+                            cancel.recycle();
+                            if (swipe > 0) {
+                                openSessionDrawer();
+                            } else {
+                                closeSessionDrawer();
+                            }
+                            return true;
+                        }
+                        tracking = false;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            return super.dispatchTouchEvent(event);
         }
 
         @Override
@@ -169,6 +261,6 @@ final class BottomSheet {
     }
 
     void show() {
-        Touch.watch(dialog).show();
+        dialog.show();
     }
 }

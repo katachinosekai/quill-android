@@ -880,6 +880,34 @@ class SessionBars {
         }
     }
 
+    View operatorSessionDrawer(java.util.function.Consumer<String> onPicked) {
+        android.widget.ScrollView scroll = new android.widget.ScrollView(a);
+        scroll.setBackgroundColor(MainActivity.SIDE);
+        LinearLayout list = new LinearLayout(a);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPaddingRelative(a.dp(8), a.dp(8), a.dp(8), a.dp(16));
+        TextView heading = new TextView(a);
+        heading.setText("Sessions");
+        heading.setTextColor(MainActivity.TEXT);
+        heading.setTextSize(16);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.setPaddingRelative(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
+        list.addView(heading);
+        for (Item item : portraitOrder(items)) {
+            View entry = twoLine(item, a.dp(40), 14);
+            entry.setOnClickListener(v -> onPicked.accept(item.id));
+            list.addView(entry);
+        }
+        if (items.isEmpty()) {
+            TextView empty = new TextView(a);
+            empty.setText("No live sessions from Quill Desktop right now.");
+            empty.setTextColor(MainActivity.MUTED);
+            list.addView(empty);
+        }
+        scroll.addView(list);
+        return scroll;
+    }
+
     LinearLayout row() {
         LinearLayout r = new LinearLayout(a);
         r.setOrientation(LinearLayout.HORIZONTAL);
@@ -1165,6 +1193,21 @@ class SessionBars {
         }
         if (s != null && r.can("end")) {
             m.add("End session", () -> r.sessionAction("end session", id, "end", null));
+        }
+        if (s != null && s.optBoolean("restartPending") && r.can("cancel-restart")) {
+            m.add("Cancel session restart", () -> r.sessionAction("cancel restart", id, "cancel-restart", null));
+        } else if (s != null && r.can("restart-session") && java.util.Arrays.asList("idle", "running", "waiting").contains(s.optString("status"))) {
+            m.add("Restart session…", () -> {
+                boolean codex = s.optBoolean("codex");
+                String message = codex
+                        ? "Codex will start a new thread from a fresh kmem handoff. The Quill tab, transcript and draft stay in place."
+                        : "Restart with the current provider settings. The tab and conversation stay in place.";
+                Touch.show(new android.app.AlertDialog.Builder(a).setTitle("Restart session?")
+                        .setMessage(message)
+                        .setPositiveButton("Restart", (dlg, choice) -> r.sessionAction("restart session", id, "restart-session",
+                                PhoneApi.obj("fromHandoff", codex)))
+                        .setNegativeButton("Cancel", null));
+            });
         }
         if (s != null && r.can("delete")) {
             m.add("Delete session...", () -> Touch.show(new android.app.AlertDialog.Builder(a)

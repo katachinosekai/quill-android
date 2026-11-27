@@ -145,6 +145,7 @@ class KmemScreen {
         assistPane.addView(chatView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         // A bottom sheet (half height, drag to full; landscape starts full because its two columns need the room).
         sheet = new BottomSheet(a, a.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
+        sheet.enableSessionDrawer(a, () -> Notifier.kmemOpen = false);
         dialog = sheet.dialog;
         holder = sheet.content;
         // Back inside the Memory tab goes up one page (fact -> topic -> start) before it closes the screen.
@@ -175,7 +176,7 @@ class KmemScreen {
 
     void show() {
         Notifier.kmemOpen = true;
-        Touch.watch(dialog).show();
+        sheet.show();
         layout();
         refresh();
         assist.refresh(true);

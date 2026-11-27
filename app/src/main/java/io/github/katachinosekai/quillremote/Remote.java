@@ -1156,6 +1156,10 @@ final class Remote implements ChatView.Actions {
         write(what, () -> api.action(id, action, body), r -> {
             JSONObject s = r.body.optJSONObject("session");
             String removed = r.body.optString("removed");
+            String restartStatus = r.body.optString("restartStatus");
+            if (!restartStatus.isEmpty()) {
+                ui.post(() -> host.toast(restartStatus));
+            }
             synchronized (Remote.this) {
                 if (s != null) {
                     replace(s);
